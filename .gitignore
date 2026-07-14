@@ -1,0 +1,7 @@
+*
+!/.gitignore
+!/.ignore
+!/AGENTS.md
+!/CLAUDE.md
+!/.claude/
+!/.claude/**
