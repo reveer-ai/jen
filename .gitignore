@@ -1,7 +1,10 @@
 *
+!/.claude/
+!/.claude/**
 !/.gitignore
 !/.ignore
 !/AGENTS.md
 !/CLAUDE.md
-!/.claude/
-!/.claude/**
+
+# per-install, never shared: MCP server ids differ from one install to the next
+/.claude/settings.local.json
