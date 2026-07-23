@@ -1,9 +1,13 @@
 *
+!/.claude/
+!/.claude/**
 !/.gitignore
 !/.ignore
 !/AGENTS.md
 !/CLAUDE.md
-!/.claude/
-!/.claude/**
 !/openspec/
 !/openspec/**
+
+# per-install, never shared: MCP server ids differ from one install to the next
+/.claude/settings.local.json
+>>>>>>> 52212e1 (ENG-135: implement workflow)
