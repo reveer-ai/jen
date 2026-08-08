@@ -5,6 +5,11 @@
 !/.ignore
 !/AGENTS.md
 !/CLAUDE.md
+!/openspec/
+!/openspec/**
 
 # per-install, never shared: MCP server ids differ from one install to the next
 /.claude/settings.local.json
+
+# local agent scratch: embedded git repos, never part of the workflow
+/.claude/worktrees/
