@@ -10,4 +10,6 @@
 
 # per-install, never shared: MCP server ids differ from one install to the next
 /.claude/settings.local.json
->>>>>>> 52212e1 (ENG-135: implement workflow)
+
+# local agent scratch: embedded git repos, never part of the workflow
+/.claude/worktrees/
