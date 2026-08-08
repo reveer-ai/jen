@@ -12,6 +12,8 @@ The six stage skills work straight out of a clone — no build, no install, no i
 
 OpenSpec's own skills and commands are **not** vendored. `npm install` runs `openspec init` for you through `prepare`, writing `.claude/skills/openspec-*` and `.claude/commands/opsx/*` from the version in the lockfile. Both are gitignored — committing them re-vendors the frozen snapshot this repository deliberately dropped.
 
+`openspec init` also writes `openspec/config.yaml`, and that one **is** tracked. It is seeded by init but owned by the project: it declares the schema and carries the project's context and per-artifact rules, so it is config a human edits rather than a snapshot to regenerate. Gitignoring it would leave every clone reporting a dirty tree and hide the schema declaration from anyone who has not run an install.
+
 `prepare` rather than `postinstall` on purpose: `postinstall` fires for anyone installing jen as a dependency, and would run `openspec init` inside their project uninvited. `prepare` only runs for a local install here.
 
 ## Checks

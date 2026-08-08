@@ -35,8 +35,12 @@ describe('the repository layout', () => {
   it('keeps a local `openspec init` from re-vendoring them', () => {
     expect(isIgnored('.claude/skills/openspec-explore/SKILL.md')).toBe(true);
     expect(isIgnored('.claude/commands/opsx/apply.md')).toBe(true);
-    // the project's own OpenSpec config and artifacts stay tracked
-    expect(isIgnored('openspec/config.yaml')).toBe(false);
+  });
+
+  it('tracks the OpenSpec config that `openspec init` writes', () => {
+    // `prepare` rewrites this on every install, so asserting it is merely un-ignored
+    // passes while the file sits outside git — which leaves every clone permanently dirty.
+    expect(tracked).toContain('openspec/config.yaml');
   });
 });
 
