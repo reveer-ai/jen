@@ -45,17 +45,32 @@ Staging copies `.claude/skills/<six>/SKILL.md` → `dist/templates/skills/<six>/
 
 *Known limitation:* `prepack` does not run when a package is installed directly from a git URL, and `dist/` is gitignored, so a git-URL install yields an empty payload. Adopters install from the registry, so this is accepted rather than solved; `prepare` would cover it at the cost of rebuilding on every local `npm install`.
 
-### The stamp is injected as text, not by a YAML round-trip
+### Ownership is a stamp, and deletion is the stamp intersected with the payload
 
-All six skills carry the same frontmatter keys — `name`, `description`, `category`, `tags` — and none has a `metadata` key. Staging inserts the stamp immediately before the closing `---`:
+A file is deleted if and only if it carries jen's stamp and is absent from `dist/templates/`. The stamp makes it a candidate; presence in the shipped payload spares it. Unstamped files are the project's and are never candidates.
+
+*Why this needs no manifest:* the obvious reading is that reconcile requires knowing what jen wrote last time, which implies a ledger. It does not. That history is already distributed across the files themselves — a stamp on disk *is* the record that jen put it there. Comparing against what jen ships now is enough, so there is no state file, nothing to go stale, and nothing that can disagree with the disk.
+
+*Scope of the stamp:* only **variable sets** need one — groups whose membership can change between versions, written into a directory shared with the project. **Fixed paths** like root `AGENTS.md` are always written and can never be orphaned, so they are never deletion candidates and carry no stamp.
+
+*The constraint this creates:* every variable-set member must be able to carry a stamp. Markdown has frontmatter; YAML and `.gitignore` take `#` comments; JSON has neither, so JSON cannot be a variable-set member. The live JSON candidate is `.claude/settings.json`, which is a fixed, project-owned, write-once path and therefore never reconciled. This is a real limit and is recorded rather than designed around.
+
+*Alternatives rejected:* a **manifest** generalizes to any file type but reintroduces external state to solve a problem the stamps already solve. A **retired-names list** shipped in the package avoids touching files entirely, but requires remembering to append a name on every rename, and a forgotten line means a file lingering in every project.
+
+### The stamp is a single namespaced key, injected as text
+
+Staging inserts the stamp immediately before the closing `---` of the frontmatter. All six skills carry the same keys — `name`, `description`, `category`, `tags` — and none has a `metadata` key:
 
 ```yaml
 metadata:
-  author: jen
-  generatedBy: "0.1.0"
+  jen: true
 ```
 
-*Why:* the specs require staging to be byte-deterministic. Parsing and re-serializing YAML would normalize formatting that nobody asked to change — `tags: [workflow, linear, openspec]` is flow style and a round-trip would likely emit block style — and key order depends on the serializer. Text insertion preserves the file exactly and adds no dependency. Reading the stamp back is a separate concern belonging to the consuming CLI, and needs only a frontmatter scan, not a full parser.
+*Why one key:* presence denotes ownership, so an `author: jen` field alongside a version says the same thing twice.
+
+*Why constant, with no version:* a value that changed per release would rewrite every managed file in every project on every release, burying real skill changes in version-bump noise in the adopter's diff. Version diagnostics are not worth that, and can be added later if they ever are.
+
+*Why text insertion, not a YAML round-trip:* the specs require staging to be byte-deterministic. Parsing and re-serializing would normalize formatting nobody asked to change — `tags: [workflow, linear, openspec]` is flow style and a round-trip would likely emit block style — and key order depends on the serializer. Text insertion preserves the file exactly and adds no dependency. Reading the stamp back needs only a frontmatter scan, not a full parser.
 
 ### The managed-path declaration lives in TypeScript, and staging imports it built
 
@@ -82,7 +97,7 @@ The allowlist is replaced by explicit ignores: build output (`dist/`), dependenc
 ### Rejected during design, recorded so they are not revisited by accident
 
 - **Marker block in `AGENTS.md`.** Would have relaxed a constraint the workflow already imposes — root `AGENTS.md` is off-limits to project notes, which belong to the nearest `AGENTS.md` at or below `src/`. Holding the constraint lets jen own the file outright, and removes in-file merging from the design entirely.
-- **`.jen/manifest.json`.** Its only job was knowing what to delete when a later version drops a file. The stamp does that with no state outside the files themselves, so nothing can go stale, be gitignored, or disagree with the disk. It also gives projects an escape hatch: delete the stamp line and the file is theirs.
+- **`.jen/manifest.json`.** Its only job was knowing what to delete when a later version drops a file. The stamp intersected with the shipped payload does that with no state outside the files themselves, so nothing can go stale, be gitignored, or disagree with the disk. It also gives projects an escape hatch: delete the stamp and the file is theirs.
 - **Tool table with fan-out.** Every assistant reads only its own directory and no shared location exists, so fan-out means N byte-identical copies to write and reconcile. A project-side symlink produces the same result with no code in jen and no possibility of the copies diverging.
 
 ## Risks / Trade-offs

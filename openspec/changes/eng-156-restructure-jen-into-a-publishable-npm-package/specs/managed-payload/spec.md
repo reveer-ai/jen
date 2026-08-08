@@ -1,20 +1,25 @@
 ## ADDED Requirements
 
-### Requirement: Managed paths are declared explicitly
+### Requirement: The payload is a declared set of managed files
 
-jen SHALL declare, as data rather than as logic, the exact set of paths it owns in an installed project. The declaration SHALL name the six stage skills individually — `refine-epic`, `design-task`, `implement-task`, `review-task`, `test-task`, `deliver-task` — and root `AGENTS.md`. No path SHALL be treated as managed by pattern, glob, or directory sweep.
+jen SHALL declare, as data rather than as logic, the set of files it owns in an installed project. The declaration SHALL distinguish two kinds:
 
-Every path not named in the declaration is project-owned. jen SHALL NOT modify or delete a project-owned path after it is first written.
+- **Fixed paths** — a single known location jen always writes. Root `AGENTS.md` is one.
+- **Variable sets** — a group of files jen writes into a directory it shares with the project, where the membership of the group can change between versions. The six stage skills in `.claude/skills/` are one.
 
-#### Scenario: The declaration enumerates the payload
+Skills are one kind of managed file, not the only kind. The declaration SHALL NOT assume a managed file is a skill.
 
-- **WHEN** the managed-path declaration is read
-- **THEN** it lists exactly the six stage skills by name and root `AGENTS.md`
-- **AND** it contains no glob, wildcard, or directory-wide entry
+Every path not covered by the declaration is project-owned. jen SHALL NOT modify or delete a project-owned path after it is first written.
 
-#### Scenario: A project-authored skill is untouched
+#### Scenario: The declaration distinguishes fixed paths from variable sets
 
-- **WHEN** a project has authored `.claude/skills/deploy-service/SKILL.md`, which is not in the declaration
+- **WHEN** the payload declaration is read
+- **THEN** root `AGENTS.md` is declared as a fixed path
+- **AND** the six stage skills are declared as a variable set targeting `.claude/skills/`
+
+#### Scenario: A project-authored file outside the declaration is untouched
+
+- **WHEN** a project has authored `.claude/skills/deploy-service/SKILL.md`, which jen does not ship
 - **THEN** jen neither overwrites nor deletes it
 
 #### Scenario: Project scaffold is written once
@@ -24,14 +29,14 @@ Every path not named in the declaration is project-owned. jen SHALL NOT modify o
 
 ### Requirement: jen writes only to `.claude/`
 
-jen SHALL write skills to `.claude/skills/` and to no other assistant directory. jen SHALL NOT maintain a table of target directories, and SHALL NOT write byte-identical copies of a skill to more than one location.
+jen SHALL write into `.claude/` and no other assistant directory. jen SHALL NOT maintain a table of target directories, and SHALL NOT write byte-identical copies of a managed file to more than one location.
 
-Support for other assistants is the project's own concern, satisfied by a symlink from that assistant's directory to `.claude/skills`, which jen neither creates nor reads.
+Support for other assistants is the project's own concern, satisfied by a symlink from that assistant's directory to the corresponding `.claude/` path, which jen neither creates nor reads.
 
 #### Scenario: Only the Claude directory receives the payload
 
 - **WHEN** jen writes its payload into a project
-- **THEN** files are created under `.claude/skills/` only
+- **THEN** files are created under `.claude/` and at declared root paths only
 - **AND** no `.github/`, `.codex/`, or other assistant directory is created or modified
 
 #### Scenario: A symlinked assistant directory receives updates for free
@@ -40,47 +45,75 @@ Support for other assistants is the project's own concern, satisfied by a symlin
 - **THEN** the updated content is visible through the symlink
 - **AND** jen performed no additional write to do so
 
-### Requirement: Skills carry an ownership stamp
+### Requirement: Files in a variable set carry an ownership stamp
 
-Every skill jen ships SHALL carry, in its `SKILL.md` YAML frontmatter, a `metadata.author` field with the value `jen` and a `metadata.generatedBy` field holding the jen version that wrote it. Both fields are optional `metadata` under the Agent Skills standard, so a stamped skill SHALL remain a valid skill.
+Every file jen writes as part of a variable set SHALL carry a stamp marking it as jen's: the key `jen` with the value `true`, under `metadata` in the file's YAML frontmatter.
 
-The stamp SHALL be applied when the payload is staged, not stored in the repository's own working copies — the version is known only at pack time, and jen's own checkout is not a managed install.
+The stamp SHALL be a single namespaced key. Its presence is what denotes jen's ownership, so no companion author or version field is required, and the stamp SHALL be constant across releases — a value that changed per version would rewrite every managed file in every project on every release.
+
+Files declared as fixed paths SHALL NOT require a stamp. A fixed path is always written and can never be left orphaned, so it is never a deletion candidate.
+
+Every file jen ships as part of a variable set MUST be capable of carrying the stamp. A format with no frontmatter and no comment syntax — JSON in particular — SHALL NOT be shipped as part of a variable set.
+
+The stamp SHALL be applied when the payload is staged, not stored in the repository's own working copies, since jen's own checkout is not a managed install.
 
 #### Scenario: A staged skill is stamped
 
-- **WHEN** the payload is staged during `prepack` from a package at version `0.1.0`
-- **THEN** each staged `SKILL.md` frontmatter contains `author: jen` and `generatedBy: "0.1.0"`
+- **WHEN** the payload is staged during `prepack`
+- **THEN** each staged `SKILL.md` frontmatter contains `jen: true` under `metadata`
+
+#### Scenario: The stamp is stable across releases
+
+- **WHEN** the payload is staged at two different package versions with no change to a skill's content
+- **THEN** that skill's staged bytes are identical between the two
+
+#### Scenario: A fixed path carries no stamp
+
+- **WHEN** the staged `AGENTS.md` is read
+- **THEN** it contains no jen stamp
 
 #### Scenario: Working copies stay unstamped
 
 - **WHEN** the six stage skills in jen's own `.claude/skills/` are read
-- **THEN** none contains an `author` or `generatedBy` field
+- **THEN** none contains a jen stamp
 
 #### Scenario: A stamped skill remains valid
 
 - **WHEN** a stamped `SKILL.md` is parsed as an Agent Skill
 - **THEN** it parses successfully with its `name` and `description` intact
 
-### Requirement: Ownership is determined by the stamp
+### Requirement: Deletion is the stamp intersected with the shipped payload
 
-Whether jen may overwrite or delete a skill SHALL be determined solely by the presence of `metadata.author: jen` in that file, and never by a record stored outside it. jen SHALL NOT persist a manifest, ledger, or other state file recording what it has written.
+A file SHALL be deleted if and only if it carries jen's stamp and is absent from the payload jen currently ships. The stamp makes a file a deletion candidate; presence in the shipped payload spares it.
 
-Consequently, removing the `metadata.author` line from a skill transfers ownership of that file to the project, and jen SHALL thereafter leave it alone.
+This rule requires no record of what jen wrote previously — the stamps distributed across the files are that record. jen SHALL NOT persist a manifest, ledger, or other state file for this purpose.
+
+Consequently, removing the stamp from a file transfers ownership of it to the project, and jen SHALL thereafter leave it alone.
+
+#### Scenario: A skill jen no longer ships is removed
+
+- **WHEN** a project holds a stamped `.claude/skills/legacy-stage/SKILL.md` and the current payload does not include `legacy-stage`
+- **THEN** jen deletes it
+
+#### Scenario: A skill jen still ships is kept
+
+- **WHEN** a project holds a stamped `.claude/skills/design-task/SKILL.md` and the current payload includes `design-task`
+- **THEN** jen overwrites it rather than deleting it
+
+#### Scenario: An unstamped file is never deleted
+
+- **WHEN** a project holds an unstamped `.claude/skills/legacy-stage/SKILL.md` and the current payload does not include `legacy-stage`
+- **THEN** jen leaves it untouched
 
 #### Scenario: No state file is created
 
 - **WHEN** jen has written its payload into a project
-- **THEN** no `.jen/manifest.json` or equivalent state file exists
-
-#### Scenario: Ownership survives loss of external state
-
-- **WHEN** any directory outside `.claude/skills/` is deleted and jen runs again
-- **THEN** jen still correctly identifies which skills are its own, from the stamps alone
+- **THEN** no manifest or equivalent state file recording written paths exists
 
 #### Scenario: Removing the stamp claims the file
 
-- **WHEN** a project copies `design-task` to `design-task-custom` and deletes the `author: jen` line from the copy
-- **THEN** jen neither overwrites nor deletes `design-task-custom` on any subsequent run
+- **WHEN** a project copies a stage skill to a new name and deletes the stamp from the copy
+- **THEN** jen neither overwrites nor deletes that copy on any subsequent run
 
 ### Requirement: Root `AGENTS.md` is owned wholesale
 

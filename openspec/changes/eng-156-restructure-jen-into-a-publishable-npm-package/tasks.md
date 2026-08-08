@@ -7,21 +7,23 @@
 
 ## 2. Payload declaration
 
-- [ ] 2.1 Create `cli/payload.ts` exporting the six stage skill names (`refine-epic`, `design-task`, `implement-task`, `review-task`, `test-task`, `deliver-task`), the root `AGENTS.md` path, and the target directory `.claude`
-- [ ] 2.2 Export the stamp constants from the same module: the `author` value `jen` and the frontmatter key names
+- [ ] 2.1 Create `cli/payload.ts` declaring the payload as fixed paths versus variable sets — root `AGENTS.md` as a fixed path, and the six stage skills (`refine-epic`, `design-task`, `implement-task`, `review-task`, `test-task`, `deliver-task`) as a variable set targeting `.claude/skills/`. Model it so a managed file is not assumed to be a skill
+- [ ] 2.2 Export the stamp constant from the same module: the single key `jen` with value `true`, nested under `metadata`
 - [ ] 2.3 Add a test asserting the declaration names exactly six skills and contains no glob or wildcard entry
+- [ ] 2.4 Add a test asserting every variable-set member is a format that can carry a stamp — no JSON
 
 ## 3. Staging script
 
 - [ ] 3.1 Create `scripts/stage-payload.js` as plain Node ESM, importing the declaration from `dist/` (built first by `prepack`)
 - [ ] 3.2 Copy the six `SKILL.md` files to `dist/templates/skills/<name>/SKILL.md` and `AGENTS.md` to `dist/templates/AGENTS.md`
-- [ ] 3.3 Inject the stamp by inserting a `metadata` block immediately before the closing `---` of each skill's frontmatter, reading the version from `package.json` — text insertion, not a YAML round-trip
+- [ ] 3.3 Stamp variable-set members only, by inserting `metadata:` / `jen: true` immediately before the closing `---` of the frontmatter — text insertion, not a YAML round-trip. Fixed paths such as `AGENTS.md` are staged unstamped
 - [ ] 3.4 Fail loudly with a clear message if the `dist/` import is missing, rather than staging an unstamped or partial payload
 - [ ] 3.5 Wire `prepack` to run the build then the staging script, in that order
-- [ ] 3.6 Test that staged skills equal source plus stamp, byte for byte
+- [ ] 3.6 Test that staged skills equal source plus stamp, byte for byte, and that staged `AGENTS.md` equals source exactly
 - [ ] 3.7 Test that two consecutive staging runs produce byte-identical output
-- [ ] 3.8 Test that a stamped `SKILL.md` still parses as a valid Agent Skill with `name` and `description` intact
-- [ ] 3.9 Test that no path under `dist/templates/` is named for an assistant
+- [ ] 3.8 Test that staging at two different package versions produces identical bytes for unchanged content — the stamp carries no version
+- [ ] 3.9 Test that a stamped `SKILL.md` still parses as a valid Agent Skill with `name` and `description` intact
+- [ ] 3.10 Test that no path under `dist/templates/` is named for an assistant
 
 ## 4. CLI entry point
 
