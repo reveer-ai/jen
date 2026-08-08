@@ -1,13 +1,20 @@
-*
-!/.claude/
-!/.claude/**
-!/.gitignore
-!/.ignore
-!/AGENTS.md
-!/CLAUDE.md
-!/openspec/
-!/openspec/**
+# dependencies
+/node_modules/
+
+# build output: compiled CLI and the payload staged into dist/templates/ at pack time
+/dist/
+*.tgz
+
+# the governed project's sources, checked out here and never jen's to track
+/src/
+
+# regenerated locally by `openspec init` from the version we depend on. tracking these
+# re-vendors the frozen snapshot this repository just removed
+/.claude/skills/openspec-*/
+/.claude/commands/opsx/
 
 # per-install, never shared: MCP server ids differ from one install to the next
 /.claude/settings.local.json
->>>>>>> 52212e1 (ENG-135: implement workflow)
+
+# local agent scratch: embedded git repos, never part of the workflow
+/.claude/worktrees/

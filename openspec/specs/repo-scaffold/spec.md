@@ -3,30 +3,9 @@
 ## Purpose
 TBD - created by archiving change eng-131-initialize-jen. Update Purpose after archive.
 ## Requirements
-### Requirement: Tracking is default-deny with an explicit allowlist
-
-`.gitignore` SHALL ignore all paths (`*`) and then re-admit, by explicit negation, each path the repository owns. A path not named in the allowlist SHALL NOT be tracked.
-
-#### Scenario: A file jen owns is added
-
-- **WHEN** a file the repository owns is added and named in `.gitignore` as an exception
-- **THEN** git tracks it
-
-#### Scenario: A project adds its own file
-
-- **WHEN** a project working in a fork creates a file not named in the allowlist
-- **THEN** git ignores it
-- **AND** the project must admit it deliberately to track it
-
-#### Scenario: A new directory is introduced without being admitted
-
-- **WHEN** a change creates a directory but does not add a matching exception
-- **THEN** the directory exists on disk and git does not record it
-- **AND** the omission produces no error or warning
-
 ### Requirement: Ignored files stay visible to search tooling
 
-The repository SHALL carry an `.ignore` file that re-admits every path (`!*`) for editor and search tooling, counteracting the default-deny `.gitignore` for tools that honor ignore files when searching.
+The repository SHALL carry an `.ignore` file that re-admits every path (`!*`) for editor and search tooling, so that paths `.gitignore` excludes — the governed project's sources under `src/`, build output, and dependencies — stay readable to tools that honor ignore files when searching.
 
 #### Scenario: An agent searches the working tree
 

@@ -1,0 +1,36 @@
+{
+  "name": "@reveer/jen",
+  "version": "0.1.0",
+  "description": "The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed.",
+  "license": "UNLICENSED",
+  "private": false,
+  "type": "module",
+  "bin": {
+    "jen": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "stage-payload": "node scripts/stage-payload.js",
+    "test": "vitest run",
+    "prepare": "openspec init --tools claude --no-animation",
+    "prepack": "npm run build && node scripts/stage-payload.js"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "^1.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
