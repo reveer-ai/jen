@@ -22,6 +22,7 @@
     "typecheck": "tsc -p tsconfig.test.json",
     "stage-payload": "node scripts/stage-payload.js",
     "test": "vitest run",
+    "prepare": "openspec init --tools claude --no-animation",
     "prepack": "npm run build && node scripts/stage-payload.js"
   },
   "dependencies": {

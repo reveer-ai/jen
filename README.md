@@ -10,13 +10,9 @@ npm install
 
 The six stage skills work straight out of a clone — no build, no install, no init. They are the same files the package ships; editing one is editing a file.
 
-OpenSpec's own skills and commands are **not** vendored. They come from the version this package depends on:
+OpenSpec's own skills and commands are **not** vendored. `npm install` runs `openspec init` for you through `prepare`, writing `.claude/skills/openspec-*` and `.claude/commands/opsx/*` from the version in the lockfile. Both are gitignored — committing them re-vendors the frozen snapshot this repository deliberately dropped.
 
-```bash
-npx openspec init
-```
-
-That writes `.claude/skills/openspec-*` and `.claude/commands/opsx/*` locally. Both are gitignored — committing them re-vendors the frozen snapshot this repository deliberately dropped. Run `openspec init` once per clone.
+`prepare` rather than `postinstall` on purpose: `postinstall` fires for anyone installing jen as a dependency, and would run `openspec init` inside their project uninvited. `prepare` only runs for a local install here.
 
 ## Checks
 
