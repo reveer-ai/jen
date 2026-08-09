@@ -127,6 +127,24 @@ function refuse(io: Io, plan: Plan): number {
   return 1;
 }
 
+/**
+ * A run that cannot reach its own paths without leaving the project.
+ *
+ * Not a conflict, so `--force` does not apply: forcing means "that file is mine to
+ * replace", and nothing about a symlinked directory makes a write outside the project the
+ * right answer. Both commands refuse it, and neither writes the paths it *could* reach —
+ * a half-installed workflow is worse than an uninstalled one.
+ */
+function obstructed(io: Io, command: Command, plan: Plan): number {
+  io.err(`jen ${command}: ${plan.projectRoot} reaches managed paths through a symlink, and jen will not write through one.`);
+  for (const { target, ancestor } of plan.obstructions) {
+    io.err(`  ${target} — ${ancestor} is a symlink`);
+  }
+  io.err('Everything below the link belongs to wherever it points, which may be outside the project entirely.');
+  io.err('Nothing was written. Replace the link with a real directory and re-run.');
+  return 1;
+}
+
 function reportFailure(io: Io, command: Command, failure: ApplyFailure): number {
   for (const target of failure.completed.written) io.out(line('written', target));
   for (const target of failure.completed.removed) io.out(line('removed', target));
@@ -141,6 +159,7 @@ function install(command: Command, invocation: Invocation, io: Io, options: RunO
     templates: options.templates,
   });
 
+  if (plan.obstructions.length > 0) return obstructed(io, command, plan);
   if (command === 'init' && plan.conflicts.length > 0 && !invocation.force) return refuse(io, plan);
 
   let applied: Applied;
@@ -154,6 +173,12 @@ function install(command: Command, invocation: Invocation, io: Io, options: RunO
   // Delegation is reported alongside the writes rather than instead of them: the payload
   // has already landed by this point, and a failure here must not hide that.
   const notes: string[] = [];
+  // A symlink quietly becoming a regular file is the one write worth naming: the project
+  // put it there on purpose, and the report is the only place it finds out.
+  for (const write of plan.writes) {
+    if (write.symlink) notes.push(`${write.target} was a symlink, and is now a regular file jen owns`);
+  }
+
   let delegation: Error | undefined;
   if (command === 'init') {
     try {

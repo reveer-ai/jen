@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   isStampable,
   memberShape,
-  memberSlot,
   PAYLOAD,
   payloadFiles,
   SCAFFOLD,
@@ -75,14 +74,24 @@ describe('the payload declaration', () => {
     }
   });
 
-  it('exposes each variable set\'s member shape and slot', () => {
+  it('exposes each variable set\'s member shape, one slot below its target directory', () => {
     expect(memberShape(stageSkills!)).toBe('SKILL.md');
-    expect(stageSkills!.members.map((member) => memberSlot(stageSkills!, member))).toEqual([...STAGE_SKILLS]);
+    expect(stageSkills!.members.map((member) => member.target)).toEqual(
+      STAGE_SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
+    );
   });
 
   it('will not guess a shape it cannot derive', () => {
     const empty: VariableSet = { kind: 'variable-set', name: 'nothing', targetDir: '.claude/skills', members: [] };
     expect(() => memberShape(empty)).toThrow(/no members/);
+
+    const slotless: VariableSet = {
+      ...empty,
+      members: [
+        { source: 'a/SKILL.md', staged: 'a/SKILL.md', target: '.claude/skills/SKILL.md', format: 'markdown' },
+      ],
+    };
+    expect(() => memberShape(slotless)).toThrow(/live in a slot below it/);
 
     const mixed: VariableSet = {
       ...empty,

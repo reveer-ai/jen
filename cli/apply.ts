@@ -6,10 +6,18 @@
  * rollback — a run that fails partway reports what it completed and exits non-zero, and
  * the next run converges because the planner sees whatever already landed.
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { resolveInProject, type Plan } from './plan.js';
+import { containedPath, type Plan } from './plan.js';
+
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
 
 export interface Applied {
   /** Project-relative paths written, in the order they were written. */
@@ -37,8 +45,12 @@ export function apply(plan: Plan): Applied {
   try {
     for (const write of [...plan.writes, ...plan.scaffold]) {
       at = write.target;
-      const path = resolveInProject(plan.projectRoot, write.target);
+      const path = containedPath(plan.projectRoot, write.target);
       mkdirSync(dirname(path), { recursive: true });
+      // A symlink at a managed path is replaced, never written through. `writeFileSync`
+      // follows one, and the file it lands on is under no obligation to be jen's — or
+      // even to be in the project.
+      if (isSymlink(path)) rmSync(path, { force: true });
       writeFileSync(path, write.contents);
       completed.written.push(write.target);
     }
@@ -47,7 +59,7 @@ export function apply(plan: Plan): Applied {
       at = target;
       // The file, never the directory holding it: an emptied slot may still hold files
       // the project authored, and an empty directory is not jen's to remove.
-      rmSync(resolveInProject(plan.projectRoot, target));
+      rmSync(containedPath(plan.projectRoot, target));
       completed.removed.push(target);
     }
   } catch (error) {

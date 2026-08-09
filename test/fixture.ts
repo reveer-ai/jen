@@ -5,7 +5,7 @@
  * own repository is permanently on the easy path and proves nothing about reconciliation.
  * The divergence a real project accumulates has to be supplied here instead.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 
@@ -32,6 +32,34 @@ export function writeProject(root: string, files: Record<string, string>): strin
 
 export function project(files: Record<string, string> = {}, label = 'project'): string {
   return writeProject(mkdtempSync(join(tmpdir(), `jen-${label}-`)), files);
+}
+
+/**
+ * A project with a sibling directory it can reach out into.
+ *
+ * The escapes worth testing all need somewhere to escape *to*, and a single-root fixture
+ * has nowhere: a link pointing at the temp directory's own parent would put the tests in
+ * each other's way. The pair keeps every case's blast radius inside one fixture.
+ */
+export function neighbours(
+  label: string,
+  files: Record<string, string> = {},
+  outsideFiles: Record<string, string> = {},
+): { root: string; outside: string } {
+  const base = mkdtempSync(join(tmpdir(), `jen-${label}-`));
+  mkdirSync(join(base, 'project'));
+  mkdirSync(join(base, 'outside'));
+  return {
+    root: writeProject(join(base, 'project'), files),
+    outside: writeProject(join(base, 'outside'), outsideFiles),
+  };
+}
+
+/** A symlink at a project-relative path, pointing wherever `to` says. */
+export function link(root: string, at: string, to: string): void {
+  const path = join(root, at);
+  mkdirSync(dirname(path), { recursive: true });
+  symlinkSync(to, path);
 }
 
 /**

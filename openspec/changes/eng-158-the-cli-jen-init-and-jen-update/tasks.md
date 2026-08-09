@@ -55,8 +55,17 @@
 - [x] 7.7 Idempotency: run each command twice and assert the second run reports nothing to do and changes no file's content or mtime
 - [x] 7.8 Non-interactivity: run both commands with stdin closed and assert neither blocks
 
-## 8. Close out
+## 8. The project boundary (review)
 
-- [x] 8.1 Run the full suite, build, and typecheck
-- [x] 8.2 Record in `cli/AGENTS.md` what a future session would otherwise rediscover: the OpenSpec `exports` gotcha, and why the planner must stay write-free
-- [x] 8.3 `openspec validate eng-158-the-cli-jen-init-and-jen-update --strict`
+- [x] 8.1 Classify managed paths with `lstat` rather than `existsSync`, so a symlink — dangling included — reads as content occupying the path instead of as an absence
+- [x] 8.2 Replace a symlink at a managed path in the executor rather than writing through it
+- [x] 8.3 Treat a symlinked directory between the root and a managed path as out of bounds: no write, no deletion candidate, and a refusal `--force` does not override
+- [x] 8.4 Route every executor path through a containment check that covers both the lexical escape and the symlinked ancestor
+- [x] 8.5 Grow the fixture with the escapes — a link inside the project, one pointing out, a dangling one, and a symlinked target directory — and assert nothing outside the project is written or deleted
+- [x] 8.6 Drop `memberSlot`, folding its depth check into `memberShape`, which is what reconciliation actually consumes
+
+## 9. Close out
+
+- [x] 9.1 Run the full suite, build, and typecheck
+- [x] 9.2 Record in `cli/AGENTS.md` what a future session would otherwise rediscover: the OpenSpec `exports` gotcha, why the planner must stay write-free, and why the project boundary cannot be a string comparison
+- [x] 9.3 `openspec validate eng-158-the-cli-jen-init-and-jen-update --strict`

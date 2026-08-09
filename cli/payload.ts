@@ -176,29 +176,28 @@ function withinTargetDir(set: VariableSet, file: ManagedFile): string[] {
 }
 
 /**
- * The directory a member occupies within its set's target directory — `design-task` for
- * `.claude/skills/design-task/SKILL.md`. The slot is what varies between members; it is
- * also what a project names its own files after, which is why the set is shared rather
- * than owned outright.
- */
-export function memberSlot(set: VariableSet, file: ManagedFile): string {
-  const segments = withinTargetDir(set, file);
-  if (segments.length < 2) {
-    throw new Error(`${file.target} sits directly in ${set.targetDir}; members of ${set.name} live in a slot below it`);
-  }
-  return segments[0]!;
-}
-
-/**
  * The path every member of a set occupies below its slot — `SKILL.md` for the stage
- * skills. Reconciliation derives its search from this rather than hardcoding a filename,
- * so a future variable set is data here and not a code change.
+ * skills, where the slot (`design-task`) is what varies between members. Reconciliation
+ * derives its search from this rather than hardcoding a filename, so a future variable
+ * set is data here and not a code change.
  *
  * Derived from the members themselves, so a set with none has no shape to derive and
- * fails loudly rather than silently reconciling nothing.
+ * fails loudly rather than silently reconciling nothing. A member sitting directly in the
+ * target directory fails for the same reason: it has no slot, so its shape would come out
+ * empty and reconciliation would go looking for directories instead of files.
  */
 export function memberShape(set: VariableSet): string {
-  const shapes = new Set(set.members.map((file) => withinTargetDir(set, file).slice(1).join('/')));
+  const shapes = new Set(
+    set.members.map((file) => {
+      const segments = withinTargetDir(set, file);
+      if (segments.length < 2) {
+        throw new Error(
+          `${file.target} sits directly in ${set.targetDir}; members of ${set.name} live in a slot below it`,
+        );
+      }
+      return segments.slice(1).join('/');
+    }),
+  );
   if (shapes.size === 0) {
     throw new Error(`variable set ${set.name} declares no members, so its shape cannot be derived`);
   }

@@ -29,6 +29,19 @@ export interface PlannedWrite {
   contents: Buffer;
   /** Whether something already occupies the path. */
   replaces: boolean;
+  /**
+   * Whether that something is a symlink, to be replaced rather than written through. The
+   * link may point anywhere at all, so following it is how a write leaves the project.
+   */
+  symlink: boolean;
+}
+
+/** A managed path jen cannot reach without leaving the project on the way. */
+export interface Obstruction {
+  /** The managed path. */
+  target: string;
+  /** The project-relative directory between the root and it that is a symlink. */
+  ancestor: string;
 }
 
 export interface Plan {
@@ -47,6 +60,12 @@ export interface Plan {
    * caller decides whether that is a refusal or an overwrite.
    */
   conflicts: string[];
+  /**
+   * Managed paths that lie behind a symlinked directory. Not a conflict — no amount of
+   * forcing makes writing outside the project the right answer — so the caller's only
+   * move is to refuse the run.
+   */
+  obstructions: Obstruction[];
 }
 
 export interface PlanOptions {
@@ -85,12 +104,75 @@ export function resolveInProject(projectRoot: string, target: string): string {
   return path;
 }
 
-function isRegularFile(path: string): boolean {
+/** What occupies a path, as the path itself reports it — a symlink is never its target. */
+type EntryKind = 'absent' | 'file' | 'directory' | 'symlink' | 'other';
+
+/**
+ * Classifies a path without following it.
+ *
+ * Every check of a path in the project goes through here rather than `existsSync`, which
+ * follows links: a dangling symlink at a managed path answers "absent" to `existsSync`,
+ * and a write onto it then creates the file wherever the link pointed — outside the
+ * project, silently, and without ever registering as a conflict.
+ */
+function entryKind(path: string): EntryKind {
+  let stats;
   try {
-    return lstatSync(path).isFile();
+    stats = lstatSync(path);
   } catch {
-    return false;
+    return 'absent';
   }
+  if (stats.isSymbolicLink()) return 'symlink';
+  if (stats.isFile()) return 'file';
+  if (stats.isDirectory()) return 'directory';
+  return 'other';
+}
+
+function isRegularFile(path: string): boolean {
+  return entryKind(path) === 'file';
+}
+
+/**
+ * The first segment of a project-relative directory path that is a symlink, walking down
+ * from the root — or undefined when every one of them is a real directory.
+ */
+function symlinkedSegment(projectRoot: string, path: string): string | undefined {
+  let walked = '';
+  for (const segment of path.split('/')) {
+    walked = walked === '' ? segment : `${walked}/${segment}`;
+    if (entryKind(join(projectRoot, walked)) === 'symlink') return walked;
+  }
+  return undefined;
+}
+
+/**
+ * The symlinked directory standing between the project root and `target`, if there is one.
+ *
+ * The leaf is deliberately excluded: jen owns the managed path itself, so a link sitting
+ * *at* one is something to replace. A link on the way *to* one is different — every
+ * segment below it belongs to wherever the link points, and jen has no claim there.
+ */
+export function symlinkedAncestor(projectRoot: string, target: string): string | undefined {
+  const segments = target.split('/');
+  segments.pop();
+  return segments.length === 0 ? undefined : symlinkedSegment(projectRoot, segments.join('/'));
+}
+
+/**
+ * Resolves a project-relative path for writing, refusing anything that escapes the
+ * project root — lexically, or by way of a symlinked directory on the way to it.
+ *
+ * {@link resolveInProject} compares resolved strings, which says nothing about what those
+ * components are on disk. The executor re-checks both here, so a plan that went stale
+ * between the two halves still cannot write outside.
+ */
+export function containedPath(projectRoot: string, target: string): string {
+  const path = resolveInProject(projectRoot, target);
+  const ancestor = symlinkedAncestor(projectRoot, target);
+  if (ancestor !== undefined) {
+    throw new Error(`refusing to touch ${target}: ${ancestor} is a symlink, and writing through it would leave the project`);
+  }
+  return path;
 }
 
 /**
@@ -104,6 +186,11 @@ function isRegularFile(path: string): boolean {
  */
 export function reconcileCandidates(projectRoot: string, set: VariableSet): string[] {
   const shape = memberShape(set);
+
+  // The same call as for a symlinked slot, one level up: `readdirSync` follows a link on
+  // the target directory itself before any of the per-entry checks below apply, so
+  // without this a deletion candidate could be a file outside the project entirely.
+  if (symlinkedSegment(projectRoot, set.targetDir) !== undefined) return [];
 
   let entries;
   try {
@@ -156,19 +243,31 @@ export function planInstall(projectRoot: string, options: PlanOptions): Plan {
     deletions: [],
     scaffold: [],
     conflicts: [],
+    obstructions: [],
   };
 
   for (const { file } of payloadFiles()) {
     const contents = stagedContents(templates, file);
     const path = resolveInProject(projectRoot, file.target);
-    const present = existsSync(path);
 
-    if (present && isRegularFile(path) && readFileSync(path).equals(contents)) {
+    const ancestor = symlinkedAncestor(projectRoot, file.target);
+    if (ancestor !== undefined) {
+      plan.obstructions.push({ target: file.target, ancestor });
+      continue;
+    }
+
+    const kind = entryKind(path);
+    if (kind === 'file' && readFileSync(path).equals(contents)) {
       plan.current.push(file.target);
       continue;
     }
 
-    plan.writes.push({ target: file.target, contents, replaces: present });
+    plan.writes.push({
+      target: file.target,
+      contents,
+      replaces: kind !== 'absent',
+      symlink: kind === 'symlink',
+    });
   }
 
   const shipped = new Set(payloadFiles().map(({ file }) => file.target));
@@ -191,8 +290,20 @@ export function planInstall(projectRoot: string, options: PlanOptions): Plan {
 
   if (options.scaffold) {
     for (const file of SCAFFOLD) {
-      if (existsSync(resolveInProject(projectRoot, file.target))) continue;
-      plan.scaffold.push({ target: file.target, contents: stagedContents(templates, file), replaces: false });
+      const ancestor = symlinkedAncestor(projectRoot, file.target);
+      if (ancestor !== undefined) {
+        plan.obstructions.push({ target: file.target, ancestor });
+        continue;
+      }
+      // Anything at all occupying the path means the project has one: a scaffold file is
+      // written once and never again, and a symlink the project put there is its answer.
+      if (entryKind(resolveInProject(projectRoot, file.target)) !== 'absent') continue;
+      plan.scaffold.push({
+        target: file.target,
+        contents: stagedContents(templates, file),
+        replaces: false,
+        symlink: false,
+      });
     }
   }
 

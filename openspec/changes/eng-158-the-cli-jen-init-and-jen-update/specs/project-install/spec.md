@@ -141,6 +141,11 @@ The search for stamped files SHALL be confined to the target directories the pay
 
 Every filesystem write, replacement, or deletion either command performs SHALL fall within the managed paths declared by `managed-payload` or the scaffold paths named above. No other path in the project SHALL be created, modified, or removed.
 
+This boundary SHALL be enforced against the filesystem rather than against the path as written, because a symlink turns an in-bounds path into a write anywhere at all. Accordingly:
+
+- A symlink occupying a managed path SHALL be replaced with a regular file rather than written through. It SHALL count as content already at that path, so `jen init` treats a symlinked fixed path as a conflict.
+- When a symlinked directory lies between the project root and a managed path, neither command SHALL write to or delete anything below it, and neither SHALL treat anything below it as a deletion candidate. The run SHALL instead report the link and exit non-zero having written nothing at all — including the managed paths it could have reached. `--force` SHALL NOT override this: it grants permission to replace a file jen owns wholesale, not to write outside the project.
+
 The project's `.gitignore` SHALL NOT be written or modified. jen SHALL instead report any managed path that the project's ignore rules exclude, because a managed file inside an ignored path is absent from a fresh clone and invisible to review.
 
 #### Scenario: An unrelated project file is untouched
@@ -157,6 +162,30 @@ The project's `.gitignore` SHALL NOT be written or modified. jen SHALL instead r
 
 - **WHEN** a project's ignore rules exclude `.claude/`
 - **THEN** the command reports that a managed path is ignored
+
+#### Scenario: A symlink at a managed path is replaced, not followed
+
+- **WHEN** a project's root `AGENTS.md` is a symlink to its own `CLAUDE.md` and `jen update` runs
+- **THEN** `AGENTS.md` is a regular file holding the shipped content
+- **AND** `CLAUDE.md` is unchanged
+
+#### Scenario: A symlink pointing outside the project is not written through
+
+- **WHEN** a project's root `AGENTS.md` is a symlink to a file outside the project root and `jen update` runs
+- **THEN** the file outside the project is unchanged
+
+#### Scenario: A dangling symlink at a fixed path is a conflict, not an absence
+
+- **WHEN** a project's root `AGENTS.md` is a symlink to a path outside the project that does not exist, and `jen init` runs without `--force`
+- **THEN** adoption is refused
+- **AND** no file is created outside the project
+
+#### Scenario: A symlinked target directory blocks the run
+
+- **WHEN** a project's `.claude/skills` is a symlink to a directory outside the project holding a stamped file, and `jen update` runs
+- **THEN** the command reports the symlink and exits non-zero
+- **AND** no managed file is written, in the project or outside it
+- **AND** the stamped file outside the project is not deleted
 
 ### Requirement: Both commands are non-interactive and idempotent
 

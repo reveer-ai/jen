@@ -28,6 +28,17 @@ The reason is the refusal path: `jen init` on a project that already holds a fix
 
 Idempotency and the run's report both fall out of the same split: the report is the plan rendered, and a second run is a plan with an empty write set.
 
+## The project boundary is physical, not lexical
+
+Comparing resolved path *strings* against the project root proves nothing: `existsSync`, `readdirSync`, `mkdirSync`, and `writeFileSync` all follow symlinks, so an in-bounds path can name a write anywhere on the filesystem. Adopters really do symlink these paths — `AGENTS.md → CLAUDE.md` is a common one, and a shared `.claude` is not exotic.
+
+Two rules, and they are not the same rule:
+
+- **A link *at* a managed path** is content the project put there, and jen owns the path — so `apply` unlinks before writing, and the planner counts it as present (making a symlinked fixed path a conflict for `init`). Note the dangling case: `existsSync` follows a dead link and answers *false*, which is why every check of a project path in `plan.ts` goes through `entryKind`/`lstat` and never `existsSync`.
+- **A link *on the way to* one** is somewhere else's directory, and everything below it belongs to whatever it points at. The run refuses outright — both commands, `--force` included, writing not even the paths it could have reached.
+
+`containedPath` enforces both in the executor, so a hand-built or stale plan cannot get around them either. Anything new that touches the filesystem goes through it rather than `resolveInProject`.
+
 ## Resolving the OpenSpec binary goes through the bare specifier
 
 OpenSpec's `package.json` declares `exports` with only `"."`, so the obvious first attempt fails:

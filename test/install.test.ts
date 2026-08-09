@@ -1,12 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
 import { payloadFiles, SCAFFOLD, STAGE_SKILLS } from '../cli/payload.js';
 import { hasStamp } from '../cli/stamp.js';
-import { changed, messyProject, project, snapshot, touched, writeProject } from './fixture.js';
+import { changed, link, messyProject, neighbours, project, snapshot, stamped, touched, writeProject } from './fixture.js';
 import { stageInto } from './helpers.js';
 
 let staged: string;
@@ -262,6 +262,78 @@ describe('running twice', () => {
     expect(second.code, second.err.join('\n')).toBe(0);
     expect(second.out.join('\n')).toContain('nothing to do');
     expect(touched(before, snapshot(root))).toEqual([]);
+  });
+});
+
+describe('the project boundary', () => {
+  it('replaces an AGENTS.md symlinked to the project\'s own CLAUDE.md, leaving that file alone', () => {
+    // The convention adopters actually use, and jen's own repository carries the mirror
+    // image of it. Following the link would replace the project's CLAUDE.md wholesale.
+    const root = project({ 'CLAUDE.md': '# How we work here\n' }, 'claude-link');
+    link(root, 'AGENTS.md', 'CLAUDE.md');
+
+    const result = jen(['update'], root);
+
+    expect(result.code, result.err.join('\n')).toBe(0);
+    expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe('# How we work here\n');
+    expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe(shipped('AGENTS.md'));
+    expect(lstatSync(join(root, 'AGENTS.md')).isSymbolicLink()).toBe(false);
+    expect(result.out.join('\n')).toContain('AGENTS.md was a symlink');
+  });
+
+  it('does not write through a managed path symlinked outside the project', () => {
+    const { root, outside } = neighbours('link-out', {}, { 'notes.md': 'Belongs to nobody here.\n' });
+    link(root, 'AGENTS.md', join(outside, 'notes.md'));
+
+    const result = jen(['update'], root);
+
+    expect(result.code, result.err.join('\n')).toBe(0);
+    expect(readFileSync(join(outside, 'notes.md'), 'utf8')).toBe('Belongs to nobody here.\n');
+    expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe(shipped('AGENTS.md'));
+  });
+
+  it('does not create a file outside the project through a dangling symlink', () => {
+    // `existsSync` follows the dead link and answers false, so an existence-based guard
+    // never sees the conflict at all — the refusal has to be blind to nothing.
+    const { root, outside } = neighbours('dangling-out');
+    link(root, 'AGENTS.md', join(outside, 'never-created.md'));
+
+    const result = jen(['init'], root);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('AGENTS.md');
+    expect(existsSync(join(outside, 'never-created.md'))).toBe(false);
+  });
+
+  it('refuses when a symlinked directory stands between the root and a managed path', () => {
+    const { root, outside } = neighbours(
+      'link-dir',
+      { 'openspec/config.yaml': 'schema: spec-driven\n' },
+      { 'skills/legacy-stage/SKILL.md': stamped('legacy-stage') },
+    );
+    link(root, '.claude/skills', join(outside, 'skills'));
+
+    const result = jen(['update'], root);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toMatch(/symlink/i);
+    expect(result.err.join('\n')).toContain('.claude/skills');
+
+    // nothing written into the linked directory, and nothing deleted out of it
+    expect(existsSync(join(outside, 'skills/design-task/SKILL.md'))).toBe(false);
+    expect(existsSync(join(outside, 'skills/legacy-stage/SKILL.md'))).toBe(true);
+    // and not a partial install of the paths it could have reached
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(false);
+  });
+
+  it('will not let --force write through a symlinked directory either', () => {
+    const { root, outside } = neighbours('link-dir-force');
+    link(root, '.claude', join(outside, 'dotclaude'));
+
+    const result = jen(['init', '--force'], root);
+
+    expect(result.code).toBe(1);
+    expect(existsSync(join(outside, 'dotclaude/skills'))).toBe(false);
   });
 });
 
