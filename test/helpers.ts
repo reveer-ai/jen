@@ -25,15 +25,9 @@ export function trackedFiles(): string[] {
   return run('git', ['ls-files']).split('\n').filter(Boolean);
 }
 
-/**
- * The raw YAML frontmatter block, or `null` when the file has none. Deliberately a scan
- * rather than a parser — the same thing a skill loader does to find `name`.
- */
-export function frontmatterOf(content: string): string | null {
-  if (!content.startsWith('---\n')) return null;
-  const close = content.indexOf('\n---\n', 3);
-  return close === -1 ? null : content.slice(4, close + 1);
-}
+// The CLI reads stamps back with this, so the tests scan frontmatter the same way the
+// shipped code does rather than keeping a second idea of what frontmatter is.
+export { frontmatterOf } from '../cli/stamp.js';
 
 /** Top-level scalar keys of a frontmatter block, e.g. `name`, mapped to their values. */
 export function frontmatterKeys(frontmatter: string): Record<string, string> {

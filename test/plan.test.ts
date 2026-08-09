@@ -1,0 +1,230 @@
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import { apply } from '../cli/apply.js';
+import { PAYLOAD, STAGE_SKILLS, memberShape, type VariableSet } from '../cli/payload.js';
+import { planInstall, reconcileCandidates, stagedPayloadDir, touchedPaths, type Plan } from '../cli/plan.js';
+import { changed, link, messyProject, neighbours, project, snapshot, stamped } from './fixture.js';
+import { stageInto } from './helpers.js';
+
+const skills = PAYLOAD.find((group): group is VariableSet => group.kind === 'variable-set')!;
+
+let staged: string;
+
+beforeAll(() => {
+  staged = stageInto('plan');
+});
+
+describe('the staged payload', () => {
+  it('is located relative to the module, and says so when it is missing', () => {
+    // Running from source there is no `templates/` beside the module — the same shape as
+    // an install straight from a git URL, where `prepack` never ran.
+    expect(() => stagedPayloadDir()).toThrow(/staged payload/);
+    expect(() => stagedPayloadDir()).toThrow(/registry/);
+  });
+});
+
+describe('reconciliation candidates', () => {
+  it('derives the shape from the declaration rather than hardcoding it', () => {
+    expect(memberShape(skills)).toBe('SKILL.md');
+  });
+
+  it('finds every location the set could have written, and nothing else', () => {
+    const root = messyProject(staged);
+    expect(reconcileCandidates(root, skills)).toEqual([
+      '.claude/skills/deploy-service/SKILL.md',
+      '.claude/skills/design-task-copy/SKILL.md',
+      '.claude/skills/design-task/SKILL.md',
+      '.claude/skills/legacy-stage/SKILL.md',
+    ]);
+  });
+
+  it('never considers a path deeper than the set writes, or beside it', () => {
+    const root = messyProject(staged);
+    const candidates = reconcileCandidates(root, skills);
+
+    expect(candidates).not.toContain('.claude/skills/team/nested/SKILL.md');
+    expect(candidates).not.toContain('.claude/skills/notes/README.md');
+    expect(candidates).not.toContain('docs/SKILL.md');
+  });
+
+  it('is empty when the target directory does not exist', () => {
+    expect(reconcileCandidates(project({}, 'bare'), skills)).toEqual([]);
+  });
+
+  it('is empty when the target directory is a symlink — its contents are not the project\'s', () => {
+    const { root, outside } = neighbours('linked-dir', {}, { 'skills/legacy-stage/SKILL.md': stamped('legacy-stage') });
+    link(root, '.claude/skills', join(outside, 'skills'));
+
+    expect(reconcileCandidates(root, skills)).toEqual([]);
+  });
+});
+
+describe('the planner', () => {
+  it('writes nothing — the tree is byte-identical afterward', () => {
+    const root = messyProject(staged);
+    const before = snapshot(root);
+
+    planInstall(root, { scaffold: true, templates: staged });
+
+    expect(changed(before, snapshot(root))).toEqual([]);
+  });
+
+  it('classifies each managed path as a write or already current', () => {
+    const root = messyProject(staged);
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+
+    // the hand-edited skill and the project's own AGENTS.md differ; the other five
+    // skills are absent, which is also a write
+    expect(plan.writes.filter((write) => write.replaces).map((write) => write.target)).toEqual([
+      'AGENTS.md',
+      '.claude/skills/design-task/SKILL.md',
+    ]);
+    expect(plan.writes).toHaveLength(7);
+    expect(plan.current).toEqual([]);
+  });
+
+  it('reports nothing to do for a project that is already current', () => {
+    const root = messyProject(staged);
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+    expect(plan.writes).toEqual([]);
+    expect(plan.deletions).toEqual([]);
+    expect(plan.current).toHaveLength(7);
+  });
+
+  it('plans the deletion of a stamped file this version no longer ships, and only that', () => {
+    const plan = planInstall(messyProject(staged), { scaffold: false, templates: staged });
+    expect(plan.deletions).toEqual(['.claude/skills/legacy-stage/SKILL.md']);
+  });
+
+  it('names an existing, differing fixed path as a conflict', () => {
+    const plan = planInstall(messyProject(staged), { scaffold: false, templates: staged });
+    expect(plan.conflicts).toEqual(['AGENTS.md']);
+  });
+
+  it('does not call an identical fixed path a conflict', () => {
+    const root = project({ 'AGENTS.md': readFileSync(join(staged, 'AGENTS.md'), 'utf8') }, 'same-agents');
+    const plan = planInstall(root, { scaffold: true, templates: staged });
+
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.current).toEqual(['AGENTS.md']);
+  });
+
+  it('classifies a symlink at a managed path as something occupying it, not as absent', () => {
+    const { root, outside } = neighbours('linked-leaf', {}, { 'notes.md': 'The neighbour wrote this.\n' });
+    link(root, 'AGENTS.md', join(outside, 'notes.md'));
+
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+    const agents = plan.writes.find((write) => write.target === 'AGENTS.md');
+
+    expect(agents?.replaces).toBe(true);
+    expect(agents?.symlink).toBe(true);
+    // and therefore a conflict `init` has to surface, rather than a silent overwrite of
+    // whatever sits at the other end
+    expect(plan.conflicts).toEqual(['AGENTS.md']);
+  });
+
+  it('classifies a dangling symlink the same way — `existsSync` would call it absent', () => {
+    const { root, outside } = neighbours('dangling');
+    link(root, 'AGENTS.md', join(outside, 'never-created.md'));
+
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+
+    expect(plan.writes.find((write) => write.target === 'AGENTS.md')?.symlink).toBe(true);
+    expect(plan.conflicts).toEqual(['AGENTS.md']);
+  });
+
+  it('names a managed path behind a symlinked directory as an obstruction, and plans no write for it', () => {
+    const { root, outside } = neighbours('linked-parent');
+    link(root, '.claude', join(outside, 'dotclaude'));
+
+    const plan = planInstall(root, { scaffold: true, templates: staged });
+
+    expect(plan.obstructions.map(({ target }) => target)).toEqual([
+      ...STAGE_SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
+      '.claude/settings.json',
+    ]);
+    expect(plan.obstructions.every(({ ancestor }) => ancestor === '.claude')).toBe(true);
+    expect(touchedPaths(plan)).toEqual(['AGENTS.md', 'registry.yaml']);
+  });
+
+  it('plans the scaffold only for absent paths, and only when asked', () => {
+    const empty = project({}, 'empty');
+    expect(planInstall(empty, { scaffold: true, templates: staged }).scaffold.map((w) => w.target)).toEqual([
+      'registry.yaml',
+      '.claude/settings.json',
+    ]);
+    expect(planInstall(empty, { scaffold: false, templates: staged }).scaffold).toEqual([]);
+
+    const filled = messyProject(staged);
+    expect(planInstall(filled, { scaffold: true, templates: staged }).scaffold).toEqual([]);
+  });
+});
+
+describe('the executor', () => {
+  it('touches exactly the paths the plan named', () => {
+    const root = messyProject(staged);
+    const before = snapshot(root);
+    const plan = planInstall(root, { scaffold: true, templates: staged });
+
+    apply(plan);
+
+    expect(changed(before, snapshot(root)).sort()).toEqual(touchedPaths(plan).sort());
+  });
+
+  it('leaves an emptied slot directory in place — it may hold the project\'s own files', () => {
+    const root = project(
+      {
+        '.claude/skills/legacy-stage/SKILL.md': stamped('legacy-stage'),
+        '.claude/skills/legacy-stage/reference.md': 'Notes the project keeps here.\n',
+      },
+      'emptied',
+    );
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+    apply(plan);
+
+    const after = snapshot(root);
+    expect(after.has('.claude/skills/legacy-stage/SKILL.md')).toBe(false);
+    expect(after.get('.claude/skills/legacy-stage/reference.md')?.content).toBe('Notes the project keeps here.\n');
+  });
+
+  it('refuses a target that escapes the project root', () => {
+    const root = project({}, 'escape');
+    expect(() => apply(handBuilt(root, '../escaped.md'))).toThrow(/outside/);
+  });
+
+  it('refuses a target that escapes through a symlinked directory', () => {
+    const { root, outside } = neighbours('escape-link');
+    link(root, 'shared', outside);
+
+    expect(() => apply(handBuilt(root, 'shared/escaped.md'))).toThrow(/symlink/);
+    expect(existsSync(join(outside, 'escaped.md'))).toBe(false);
+  });
+
+  it('replaces a symlink at a managed path rather than writing through it', () => {
+    const { root, outside } = neighbours('replace-link', {}, { 'notes.md': 'The neighbour wrote this.\n' });
+    link(root, 'AGENTS.md', join(outside, 'notes.md'));
+
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+
+    expect(lstatSync(join(root, 'AGENTS.md')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe(readFileSync(join(staged, 'AGENTS.md'), 'utf8'));
+    expect(readFileSync(join(outside, 'notes.md'), 'utf8')).toBe('The neighbour wrote this.\n');
+  });
+});
+
+/** A plan nobody planned — the executor's guards have to hold against one anyway. */
+function handBuilt(projectRoot: string, target: string): Plan {
+  return {
+    projectRoot,
+    writes: [{ target, contents: Buffer.from('nope'), replaces: false, symlink: false }],
+    current: [],
+    deletions: [],
+    scaffold: [],
+    conflicts: [],
+    obstructions: [],
+  };
+}

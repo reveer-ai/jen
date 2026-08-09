@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { payloadFiles } from '../cli/payload.js';
+import { stagedFiles } from '../cli/payload.js';
 import { readRepoFile, run } from './helpers.js';
 
 const manifest = JSON.parse(readRepoFile('package.json')) as {
@@ -57,8 +57,17 @@ describe('the packed tarball', () => {
 
   it('carries the compiled CLI entry and all of the staged payload', () => {
     expect(contents).toContain('dist/index.js');
-    for (const { file } of payloadFiles()) {
+    for (const { file } of stagedFiles()) {
       expect(contents).toContain(`dist/templates/${file.staged}`);
+    }
+  });
+
+  it('names no assistant in the staged tree it ships', () => {
+    const assistantDirs = ['.claude', '.github', '.codex', '.opencode', '.cursor', '.agents'];
+    for (const path of contents.filter((entry) => entry.startsWith('dist/templates/'))) {
+      for (const segment of path.split('/')) {
+        expect(assistantDirs, `${path} names an assistant`).not.toContain(segment);
+      }
     }
   });
 

@@ -74,7 +74,7 @@ function stampFrontmatter(content, sourcePath, stamp) {
 }
 
 const { out } = parseArgs(process.argv.slice(2));
-const { PAYLOAD, STAGED_PAYLOAD_DIR, STAMP_FRONTMATTER, isStampable, payloadFiles } = await loadDeclaration();
+const { PAYLOAD, SCAFFOLD, STAGED_PAYLOAD_DIR, STAMP_FRONTMATTER, isStampable, stagedFiles } = await loadDeclaration();
 
 const outDir = out
   ? isAbsolute(out)
@@ -86,7 +86,9 @@ const outDir = out
 // linger in the staged tree and ship.
 await rm(outDir, { recursive: true, force: true });
 
-for (const { file, stamped } of payloadFiles(PAYLOAD)) {
+const staged = stagedFiles(PAYLOAD, SCAFFOLD);
+
+for (const { file, stamped } of staged) {
   const sourcePath = join(repoRoot, file.source);
   if (!existsSync(sourcePath)) {
     fail(`${file.source} is declared in the payload but missing from the repository`);
@@ -105,4 +107,4 @@ for (const { file, stamped } of payloadFiles(PAYLOAD)) {
 
 // stderr, not stdout: this runs inside `prepack`, and `npm pack --json` puts its own
 // machine-readable output on stdout.
-console.error(`stage-payload: staged ${payloadFiles(PAYLOAD).length} files into ${outDir}`);
+console.error(`stage-payload: staged ${staged.length} files into ${outDir}`);

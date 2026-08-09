@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { payloadFiles, STAGE_SKILLS } from '../cli/payload.js';
+import { payloadFiles, stagedFiles, STAGE_SKILLS } from '../cli/payload.js';
 import { frontmatterKeys, frontmatterOf, readRepoFile, repoRoot, run, trackedFiles } from './helpers.js';
 
 const tracked = trackedFiles();
@@ -68,9 +68,9 @@ describe('.gitignore', () => {
     expect(isIgnored('.claude/settings.local.json')).toBe(true);
   });
 
-  it('keeps every managed path trackable', () => {
-    for (const { file } of payloadFiles()) {
-      expect(isIgnored(file.source), `${file.source} is a managed path and must be trackable`).toBe(false);
+  it('keeps every shipped path trackable', () => {
+    for (const { file } of stagedFiles()) {
+      expect(isIgnored(file.source), `${file.source} ships to projects and must be trackable`).toBe(false);
     }
   });
 });

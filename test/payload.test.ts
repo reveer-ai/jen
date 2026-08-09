@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isStampable,
+  memberShape,
   PAYLOAD,
   payloadFiles,
+  SCAFFOLD,
+  stagedFiles,
   STAGE_SKILLS,
   STAMP,
   STAMP_FRONTMATTER,
@@ -65,9 +68,54 @@ describe('the payload declaration', () => {
   });
 
   it('stages to tool-neutral paths', () => {
-    for (const { file } of payloadFiles()) {
+    for (const { file } of stagedFiles()) {
       expect(file.staged.split('/')).not.toContain('.claude');
       expect(file.staged).not.toMatch(/^\./);
+    }
+  });
+
+  it('exposes each variable set\'s member shape, one slot below its target directory', () => {
+    expect(memberShape(stageSkills!)).toBe('SKILL.md');
+    expect(stageSkills!.members.map((member) => member.target)).toEqual(
+      STAGE_SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
+    );
+  });
+
+  it('will not guess a shape it cannot derive', () => {
+    const empty: VariableSet = { kind: 'variable-set', name: 'nothing', targetDir: '.claude/skills', members: [] };
+    expect(() => memberShape(empty)).toThrow(/no members/);
+
+    const slotless: VariableSet = {
+      ...empty,
+      members: [
+        { source: 'a/SKILL.md', staged: 'a/SKILL.md', target: '.claude/skills/SKILL.md', format: 'markdown' },
+      ],
+    };
+    expect(() => memberShape(slotless)).toThrow(/live in a slot below it/);
+
+    const mixed: VariableSet = {
+      ...empty,
+      members: [
+        { source: 'a/one/SKILL.md', staged: 'a/one/SKILL.md', target: '.claude/skills/one/SKILL.md', format: 'markdown' },
+        { source: 'a/two/GUIDE.md', staged: 'a/two/GUIDE.md', target: '.claude/skills/two/GUIDE.md', format: 'markdown' },
+      ],
+    };
+    expect(() => memberShape(mixed)).toThrow(/mixes member shapes/);
+  });
+});
+
+describe('the scaffold declaration', () => {
+  it('is beside the payload, never inside it', () => {
+    const managed = new Set(payloadFiles().map((entry) => entry.file.target));
+    for (const file of SCAFFOLD) {
+      expect(managed, `${file.target} must not be a managed path`).not.toContain(file.target);
+    }
+    expect(SCAFFOLD.map((file) => file.target)).toEqual(['registry.yaml', '.claude/settings.json']);
+  });
+
+  it('ships unstamped, even where the format could carry a stamp', () => {
+    for (const { file, stamped } of stagedFiles()) {
+      if (SCAFFOLD.some((entry) => entry.target === file.target)) expect(stamped).toBe(false);
     }
   });
 });
