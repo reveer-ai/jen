@@ -9,7 +9,7 @@
 ## 2. Read the project
 
 - [x] 2.1 Resolve the staged payload from the module (`new URL('./templates/', import.meta.url)`), with a clear failure when it is absent — the git-URL install case
-- [x] 2.2 Implement stamp detection as a frontmatter scan for `metadata.jen: true`, reusing the frontmatter-scanning approach already in `test/helpers.ts`
+- [x] 2.2 Implement stamp detection as a frontmatter scan for `metadata.jen: true`, in `cli/stamp.ts` — with `test/helpers.ts` re-exporting the scanner rather than keeping its own, so the tests and the shipped code share one implementation
 - [x] 2.3 Unit-test detection against: a stamped skill, an unstamped skill, no frontmatter, unterminated frontmatter, a `metadata` block without `jen`, and flow-style `metadata: {jen: true}` (asserted unrecognized, per design)
 - [x] 2.4 Enumerate reconciliation candidates from each variable set's declared shape, one level under `targetDir`, and unit-test that deeper and sibling paths are never candidates
 
