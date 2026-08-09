@@ -56,7 +56,9 @@ The pipeline SHALL authenticate to the npm registry by exchanging a workflow OID
 
 The publishing environment SHALL NOT be configured with a registry authentication file, even an empty or placeholder one: a placeholder token is preferred over an OIDC exchange and fails as though the package did not exist.
 
-Published versions SHALL carry provenance.
+The grant SHALL be constrained by more than the identity of the workflow file. The publishing job SHALL run in a named deployment environment restricted to the default branch, and that environment SHALL be among the claims the registry requires — so that authority to publish depends on the branch as well as the file.
+
+Published versions SHALL carry provenance, and provenance SHALL be requested explicitly rather than relied upon as a default, so that a condition ceasing to hold fails the release instead of silently publishing without it.
 
 #### Scenario: No npm credential is stored
 
@@ -67,6 +69,16 @@ Published versions SHALL carry provenance.
 
 - **WHEN** a version is published
 - **THEN** the registry records provenance naming this repository and the workflow that published it
+
+#### Scenario: Provenance that cannot be generated fails the release
+
+- **WHEN** the conditions for generating provenance are not met at publish time
+- **THEN** the run fails and nothing is published, rather than publishing without provenance
+
+#### Scenario: A branch outside the environment cannot obtain a grant
+
+- **WHEN** the release workflow is run from a branch the publishing environment does not permit
+- **THEN** no publish grant is issued, even though the workflow file is the one the registry authorizes
 
 ### Requirement: A publish is gated on the package passing its checks
 
@@ -124,14 +136,32 @@ Trusted publishing authorizes exactly one workflow file per package. Any channel
 
 ### Requirement: The one-time setup the pipeline cannot perform is recorded
 
-The pipeline depends on external configuration it has no ability to create: the package existing on the registry, a trusted publisher entry naming this repository and the release workflow file, and permission for workflows to open pull requests. A trusted publisher cannot be configured for a package that does not exist, so the pipeline SHALL NOT be expected to publish the package's first version.
+The pipeline depends on account-level configuration it has no ability to create: the package existing on the registry, a trusted publisher entry naming this repository, the release workflow file and the publishing environment, that environment and its branch restriction, and a release identity able to open pull requests whose pushes trigger workflow runs. A trusted publisher cannot be configured for a package that does not exist, so the pipeline SHALL NOT be expected to publish the package's first version.
 
 These preconditions SHALL be recorded in a project note beside the release configuration, stating for each what must be done, by whom, and what its absence looks like when the pipeline runs without it. The note SHALL NOT live in the root workflow document, which is shipped to every adopting project and describes none of this.
 
 #### Scenario: The preconditions are discoverable from the workflow
 
 - **WHEN** a contributor reads the project note nearest the release workflow
-- **THEN** it names the bootstrap publish, the trusted publisher entry, and the workflow pull-request permission, and describes the failure each one produces when missing
+- **THEN** it names the bootstrap publish, the trusted publisher entry, the publishing environment, and the release identity, and describes the failure each one produces when missing
+
+### Requirement: The identity that opens the Version PR permits the branch to be gated
+
+The default branch SHALL require its checks to pass before a pull request merges, and that requirement SHALL hold for the Version pull request as it does for any other.
+
+The Version pull request SHALL therefore be opened by an identity whose pushes trigger workflow runs. An identity that cannot trigger them produces a pull request on which the required check never reports, which cannot merge and cannot be released.
+
+That identity SHALL hold only the permissions it needs to open and update the pull request, and SHALL NOT be able to publish.
+
+#### Scenario: The Version PR is checked like any other change
+
+- **WHEN** the Version pull request is opened
+- **THEN** the required checks run on it, and it cannot merge until they pass
+
+#### Scenario: The release identity cannot publish
+
+- **WHEN** the permissions of the identity that opens the Version pull request are inspected
+- **THEN** they permit repository contents and pull requests only, and confer no ability to publish to the registry
 
 #### Scenario: The first version is not the pipeline's to publish
 
