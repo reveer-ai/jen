@@ -61,3 +61,16 @@ Deletion is the stamp intersected with the shipped payload, so a format with now
 Known limitation: `prepack` does not run for an install straight from a git URL, and `dist/` is gitignored, so a git-URL install yields an empty payload. Adopters install from the registry; this is accepted, not solved. `stagedPayloadDir()` is where it surfaces — it fails naming the missing directory rather than adopting a project with nothing to write.
 
 Running the CLI from source has the same shape: `import.meta.resolve` puts the payload beside the module, and there is no `cli/templates/`. Tests inject a staged directory through `RunOptions.templates`; the tests that exercise real resolution spawn the built `dist/index.js`.
+
+## Exercising it as an adopter
+
+Tests inject a staged payload and never see the tarball, a real `openspec init`, or an adopter's `node_modules`. Getting all three means packing and installing:
+
+```
+npm pack --pack-destination /tmp
+cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-0.1.0.tgz && npx jen init
+```
+
+`npm pack` runs `prepack`, so the tarball is built and staged by construction — running the CLI out of the working tree skips staging and proves nothing about what ships.
+
+**`openspec init` writes into `.claude/skills/` too.** Its nine `openspec-*` skills land beside jen's six, at exactly the depth reconciliation searches, and survive `jen update` only because they carry no stamp. Deletion must stay the stamp intersected with the payload: rewrite it as "whatever is in the target directory that the payload does not ship" and every one of them disappears on the next update, with no unit test the wiser — the fixtures build `.claude/skills/` by hand and never run the delegation that puts them there.
