@@ -70,12 +70,30 @@ Published versions SHALL carry provenance.
 
 ### Requirement: A publish is gated on the package passing its checks
 
-The release SHALL build, typecheck, and test the package before publishing, and SHALL abort without publishing if any of them fails. This gate SHALL be part of the release run itself and SHALL NOT be delegated to a separate workflow triggered by the same event, which runs concurrently and therefore gates nothing.
+The release SHALL build, typecheck, and test the package before publishing, and SHALL abort without publishing if any of them fails.
+
+The gate SHALL sit in the release run's own dependency chain. A check that merely runs on the same event is not a gate — it executes concurrently with the release and cannot prevent it — and SHALL NOT be relied on as one.
+
+The set of checks SHALL have exactly one definition, shared with the checks that run on a pull request, so that a check added in one place cannot be absent from the other.
 
 #### Scenario: A failing check prevents the publish
 
 - **WHEN** the release runs against a commit whose tests fail
 - **THEN** nothing is published and the run fails
+
+#### Scenario: A newly added check applies to releases without being restated
+
+- **WHEN** a check is added to the set that runs on pull requests
+- **THEN** the release gate runs it too, with no separate edit to the release configuration
+
+### Requirement: The published artifact is the verified artifact
+
+The package SHALL be built and packed once, under the Node version the package declares as its minimum, and that same artifact SHALL be what is published. The publish SHALL NOT rebuild the package.
+
+#### Scenario: The tested artifact is the one released
+
+- **WHEN** a version is published
+- **THEN** the uploaded artifact is byte-identical to the one produced and checked by the release run's gate
 
 ### Requirement: The release runs only from the default branch of this repository
 
