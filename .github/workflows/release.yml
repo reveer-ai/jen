@@ -119,7 +119,7 @@ jobs:
         if: steps.guard.outputs.needed == 'true'
         with:
           name: package-tarball
-          path: ./.pack
+          path: ./pack
 
       # `--provenance` explicitly, not relied upon as a default: the conditions for
       # automatic generation are not all controlled from this repository, and the specs
@@ -128,7 +128,7 @@ jobs:
         if: steps.guard.outputs.needed == 'true'
         run: |
           set -euo pipefail
-          tarball="$(find ./.pack -maxdepth 1 -name '*.tgz' | head -n1)"
+          tarball="$(find ./pack -maxdepth 1 -name '*.tgz' | head -n1)"
           if [ -z "$tarball" ]; then
             echo "::error::no tarball in the packaged artifact"
             exit 1

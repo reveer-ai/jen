@@ -31,10 +31,13 @@ jobs:
       # newer Node the publish job needs. `npm pack` runs `prepack`, so it is built and
       # staged by construction — and it does not create `--pack-destination`, exiting
       # ENOENT if the directory is absent, which is why it is made first.
-      - run: mkdir -p ./.pack && npm pack --pack-destination ./.pack
+      #
+      # The directory is not `.pack`: `upload-artifact` skips hidden files by default, so
+      # a dot-prefixed one uploads nothing and fails on `if-no-files-found` instead.
+      - run: mkdir -p ./pack && npm pack --pack-destination ./pack
       - uses: actions/upload-artifact@v4
         with:
           name: package-tarball
-          path: ./.pack/*.tgz
+          path: ./pack/*.tgz
           if-no-files-found: error
           retention-days: 7
