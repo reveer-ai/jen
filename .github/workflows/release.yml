@@ -136,8 +136,10 @@ jobs:
           fi
           npm publish "$tarball" --provenance
 
-      # Both steps tolerate what is already there, so a re-run after a mid-run failure
-      # completes the record rather than failing on it.
+      # Both steps tolerate what is already there, so a re-run completes the record rather
+      # than failing on it. That only helps while the guard is still true: once the publish
+      # has succeeded, a re-run finds the version on the registry and skips both of these
+      # along with it. A run that publishes and then fails here does not self-heal.
       - name: Tag the released commit
         if: steps.guard.outputs.needed == 'true'
         env:

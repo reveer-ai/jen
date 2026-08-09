@@ -40,6 +40,12 @@ do not name themselves. Listed in the order they must be created.
 App replaces it and holds two permissions on one repository where the toggle is a blanket
 grant to every workflow here. If you find it switched on, that is a regression, not a fix.
 
+**One deferred step, still open.** The npm package should also *require 2FA and disallow
+tokens* — neither affects OIDC, and together they make trusted publishing the only way in.
+It was held back until the automated path had proven itself, because applying it early
+narrows the manual fallback at the moment it is most likely to be needed. Apply both once a
+version has published through the pipeline with provenance.
+
 ## A publish failed
 
 Every misconfiguration in the OIDC exchange reports the same one or two errors
@@ -73,6 +79,21 @@ each cause is to rule out, not by how likely it is.
 publish — is almost always the App private key: expired, rotated, or the App uninstalled.
 App keys do not announce their own expiry, and the failure is loud in the `version` job but
 looks like a broken pipeline rather than an expired credential.
+
+## A run published and then failed
+
+The publish, the tag, and the GitHub Release share one guard: is this version already on
+the registry. That is what stops the pipeline recording releases it did not make, and it is
+why a re-run recovers from any failure *before* the publish — the version is still absent,
+so the guard is still true and the whole sequence runs again.
+
+**After a successful publish it works the other way.** The guard has flipped, and a re-run
+skips the tag and the Release exactly as it skips the publish. The run goes green having
+done nothing. If a run published and then failed at either later step, **create the tag and
+the Release by hand** — nothing will do it for you, and a re-run will tell you everything is
+fine.
+
+This is the one partial failure that does not recover on its own. Every other one does.
 
 ## Changing these workflows
 
