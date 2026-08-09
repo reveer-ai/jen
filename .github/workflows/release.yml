@@ -103,8 +103,9 @@ jobs:
           version="$(node -p 'require("./package.json").version')"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          # `npm view` exits 0 with empty output for a missing version of a package that
-          # does exist, so the output is what is tested and not the exit code.
+          # For a missing version of a package that does exist, `npm view` prints nothing
+          # and exits 1 — so the output is what is tested, and the `|| true` is what keeps
+          # that exit status from propagating. Neither is redundant.
           if [ -n "$(npm view "$name@$version" version 2>/dev/null || true)" ]; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
             echo "$name@$version is already on the registry; nothing to do."
