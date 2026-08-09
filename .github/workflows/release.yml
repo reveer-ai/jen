@@ -1,0 +1,175 @@
+name: Release
+
+# The only trigger. Nothing here runs on a pull request, so the first execution of any
+# change to this file is its first push to `main` — see `.github/AGENTS.md`.
+on:
+  push:
+    branches: [main]
+
+# Floor, not ceiling: every job below raises this to exactly what it needs.
+permissions:
+  contents: read
+
+# A run that is mid-publish is never interrupted. `cancel-in-progress: false` is the
+# whole point — the publish is the one irreversible step in this pipeline.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # One definition of "the checks", shared with every pull request. Invoked rather than
+  # restated so a check added to `ci.yml` cannot be absent from the release, and called
+  # rather than merely concurrent so it sits in this run's dependency chain.
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  # Applies pending changesets and opens or updates the Version PR. It is never given a
+  # `publish:` input, so this job cannot reach the registry by any path.
+  version:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # An App installation token, not `GITHUB_TOKEN`: pushes made with `GITHUB_TOKEN` do
+      # not trigger workflows, so the required check would never report on the Version PR
+      # and it could never merge.
+      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        id: app-token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20.19.0
+          cache: npm
+
+      - run: npm ci
+
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        with:
+          version: npx changeset version
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  publish:
+    needs: [checks, version]
+    runs-on: ubuntu-latest
+    # Not cosmetic. GitHub puts the environment in the OIDC token's claims and npm matches
+    # it, so an environment restricted to `main` makes the branch a condition of the
+    # credential itself rather than a convention of the trigger. Removing this line leaves
+    # a working pipeline that has silently dropped a claim the registry was checking.
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Node 24 for an npm new enough to exchange an OIDC token. Deliberately no
+      # `registry-url`: it writes an `.npmrc` whose placeholder token npm prefers over an
+      # OIDC exchange, failing as a 404 that names the package.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      # A silently older npm does not announce itself — it declines the exchange and
+      # reports the same misleading 404. One line turns that into the obvious error.
+      - name: Assert npm can exchange an OIDC token
+        run: |
+          set -euo pipefail
+          required=11.5.1
+          actual="$(npm --version)"
+          if [ "$(printf '%s\n%s\n' "$required" "$actual" | sort -V | head -n1)" != "$required" ]; then
+            echo "::error::npm $actual cannot perform the OIDC exchange that trusted publishing requires (need >= $required). Left unchecked this surfaces as a 404 naming the package, not as a version problem."
+            exit 1
+          fi
+          echo "npm $actual"
+
+      # The idempotency story, guarded on the registry rather than on any action's
+      # outputs, so it holds on every path into this job. With changesets pending, `main`
+      # still carries the last released version — which is by definition already there.
+      - name: Decide whether this version needs publishing
+        id: guard
+        run: |
+          set -euo pipefail
+          name="$(node -p 'require("./package.json").name')"
+          version="$(node -p 'require("./package.json").version')"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # `npm view` exits 0 with empty output for a missing version of a package that
+          # does exist, so the output is what is tested and not the exit code.
+          if [ -n "$(npm view "$name@$version" version 2>/dev/null || true)" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on the registry; nothing to do."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is not on the registry; it will be published."
+          fi
+
+      # The tarball the checks packed and verified, on the Node version `engines.node`
+      # promises. This job installs nothing and builds nothing.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.guard.outputs.needed == 'true'
+        with:
+          name: package-tarball
+          path: ./.pack
+
+      # `--provenance` explicitly, not relied upon as a default: the conditions for
+      # automatic generation are not all controlled from this repository, and the specs
+      # require provenance. The flag turns a silent downgrade into a failed run.
+      - name: Publish to npm
+        if: steps.guard.outputs.needed == 'true'
+        run: |
+          set -euo pipefail
+          tarball="$(find ./.pack -maxdepth 1 -name '*.tgz' | head -n1)"
+          if [ -z "$tarball" ]; then
+            echo "::error::no tarball in the packaged artifact"
+            exit 1
+          fi
+          npm publish "$tarball" --provenance
+
+      # Both steps tolerate what is already there, so a re-run after a mid-run failure
+      # completes the record rather than failing on it.
+      - name: Tag the released commit
+        if: steps.guard.outputs.needed == 'true'
+        env:
+          TAG: v${{ steps.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "$TAG already exists on the remote."
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "refs/tags/$TAG"
+
+      - name: Create the GitHub Release
+        if: steps.guard.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.guard.outputs.version }}
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A release for $TAG already exists."
+            exit 0
+          fi
+          # The changelog section for this version alone: everything between its heading
+          # and the next one.
+          awk -v want="## $VERSION" '
+            $0 == want { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > notes.md || true
+          if [ ! -s notes.md ]; then
+            echo "No changelog entry for $VERSION." > notes.md
+          fi
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md

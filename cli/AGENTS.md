@@ -68,7 +68,7 @@ Tests inject a staged payload and never see the tarball, a real `openspec init`,
 
 ```
 npm pack --pack-destination /tmp
-cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-0.1.0.tgz && npx jen init
+cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-*.tgz && npx jen init
 ```
 
 `npm pack` runs `prepack`, so the tarball is built and staged by construction — running the CLI out of the working tree skips staging and proves nothing about what ships.
