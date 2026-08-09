@@ -13,7 +13,7 @@
 - [x] 2.1 Add a `workflow_call` trigger to `.github/workflows/ci.yml` so the release can invoke it as a gating job.
 - [x] 2.2 Remove the `push: branches: [main]` trigger from `ci.yml`. The release workflow now covers `main` through the called workflow; leaving this in place would run every check twice and produce a standalone run that looks authoritative while gating nothing.
 - [x] 2.3 Add an `npm pack` step and upload the resulting tarball with `actions/upload-artifact`, so the artifact the checks verified is the one the publish job ships. Leave the Node version at `20.19.0` — packing on the floor is the point.
-- [ ] 2.4 Confirm the pull-request run for this change is green with both trigger changes in place, since `ci.yml` is now doing two jobs.
+- [x] 2.4 Confirm the pull-request run for this change is green with both trigger changes in place, since `ci.yml` is now doing two jobs.
 
 ## 3. The release workflow
 
@@ -36,4 +36,4 @@
 ## 5. Notes and handoff
 
 - [x] 5.1 Write `.github/AGENTS.md` covering three things: **when a changeset is needed** (a change to shipped behavior; nothing enforces this, and a change merged without one is simply not released yet); **the setup preconditions** — App, environment, required check, trusted publisher, bootstrap — and what each one's absence looks like at runtime; and **a debugging checklist for a failed publish**, ordered by how cheap each cause is to rule out: npm too old, a stray `.npmrc`, `id-token: write` missing, `environment:` missing or mismatched against the trusted publisher entry, workflow filename mismatched, owner/repo mismatched, then the OIDC env-var propagation bug as the last resort. Note the App private key as a cause of a *different* symptom — no Version PR at all, rather than a failed publish.
-- [ ] 5.2 Comment on ENG-161 with the account-level setup in dependency order — App with `contents: write` and `pull-requests: write` installed on this repo only, `release` environment restricted to `main`, npm org ownership, `0.0.0` bootstrap plus `npm deprecate`, trusted publisher naming `release.yml` and environment `release` with `npm publish` as the allowed action, then the required status check on `main` — stating plainly that none of it is observable until it exists, and that the Actions "create and approve pull requests" toggle is deliberately left **off**.
+- [x] 5.2 Comment on ENG-161 with the account-level setup in dependency order — App with `contents: write` and `pull-requests: write` installed on this repo only, `release` environment restricted to `main`, npm org ownership, `0.0.0` bootstrap plus `npm deprecate`, trusted publisher naming `release.yml` and environment `release` with `npm publish` as the allowed action, then the required status check on `main` — stating plainly that none of it is observable until it exists, and that the Actions "create and approve pull requests" toggle is deliberately left **off**.
