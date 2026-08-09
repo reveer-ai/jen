@@ -13,6 +13,7 @@ const manifest = JSON.parse(readRepoFile('package.json')) as {
   files: string[];
   publishConfig: { access: string };
   engines: { node: string };
+  repository: { type: string; url: string };
   dependencies: Record<string, string>;
 };
 
@@ -35,6 +36,15 @@ describe('package.json', () => {
 
   it('depends on OpenSpec rather than vendoring it', () => {
     expect(Object.keys(manifest.dependencies)).toContain('@fission-ai/openspec');
+  });
+
+  // Load-bearing rather than decorative: trusted publishing matches the registry's record
+  // of the package against the repository publishing it, and npm's own `git+https://`
+  // form does not match. A cleanup that "normalizes" this back breaks the release with a
+  // 404 that reads as though the package does not exist.
+  it('names its source repository in the form the OIDC exchange matches', () => {
+    expect(manifest.repository.url).toBe('https://github.com/reveer-ai/jen.git');
+    expect(manifest.repository.url.startsWith('git+')).toBe(false);
   });
 });
 

@@ -1,10 +1,14 @@
 {
   "name": "@reveer/jen",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed.",
   "license": "UNLICENSED",
   "private": false,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reveer-ai/jen.git"
+  },
   "bin": {
     "jen": "dist/index.js"
   },
@@ -21,6 +25,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "stage-payload": "node scripts/stage-payload.js",
+    "changeset": "changeset",
     "test": "vitest run",
     "prepare": "openspec init --tools claude --no-animation",
     "prepack": "npm run build && node scripts/stage-payload.js"
@@ -29,8 +34,11 @@
     "@fission-ai/openspec": "^1.8.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.7.0",
+    "@changesets/cli": "^2.31.1",
     "@types/node": "^20.19.43",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "yaml": "^2.9.0"
   }
 }

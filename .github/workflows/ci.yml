@@ -1,9 +1,13 @@
 name: CI
 
+# `pull_request` covers every change on its way in. `workflow_call` is how the release
+# invokes this as a gating job, which is what puts these checks in the release run's own
+# dependency chain. There is deliberately no `push: main` — the release covers that branch
+# through the called workflow, and a second standalone run would look authoritative while
+# racing the release rather than blocking it.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
 
 jobs:
   check:
@@ -21,3 +25,19 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
+
+      # Pack on the floor and let the release promote this exact tarball, so the artifact
+      # that ships is the one these checks verified rather than one rebuilt under the
+      # newer Node the publish job needs. `npm pack` runs `prepack`, so it is built and
+      # staged by construction — and it does not create `--pack-destination`, exiting
+      # ENOENT if the directory is absent, which is why it is made first.
+      #
+      # The directory is not `.pack`: `upload-artifact` skips hidden files by default, so
+      # a dot-prefixed one uploads nothing and fails on `if-no-files-found` instead.
+      - run: mkdir -p ./pack && npm pack --pack-destination ./pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-tarball
+          path: ./pack/*.tgz
+          if-no-files-found: error
+          retention-days: 7
