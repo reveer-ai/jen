@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { payloadFiles, STAMP_FRONTMATTER } from '../cli/payload.js';
+import { payloadFiles, stagedFiles, STAMP_FRONTMATTER } from '../cli/payload.js';
 import { frontmatterKeys, frontmatterOf, readRepoFile, repoRoot, stageInto } from './helpers.js';
 
 function filesUnder(dir: string): string[] {
@@ -27,12 +28,28 @@ beforeAll(() => {
 });
 
 describe('staging', () => {
-  it('produces exactly the declared payload', () => {
-    expect(filesUnder(staged)).toEqual(payloadFiles().map((entry) => entry.file.staged).sort());
+  it('produces exactly the declared payload and scaffold', () => {
+    expect(filesUnder(staged)).toEqual(stagedFiles().map((entry) => entry.file.staged).sort());
+  });
+
+  it('lays the skills out as six directories, each holding one stamped member', () => {
+    const skills = filesUnder(staged).filter((path) => path.startsWith('skills/'));
+    expect(new Set(skills.map((path) => path.split('/')[1])).size).toBe(6);
+    expect(skills.every((path) => path.endsWith('/SKILL.md'))).toBe(true);
+    expect(skills).toHaveLength(6);
+  });
+
+  it('stages the scaffold unstamped, under a role-named path', () => {
+    for (const { file, stamped } of stagedFiles()) {
+      if (payloadFiles().some((entry) => entry.file.staged === file.staged)) continue;
+      expect(stamped, `${file.staged} is scaffold and must not be stamped`).toBe(false);
+      expect(file.staged.startsWith('scaffold/'), file.staged).toBe(true);
+      expect(readFileSync(join(staged, file.staged), 'utf8')).toBe(readRepoFile(file.source));
+    }
   });
 
   it('writes each staged skill as its source plus the stamp, byte for byte', () => {
-    for (const { file, stamped } of payloadFiles()) {
+    for (const { file, stamped } of stagedFiles()) {
       if (!stamped) continue;
       const source = readRepoFile(file.source);
       const output = readFileSync(join(staged, file.staged), 'utf8');
@@ -46,7 +63,7 @@ describe('staging', () => {
   });
 
   it('writes each fixed path unchanged and unstamped', () => {
-    for (const { file, stamped } of payloadFiles()) {
+    for (const { file, stamped } of stagedFiles()) {
       if (stamped) continue;
       const output = readFileSync(join(staged, file.staged), 'utf8');
       expect(output).toBe(readRepoFile(file.source));
@@ -55,7 +72,7 @@ describe('staging', () => {
   });
 
   it('leaves a stamped skill parseable as an Agent Skill', () => {
-    for (const { file, stamped } of payloadFiles()) {
+    for (const { file, stamped } of stagedFiles()) {
       if (!stamped) continue;
       const frontmatter = frontmatterOf(readFileSync(join(staged, file.staged), 'utf8'));
       expect(frontmatter, `${file.staged} must still have frontmatter`).not.toBeNull();
@@ -101,6 +118,38 @@ describe('staging', () => {
         readFileSync(join(staged, path)),
       );
     }
+  });
+
+  it('refuses a variable-set member whose format cannot carry the stamp', () => {
+    // Deletion is the stamp intersected with the shipped payload, so a member nothing can
+    // stamp could never be reconciled. Staging is where that is caught.
+    const stub = mkdtempSync(join(tmpdir(), 'jen-jsonset-'));
+    mkdirSync(join(stub, 'scripts'));
+    mkdirSync(join(stub, 'dist'));
+    copyFileSync(join(repoRoot, 'scripts/stage-payload.js'), join(stub, 'scripts/stage-payload.js'));
+    writeFileSync(join(stub, 'config.json'), '{}\n');
+    writeFileSync(
+      join(stub, 'dist/payload.js'),
+      [
+        `export { STAGED_PAYLOAD_DIR, STAMP_FRONTMATTER, isStampable, payloadFiles, stagedFiles } from ${JSON.stringify(
+          pathToFileURL(join(repoRoot, 'dist/payload.js')).href,
+        )};`,
+        'export const SCAFFOLD = [];',
+        'export const PAYLOAD = [{',
+        "  kind: 'variable-set',",
+        "  name: 'json-set',",
+        "  targetDir: '.claude/config',",
+        "  members: [{ source: 'config.json', staged: 'config/config.json', target: '.claude/config/config.json', format: 'json' }],",
+        '}];',
+      ].join('\n'),
+    );
+
+    const out = join(stub, 'out');
+    const result = spawnSync('node', ['scripts/stage-payload.js', '--out', out], { cwd: stub, encoding: 'utf8' });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('cannot carry the stamp');
+    expect(existsSync(join(out, 'config/config.json'))).toBe(false);
   });
 
   it('fails loudly rather than staging a partial payload when dist/ is missing', () => {

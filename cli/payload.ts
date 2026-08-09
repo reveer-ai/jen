@@ -112,6 +112,34 @@ export const PAYLOAD: readonly PayloadGroup[] = [
   },
 ];
 
+/**
+ * The once-only scaffold: files jen creates when they are absent and the project owns
+ * from that moment on.
+ *
+ * Deliberately beside {@link PAYLOAD} rather than inside it, because the two obey
+ * opposite rules. A managed file is overwritten on every run and reconciled against the
+ * stamp; a scaffold file is written once and then never read, rewritten, or deleted —
+ * not by `update`, and not by `init --force`. Folding them together would make the
+ * deletion rule conditional, which is the one rule that must not be.
+ *
+ * Staged paths are named for the file's role rather than for an assistant, so the staged
+ * tree stays tool-neutral even though `.claude/settings.json` is not.
+ */
+export const SCAFFOLD: readonly ManagedFile[] = [
+  {
+    source: 'scaffold/registry.yaml',
+    staged: 'scaffold/registry.yaml',
+    target: 'registry.yaml',
+    format: 'yaml',
+  },
+  {
+    source: 'scaffold/settings.json',
+    staged: 'scaffold/settings.json',
+    target: '.claude/settings.json',
+    format: 'json',
+  },
+];
+
 export interface StagedFile {
   file: ManagedFile;
   /** Whether staging applies the ownership stamp — true for variable-set members only. */
@@ -125,4 +153,57 @@ export function payloadFiles(payload: readonly PayloadGroup[] = PAYLOAD): Staged
       ? [{ file: group.file, stamped: false }]
       : group.members.map((file) => ({ file, stamped: true })),
   );
+}
+
+/**
+ * Everything staging writes into {@link STAGED_PAYLOAD_DIR}: the payload, plus the
+ * scaffold, which ships alongside it and is never stamped.
+ */
+export function stagedFiles(
+  payload: readonly PayloadGroup[] = PAYLOAD,
+  scaffold: readonly ManagedFile[] = SCAFFOLD,
+): StagedFile[] {
+  return [...payloadFiles(payload), ...scaffold.map((file) => ({ file, stamped: false }))];
+}
+
+/** A member's path within its set's target directory, split into segments. */
+function withinTargetDir(set: VariableSet, file: ManagedFile): string[] {
+  const prefix = `${set.targetDir}/`;
+  if (!file.target.startsWith(prefix)) {
+    throw new Error(`${file.target} is a member of ${set.name} but does not sit under ${set.targetDir}`);
+  }
+  return file.target.slice(prefix.length).split('/');
+}
+
+/**
+ * The directory a member occupies within its set's target directory — `design-task` for
+ * `.claude/skills/design-task/SKILL.md`. The slot is what varies between members; it is
+ * also what a project names its own files after, which is why the set is shared rather
+ * than owned outright.
+ */
+export function memberSlot(set: VariableSet, file: ManagedFile): string {
+  const segments = withinTargetDir(set, file);
+  if (segments.length < 2) {
+    throw new Error(`${file.target} sits directly in ${set.targetDir}; members of ${set.name} live in a slot below it`);
+  }
+  return segments[0]!;
+}
+
+/**
+ * The path every member of a set occupies below its slot — `SKILL.md` for the stage
+ * skills. Reconciliation derives its search from this rather than hardcoding a filename,
+ * so a future variable set is data here and not a code change.
+ *
+ * Derived from the members themselves, so a set with none has no shape to derive and
+ * fails loudly rather than silently reconciling nothing.
+ */
+export function memberShape(set: VariableSet): string {
+  const shapes = new Set(set.members.map((file) => withinTargetDir(set, file).slice(1).join('/')));
+  if (shapes.size === 0) {
+    throw new Error(`variable set ${set.name} declares no members, so its shape cannot be derived`);
+  }
+  if (shapes.size > 1) {
+    throw new Error(`variable set ${set.name} mixes member shapes (${[...shapes].sort().join(', ')})`);
+  }
+  return [...shapes][0]!;
 }

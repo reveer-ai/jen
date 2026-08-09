@@ -26,6 +26,6 @@ CI runs the same three on every pull request, on the minimum Node version `engin
 
 ## Packaging
 
-`npm pack` compiles the CLI to `dist/` and stages the payload into `dist/templates/` — the six skills, stamped, plus the workflow document. `files: ["dist"]` ships that and nothing else.
+`npm pack` compiles the CLI to `dist/` and stages the payload into `dist/templates/` — the six skills, stamped, plus the workflow document and the once-only scaffold `jen init` writes. `files: ["dist"]` ships that and nothing else.
 
 See [`cli/AGENTS.md`](cli/AGENTS.md) for how the payload declaration and staging fit together.
