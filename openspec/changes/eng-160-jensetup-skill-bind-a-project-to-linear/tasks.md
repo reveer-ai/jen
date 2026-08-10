@@ -1,8 +1,8 @@
 ## 1. The payload declaration
 
-- [ ] 1.1 In `cli/payload.ts`, keep `STAGE_SKILLS` as the six pipeline stages and add a list of every skill the payload ships — the stages plus `setup-jen` — as the source of the variable set's members.
-- [ ] 1.2 Rename the variable set from `stage-skills` to `skills` and build its members from the shipped list, leaving `targetDir`, `memberShape`, and the stamping rule untouched.
-- [ ] 1.3 Update `cli/cli.ts`'s help text, which counts stage skills, so it describes what the payload writes without claiming the skills and the stages are the same list.
+- [ ] 1.1 In `cli/payload.ts`, replace `STAGE_SKILLS` with one list of every skill the payload ships — the six stages plus `setup-jen` — named for what it holds. Record nowhere in the declaration which of them are stages: nothing consumes it, and `AGENTS.md`'s stage table and the `task-pipeline` capability already say.
+- [ ] 1.2 Rename the variable set from `stage-skills` to `skills` and build its members from that list, leaving `targetDir`, `memberShape`, and the stamping rule untouched.
+- [ ] 1.3 Update `cli/cli.ts`'s help text to count the shipped skills rather than the stages — as written it would report six while `init` writes seven — and to describe them without implying every shipped skill is a stage.
 
 ## 2. The skill
 
@@ -16,11 +16,11 @@
 
 ## 3. Tests
 
-- [ ] 3.1 Update `test/payload.test.ts` for the set's new name and membership, and assert the rule the `managed-payload` delta adds: no two variable sets declare the same target directory.
+- [ ] 3.1 Update `test/payload.test.ts` for the set's new name and membership — it looks the set up by `'stage-skills'` and asserts the six names literally, so it needs rewriting rather than renaming — and assert the rule the `managed-payload` delta adds: no two variable sets declare the same target directory.
 - [ ] 3.2 Update `test/repo-layout.test.ts` to assert every shipped skill — not the six stages — is present, tracked, valid as an Agent Skill, and unstamped in the working copy.
 - [ ] 3.3 Update `test/stage-payload.test.ts` for a staged tree holding one directory per shipped skill, each with a stamped `SKILL.md`.
 - [ ] 3.4 Update `test/package.test.ts` so the tarball assertions cover the new skill in both directions — what must be there and what must not.
-- [ ] 3.5 Update `test/cli.test.ts` and `test/install.test.ts` where they iterate `STAGE_SKILLS` to reach every installed skill instead.
+- [ ] 3.5 Update `test/cli.test.ts`, `test/install.test.ts`, and `test/plan.test.ts` where they iterate `STAGE_SKILLS` to reach every shipped skill instead — `plan.test.ts` builds the expected obstruction paths from it, so a missing seventh entry fails there rather than where the skill was added.
 - [ ] 3.6 Confirm reconciliation still deletes a stamped skill the payload does not ship with a seventh member present, and still spares the `openspec-*` skills sharing the directory.
 
 ## 4. Release and close-out

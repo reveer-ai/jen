@@ -34,7 +34,11 @@ No attempt is made to fake the second group with assertions on the skill's wordi
 
 ### `setup-jen` joins the existing variable set, which is renamed
 
-The set becomes `skills` with seven members. `STAGE_SKILLS` keeps its current six — it means *the pipeline's stages*, which is a real and separate idea used by the CLI's help text — and the set's membership comes from a new list that is the stages plus the setup skill.
+The set becomes `skills` with seven members, declared as a single list named for what it holds. No second list records which of them are stages.
+
+Every existing consumer of `STAGE_SKILLS` wants the skills jen ships, not the pipeline's stages. The help text counts what `init` writes into a project; the tests assert that each shipped skill is written, stamped, tracked, valid as an Agent Skill, and obstructed by a symlinked ancestor. None of them asks which skills a status triggers. The help text is where keeping the old list would have been actively wrong rather than merely redundant: it would report six while `init` wrote seven.
+
+Stage-ness is a workflow fact and already has two homes — the stage table in `AGENTS.md` and the `task-pipeline` capability. Recording it a third time in the payload declaration buys nothing and costs what `cli/AGENTS.md` already warns about: two statements of the file list are how the two drift.
 
 *Alternative rejected — a second variable set.* Two sets declaring `.claude/skills` would derive the same `memberShape` and return identical `reconcileCandidates`, so one stamped orphan would be appended to `plan.deletions` once per set: a duplicated line in the run's report and a second `unlink` of a path already gone. Nothing in the current code guards against it, because until now there has only ever been one set. The `managed-payload` delta now forbids it outright rather than leaving it as a trap for whoever adds the next set.
 
@@ -68,7 +72,7 @@ The tracker's statuses and labels, and the registry's contents, are the record o
 
 - **The eight status names drift between `AGENTS.md`'s table and the skill's prose.** → The skill names the table as the authority and enumerates only for readability. A drift is then a legible contradiction inside one shipped payload rather than two plausible sources.
 - **Case folding hides a genuine near-miss.** → Accepted, and bounded: only case and surrounding whitespace are folded. Everything else is reported as missing, which fails toward the user's attention rather than toward a broken transition later.
-- **Renaming the variable set touches six test files.** → Mechanical, and the compiler finds them; `payload.test.ts` looks the set up by name, and the rest import `STAGE_SKILLS`, which keeps its meaning.
+- **Renaming the variable set and its member list touches six test files.** → Mechanical, and the compiler finds every import; `payload.test.ts` additionally looks the set up by name and asserts the six names literally, so it needs reading rather than renaming.
 - **A project that adopted jen before this release has no `setup-jen`.** → That is what `jen update` is for. Deletion is the stamp intersected with the shipped payload, so an added member needs no migration — the next update writes it.
 - **The skill is user-invoked and attended, but nothing structurally prevents an unattended stage from invoking it.** → No status triggers it and it is absent from the pipeline table, so no stage reaches it by the mechanism stages use. Left as a convention rather than an enforced boundary.
 
