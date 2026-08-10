@@ -1,4 +1,4 @@
-# Every resource this project's workflow acts on: the repository it builds, the
+# Every resource this project's workflow acts on: this repository itself, the
 # project-management entry that tracks it, and anything else a stage needs to reach.
 #
 # `jen init` writes this file once, and the project owns it from then on — jen never
@@ -6,13 +6,15 @@
 # edit it by hand.
 #
 # Each entry names the resource, says what kind of thing it is, and carries whatever a
-# stage needs to reach it:
+# stage needs to reach it. The project itself is one of them — jen installed into this
+# repository, with the project's own sources tracked under `src/` right here. There is no
+# second repository to clone in; `path` says where in this one a stage finds the sources.
 #
 #   resources:
 #     - name: acme-web
 #       kind: repository
 #       url: git@github.com:acme/acme-web.git
-#       path: src/acme-web
+#       path: src/
 #
 #     - name: acme-web-tracker
 #       kind: project-management

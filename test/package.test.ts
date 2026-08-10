@@ -9,6 +9,8 @@ import { readRepoFile, run } from './helpers.js';
 const manifest = JSON.parse(readRepoFile('package.json')) as {
   name: string;
   type: string;
+  license: string;
+  keywords: string[];
   bin: Record<string, string>;
   files: string[];
   publishConfig: { access: string };
@@ -46,6 +48,27 @@ describe('package.json', () => {
     expect(manifest.repository.url).toBe('https://github.com/reveer-ai/jen.git');
     expect(manifest.repository.url.startsWith('git+')).toBe(false);
   });
+
+  // `UNLICENSED` is the value being guarded against specifically, not just any absent
+  // one: it states that no rights are granted, of a package anyone can already download
+  // without authenticating.
+  it('declares a license granting rights to the package anyone can download', () => {
+    expect(manifest.license).toBeTypeOf('string');
+    expect(manifest.license).not.toBe('UNLICENSED');
+    expect(manifest.license, 'license is not an SPDX identifier').toMatch(/^[A-Za-z0-9.+-]+$/);
+  });
+
+  it('is discoverable by search rather than only by its exact name', () => {
+    expect(Array.isArray(manifest.keywords)).toBe(true);
+    expect(manifest.keywords.length).toBeGreaterThan(0);
+  });
+
+  it('carries the license file the manifest declares', () => {
+    const license = readRepoFile('LICENSE');
+    expect(license).toContain('Apache License');
+    expect(license).toContain('Version 2.0');
+    expect(manifest.license).toBe('Apache-2.0');
+  });
 });
 
 describe('the packed tarball', () => {
@@ -79,6 +102,16 @@ describe('the packed tarball', () => {
     const shipped = contents.filter((path) => path.startsWith('dist/templates/skills/'));
     expect(new Set(shipped.map((path) => path.split('/')[3]))).toEqual(new Set(SKILLS));
     expect(shipped).toHaveLength(SKILLS.length);
+  });
+
+  // The registry adds these regardless of `files`, which is exactly why they are asserted
+  // here: nothing in the manifest selects them, so nothing in the manifest can be read as
+  // keeping them. The assertion is what stops a later `files` change from being trusted to
+  // control what ships, and it is what makes the front page and the license grant reaching
+  // the adopter a checked fact rather than a documented npm behaviour.
+  it('carries the front page and the license, which `files` names neither of', () => {
+    expect(contents).toContain('README.md');
+    expect(contents).toContain('LICENSE');
   });
 
   it('names no assistant in the staged tree it ships', () => {

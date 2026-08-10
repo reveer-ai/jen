@@ -2,7 +2,7 @@
 
 jen is the workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed. Any agent acting within this project must strictly adhere to this workflow.
 
-jen is not a hub that points at separate project repos — it's the template every project forks from. Forking carries the workflow — this file and the skills — directly into the project.
+jen is not a hub that points at separate project repos — a project installs jen into its own repository. Installing carries the workflow — this file and the skills — directly into the project.
 
 # Source of truth
 
@@ -10,9 +10,9 @@ The task — tracked in project management software (Linear today, others later)
 
 # Projects are monorepos
 
-A project starts as a fork of jen, and that fork *is* the project's monorepo — fill in `src/`, `openspec/`, and `.claude/skills` with what makes it that project. Source, specs, and history stay unified in one repo, however many things deploy out of it on however many different pipelines/cadences. (Forking is how adoption works for now; installing jen as a package is where it's headed, but what lands in the project is the same either way.)
+A project installs jen into its own repository, and that repository *is* the project's monorepo. The root is jen's — this file, `.claude/`, `openspec/`, and `registry.yaml` — and `src/` holds what a repository root would conventionally hold: the project's own sources, tracked right there beside the workflow that governs them. Fill in `src/`, `openspec/`, and `.claude/skills` with what makes it that project. Source, specs, and history stay unified in one repo, however many things deploy out of it on however many different pipelines/cadences.
 
-Linear projects and monorepos aren't 1:1 — multiple Linear projects can, and probably will, point at the same monorepo fork.
+Linear projects and repositories aren't 1:1 — multiple Linear projects can, and probably will, point at the same repository.
 
 # Artifact progression
 
@@ -48,7 +48,7 @@ Shared by every stage, so no stage restates them.
 - **The issue's own text is the humans'.** No stage overwrites the description — it holds the original ask, and that's what the artifacts are answering. Comments carry the running narrative: blockers, handoffs, and whatever needs a person.
 - **Commits.** Lead with the issue identifier — `ENG-135: add resource loader`. Any stage that writes files commits and pushes them before handing off.
 - **Threads.** Push a fix before replying to and resolving its thread (`save_diff_comment` with `parentId`, then `resolve_diff_thread`). Never resolve against unpushed work — it tells the reviewer something untrue.
-- **Notes as you work.** A convention this change establishes, or a gotcha a future session would otherwise rediscover the hard way, goes in the AGENTS.md nearest the code it applies to — written by the stage that learned it, at the point it learned it, so it rides in the diff and gets reviewed and tested like everything else. Never the root AGENTS.md: that's the workflow, shared with every fork, and project notes don't belong in it. They live at or below `src/`, as deep as the thing they describe. Skip it when nothing clears the bar — a note nobody needed is worse than no note.
+- **Notes as you work.** A convention this change establishes, or a gotcha a future session would otherwise rediscover the hard way, goes in the AGENTS.md nearest the code it applies to — written by the stage that learned it, at the point it learned it, so it rides in the diff and gets reviewed and tested like everything else. Never the root AGENTS.md: that's the workflow, and the next `jen update` replaces it wholesale — a note written there isn't impolite, it's lost. They live at or below `src/`, as deep as the thing they describe. Skip it when nothing clears the bar — a note nobody needed is worse than no note.
 - **Unattended stages never block.** Everything past design runs with nobody watching. What needs a human goes on the Linear issue or the PR, and the run stops cleanly; it never waits on a reply.
 - **Churn is budgeted.** Any stage can route a task backward — review or testing to implementation, delivery to implementation, implementation to design. Once is the pipeline working. Repeating is the pipeline failing to converge, and it can happen between any pair of stages, so all of them share one budget rather than one each. Before starting, count the backward moves in the issue's `stateHistory` — every transition to a status earlier in the table than the one it was in. On the third, stop: comment on the issue with what sent it back each round and what looks unresolvable, leave the status where it is, and don't start the work.
 
@@ -58,7 +58,7 @@ All work happens in the context of resources defined in `registry.yaml`. A resou
 
 ```
 registry.yaml     # All registered resources with access and setup info
-src/              # gitignored — the project's own sources: repos, scripts, whatever a skill needs to act on
+src/              # The project's own sources, tracked in this repository — whatever a skill acts on
 ```
 
 Check `registry.yaml` for the resources relevant to the current task.

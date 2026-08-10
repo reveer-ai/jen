@@ -1,6 +1,6 @@
 # jen's own source
 
-The CLI lives here, not in `src/`. `src/` is the governed project's checkout — gitignored, and the same thing in jen as in every project that adopts it.
+The CLI lives here, not in `src/`. `src/` names the same *location* in jen as in every project that adopts it — the project's own sources, under a root the workflow owns — but not the same tracked-ness: an adopter's sources are its repository's content and are tracked, while jen governs no sources of its own, so its `src/` holds only working checkouts and is gitignored. That is jen's arrangement, not a rule adopters inherit; jen writes no ignore file into a project.
 
 ## The payload declaration is the single source
 
