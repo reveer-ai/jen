@@ -11,9 +11,13 @@ Defines the set of files jen owns inside a project it governs, and the rules by 
 jen SHALL declare, as data rather than as logic, the set of files it owns in an installed project. The declaration SHALL distinguish two kinds:
 
 - **Fixed paths** — a single known location jen always writes. Root `AGENTS.md` is one.
-- **Variable sets** — a group of files jen writes into a directory it shares with the project, where the membership of the group can change between versions. The six stage skills in `.claude/skills/` are one.
+- **Variable sets** — a group of files jen writes into a directory it shares with the project, where the membership of the group can change between versions. The skills jen ships into `.claude/skills/` are one.
 
 Skills are one kind of managed file, not the only kind. The declaration SHALL NOT assume a managed file is a skill.
+
+A shipped skill need not be a stage of the pipeline. The set of skills jen ships SHALL be free to hold a skill that no status triggers, so the set SHALL NOT be defined as the stages.
+
+At most one variable set SHALL declare any given target directory. Two sets sharing a directory would derive the same member shape and search the same locations, so a single stamped orphan would be counted for deletion once per set.
 
 Every path not covered by the declaration is project-owned. jen SHALL NOT modify or delete a project-owned path after it is first written.
 
@@ -21,7 +25,18 @@ Every path not covered by the declaration is project-owned. jen SHALL NOT modify
 
 - **WHEN** the payload declaration is read
 - **THEN** root `AGENTS.md` is declared as a fixed path
-- **AND** the six stage skills are declared as a variable set targeting `.claude/skills/`
+- **AND** the shipped skills are declared as a variable set targeting `.claude/skills/`
+
+#### Scenario: A shipped skill that is not a stage
+
+- **WHEN** the payload declares a skill that no pipeline status triggers
+- **THEN** it is a member of the same variable set as the stage skills
+- **AND** it is written, stamped, and reconciled exactly as they are
+
+#### Scenario: One set per target directory
+
+- **WHEN** the payload declaration is read
+- **THEN** no two variable sets declare the same target directory
 
 #### Scenario: A project-authored file outside the declaration is untouched
 
@@ -80,7 +95,7 @@ The stamp SHALL be applied when the payload is staged, not stored in the reposit
 
 #### Scenario: Working copies stay unstamped
 
-- **WHEN** the six stage skills in jen's own `.claude/skills/` are read
+- **WHEN** the skills jen ships are read in jen's own `.claude/skills/`
 - **THEN** none contains a jen stamp
 
 #### Scenario: A stamped skill remains valid

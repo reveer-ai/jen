@@ -67,14 +67,14 @@ These files SHALL instead be produced locally by `openspec init`, from the versi
 
 ### Requirement: A fresh clone has working stage skills with no build step
 
-Cloning the repository SHALL yield the six stage skills, immediately usable, without installing dependencies, running a build, or executing any initialization command. The skills a contributor edits SHALL be the same files the package ships.
+Cloning the repository SHALL yield every skill jen ships — the six stage skills and the setup skill — immediately usable, without installing dependencies, running a build, or executing any initialization command. The skills a contributor edits SHALL be the same files the package ships.
 
 #### Scenario: Stage skills work immediately after clone
 
 - **WHEN** the repository is cloned and no build or install is run
-- **THEN** all six stage skills are present at `.claude/skills/<name>/SKILL.md` and are valid Agent Skills
+- **THEN** every skill the payload declares is present at `.claude/skills/<name>/SKILL.md` and is a valid Agent Skill
 
 #### Scenario: Editing a skill requires no regeneration
 
-- **WHEN** a contributor edits a stage skill's `SKILL.md` and commits it
+- **WHEN** a contributor edits a shipped skill's `SKILL.md` and commits it
 - **THEN** no build, regeneration, or second copy needs updating for the change to be complete

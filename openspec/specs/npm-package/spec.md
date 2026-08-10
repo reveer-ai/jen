@@ -48,7 +48,7 @@ The package SHALL declare OpenSpec as a dependency and SHALL NOT contain a copy 
 
 ### Requirement: `prepack` stages the payload
 
-A `prepack` script SHALL compile the CLI to `dist/` and stage the payload into `dist/templates/`, placing the six stage skills at `dist/templates/skills/<name>/SKILL.md` and the workflow document at `dist/templates/AGENTS.md`. Staging SHALL apply the ownership stamp defined by the `managed-payload` capability.
+A `prepack` script SHALL compile the CLI to `dist/` and stage the payload into `dist/templates/`, placing each skill the payload declares at `dist/templates/skills/<name>/SKILL.md` and the workflow document at `dist/templates/AGENTS.md`. Staging SHALL apply the ownership stamp defined by the `managed-payload` capability.
 
 The staged tree SHALL be generated, never committed, and SHALL NOT be hand-edited. Its layout SHALL be tool-neutral: no path within it SHALL be named for a particular assistant.
 
@@ -57,7 +57,7 @@ Staging SHALL be deterministic — the same repository state produces byte-ident
 #### Scenario: Staging produces the payload
 
 - **WHEN** `prepack` runs
-- **THEN** `dist/templates/skills/` contains exactly six skill directories, each holding a stamped `SKILL.md`
+- **THEN** `dist/templates/skills/` contains one directory for each skill the payload declares and no others, each holding a stamped `SKILL.md`
 - **AND** `dist/templates/AGENTS.md` matches the repository's root `AGENTS.md` in content
 
 #### Scenario: The staged layout names no assistant
