@@ -27,7 +27,9 @@ The adopter's documentation SHALL state which files jen owns and overwrites and 
 
 An adopter who hand-edits a managed file loses that edit on the next update. Discovering the boundary after the loss is the failure this ordering exists to prevent, so the boundary SHALL NOT be relegated to a later section, a footnote, or a reference to the specifications.
 
-The statement SHALL cover, at minimum: that root `AGENTS.md` and the shipped skills are jen's and are replaced wholesale; that `registry.yaml` and the assistant settings are written once and never touched again; that everything else — the project's sources, its specs, and any skill it authors — is the project's; and that removing a managed file's ownership stamp transfers it to the project.
+The statement SHALL cover, at minimum: that root `AGENTS.md` and the shipped skills are jen's and are replaced wholesale; that `registry.yaml` and the assistant settings are written once and never touched again; that everything else — the project's sources, its specs, and any skill it authors — is the project's; and what the ownership stamp does, which is to mark a file as jen's to *remove* rather than to decide whether it is overwritten.
+
+The documentation SHALL NOT present removing the stamp as a way to keep an edit to a skill jen currently ships. It does not: the payload is written to its declared paths unconditionally, and the next update restores both the file and its stamp. Stating otherwise would tell an adopter their edit is safe in exactly the case where it is lost.
 
 #### Scenario: The boundary precedes the install instructions
 
@@ -38,7 +40,15 @@ The statement SHALL cover, at minimum: that root `AGENTS.md` and the shipped ski
 
 - **WHEN** an adopter wants to know whether editing a shipped skill is safe
 - **THEN** the documentation states that the file is jen's and that an update replaces it
-- **AND** it states how the project may claim the file instead
+- **AND** it states that removing the stamp does not prevent that
+- **AND** it names authoring a separate skill as the way to hold code the update will not touch
+
+#### Scenario: An adopter learns what the stamp actually governs
+
+- **WHEN** the documentation describes the ownership stamp
+- **THEN** it states that a stamped file jen no longer ships is deleted on update
+- **AND** that removing the stamp from such a file keeps it
+- **AND** that a file jen never shipped is left alone whether or not it is stamped
 
 ### Requirement: The adoption path is documented end to end
 

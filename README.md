@@ -19,14 +19,24 @@ Read this before you install. jen overwrites its own files on every update, and 
 | `src/`, your `openspec/` content, skills you write yourself | you | Nothing. jen does not touch them and never deletes an unstamped file. |
 | your `.gitignore` | you | Nothing. jen writes no ignore rules and imposes no arrangement on what you track. |
 
-Every file jen owns in a shared directory carries an ownership stamp in its frontmatter:
+### The stamp, and what it does and does not protect
+
+`.claude/skills/` is shared: jen's skills sit in it beside any you write. Every skill jen put there carries an ownership stamp in its frontmatter, which is how it tells the two apart:
 
 ```yaml
 metadata:
   jen: true
 ```
 
-**Deleting that stamp claims the file.** An unstamped file in `.claude/skills/` is yours: jen will not overwrite it and will not delete it. That is the supported way to keep an edit to a shipped skill — fork the file by unstamping it, and accept that it no longer tracks jen's version of it. Editing a stamped file and hoping is not.
+The stamp marks a file as **jen's to remove**. It governs deletion, not overwriting, and the difference is the one thing worth knowing before you edit anything:
+
+- **A skill jen still ships is overwritten on every update, stamped or not.** Deleting the stamp does not claim it. The next `jen update` rewrites the file and puts the stamp back, and your edit is gone either way.
+- **A skill jen has stopped shipping is deleted only if it still carries the stamp.** Deleting the stamp keeps it, which is how you hold on to a skill a later version dropped.
+- **A skill jen never shipped is never touched.** Unstamped and not in the payload means jen leaves it exactly where it is.
+
+So there is no supported way to keep an edit to a skill jen currently ships. If you want different behaviour, write your own skill under its own name — that file is yours, permanently, and no update will look at it.
+
+The same goes for the workflow document. Root `AGENTS.md` carries no stamp at all — jen owns that path outright and replaces it on every update. Project notes go in an `AGENTS.md` nearer the code they describe, at or below `src/`, which jen never touches.
 
 ## Adopting jen
 
@@ -72,13 +82,15 @@ npm i -D @reveer/jen@latest && npx jen update
 
 jen writes into `.claude/` and nowhere else. Claude Code picks the skills up with no further configuration.
 
-For another assistant, symlink its directory to jen's:
+For another assistant, symlink the directory it reads to jen's — substituting whatever directory yours actually uses:
 
 ```bash
-ln -s ../.claude/skills .agents/skills
+mkdir -p .agents && ln -s ../.claude/skills .agents/skills
 ```
 
-That symlink is yours. jen neither creates it nor reads it, and it survives every update because nothing jen ships knows it exists. Whether your assistant finds skills that way is between you and it.
+That symlink is yours. jen neither creates it nor reads it, and it survives every update because nothing jen ships knows it exists. Whether your assistant picks skills up that way is between you and it.
+
+Point the link *at* `.claude/`, never the other way around. jen refuses to write through a symlinked directory on the way to one of its own paths, so making `.claude` itself a link stops `init` and `update` outright.
 
 ## What adoption does not cover
 
