@@ -73,19 +73,28 @@ export const STAMP = {
 /** The stamp rendered for insertion into YAML frontmatter, trailing newline included. */
 export const STAMP_FRONTMATTER = `${STAMP.section}:\n  ${STAMP.key}: ${STAMP.value}\n`;
 
-/** The six workflow stages, one skill each. */
-export const STAGE_SKILLS = [
+/**
+ * Every skill jen ships into a project.
+ *
+ * One list, not two. Which of these a pipeline status triggers is a workflow fact, and it
+ * already has a home in `AGENTS.md`'s stage table and in the `task-pipeline` capability;
+ * recording it a third time here would buy nothing and drift. Nothing that reads this
+ * declaration asks the question — staging, installation, and reconciliation all want the
+ * skills jen ships, whatever a status does or does not do with them.
+ */
+export const SKILLS = [
   'refine-epic',
   'design-task',
   'implement-task',
   'review-task',
   'test-task',
   'deliver-task',
+  'setup-jen',
 ] as const;
 
 const SKILLS_TARGET_DIR = '.claude/skills';
 
-function stageSkill(name: string): ManagedFile {
+function skill(name: string): ManagedFile {
   return {
     source: `${SKILLS_TARGET_DIR}/${name}/SKILL.md`,
     staged: `skills/${name}/SKILL.md`,
@@ -106,9 +115,9 @@ export const PAYLOAD: readonly PayloadGroup[] = [
   },
   {
     kind: 'variable-set',
-    name: 'stage-skills',
+    name: 'skills',
     targetDir: SKILLS_TARGET_DIR,
-    members: STAGE_SKILLS.map(stageSkill),
+    members: SKILLS.map(skill),
   },
 ];
 
@@ -176,7 +185,7 @@ function withinTargetDir(set: VariableSet, file: ManagedFile): string[] {
 }
 
 /**
- * The path every member of a set occupies below its slot — `SKILL.md` for the stage
+ * The path every member of a set occupies below its slot — `SKILL.md` for the shipped
  * skills, where the slot (`design-task`) is what varies between members. Reconciliation
  * derives its search from this rather than hardcoding a filename, so a future variable
  * set is data here and not a code change.

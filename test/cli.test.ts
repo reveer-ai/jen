@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { STAGE_SKILLS } from '../cli/payload.js';
+import { SKILLS } from '../cli/payload.js';
 import { project } from './fixture.js';
 import { readRepoFile, repoRoot } from './helpers.js';
 
@@ -51,7 +51,7 @@ describe('the built binary', () => {
     const result = jen(['init', root]);
 
     expect(result.status, result.stderr).toBe(0);
-    for (const name of STAGE_SKILLS) {
+    for (const name of SKILLS) {
       expect(existsSync(join(root, '.claude/skills', name, 'SKILL.md')), name).toBe(true);
     }
     expect(existsSync(join(root, 'openspec/config.yaml'))).toBe(true);

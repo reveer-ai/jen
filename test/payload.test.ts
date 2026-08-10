@@ -7,14 +7,15 @@ import {
   payloadFiles,
   SCAFFOLD,
   stagedFiles,
-  STAGE_SKILLS,
+  SKILLS,
   STAMP,
   STAMP_FRONTMATTER,
   type VariableSet,
 } from '../cli/payload.js';
+import { readRepoFile } from './helpers.js';
 
 const variableSets = PAYLOAD.filter((group): group is VariableSet => group.kind === 'variable-set');
-const stageSkills = variableSets.find((set) => set.name === 'stage-skills');
+const skills = variableSets.find((set) => set.name === 'skills');
 
 describe('the payload declaration', () => {
   it('declares root AGENTS.md as a fixed path', () => {
@@ -22,18 +23,44 @@ describe('the payload declaration', () => {
     expect(fixed.map((group) => group.file.target)).toContain('AGENTS.md');
   });
 
-  it('declares the six stage skills as a variable set targeting .claude/skills', () => {
-    expect(stageSkills).toBeDefined();
-    expect(stageSkills!.targetDir).toBe('.claude/skills');
-    expect(stageSkills!.members).toHaveLength(6);
-    expect(STAGE_SKILLS).toEqual([
+  it('declares the skills it ships as a variable set targeting .claude/skills', () => {
+    expect(skills).toBeDefined();
+    expect(skills!.targetDir).toBe('.claude/skills');
+    expect(SKILLS).toEqual([
       'refine-epic',
       'design-task',
       'implement-task',
       'review-task',
       'test-task',
       'deliver-task',
+      'setup-jen',
     ]);
+    expect(skills!.members).toHaveLength(SKILLS.length);
+  });
+
+  // The set is the skills jen ships, not the pipeline's stages. `setup-jen` is triggered
+  // by no status and appears in no stage table, and is a member on exactly the terms the
+  // other six are — a payload addition needs no migration, so the next `jen update`
+  // writes it into an already-adopted project.
+  it('holds a shipped skill that no pipeline status triggers', () => {
+    expect(SKILLS).toContain('setup-jen');
+    expect(payloadFiles().find((entry) => entry.file.target.includes('setup-jen'))).toEqual({
+      file: {
+        source: '.claude/skills/setup-jen/SKILL.md',
+        staged: 'skills/setup-jen/SKILL.md',
+        target: '.claude/skills/setup-jen/SKILL.md',
+        format: 'markdown',
+      },
+      stamped: true,
+    });
+  });
+
+  // Two sets over one directory would derive the same member shape and search the same
+  // locations, so a single stamped orphan would land in `plan.deletions` once per set:
+  // a duplicated line in the report and a second `unlink` of a path already gone.
+  it('gives each variable set a target directory of its own', () => {
+    const directories = variableSets.map((set) => set.targetDir);
+    expect(new Set(directories).size).toBe(directories.length);
   });
 
   it('names every managed file explicitly, with no glob or wildcard', () => {
@@ -56,7 +83,7 @@ describe('the payload declaration', () => {
 
   it('stamps variable-set members and leaves fixed paths unstamped', () => {
     const stamped = payloadFiles().filter((entry) => entry.stamped);
-    expect(stamped).toHaveLength(6);
+    expect(stamped).toHaveLength(SKILLS.length);
     expect(payloadFiles().filter((entry) => !entry.stamped).map((entry) => entry.file.target)).toEqual([
       'AGENTS.md',
     ]);
@@ -75,9 +102,9 @@ describe('the payload declaration', () => {
   });
 
   it('exposes each variable set\'s member shape, one slot below its target directory', () => {
-    expect(memberShape(stageSkills!)).toBe('SKILL.md');
-    expect(stageSkills!.members.map((member) => member.target)).toEqual(
-      STAGE_SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
+    expect(memberShape(skills!)).toBe('SKILL.md');
+    expect(skills!.members.map((member) => member.target)).toEqual(
+      SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
     );
   });
 
@@ -116,6 +143,17 @@ describe('the scaffold declaration', () => {
   it('ships unstamped, even where the format could carry a stamp', () => {
     for (const { file, stamped } of stagedFiles()) {
       if (SCAFFOLD.some((entry) => entry.target === file.target)) expect(stamped).toBe(false);
+    }
+  });
+
+  // The scaffold is the first thing an adopter reads after `jen init`, and it is written
+  // long before the skills it points at settle on their names. A dead pointer here is
+  // invisible in this repo and only shows up in an installed project.
+  it('points only at skills jen actually ships', () => {
+    for (const file of SCAFFOLD) {
+      for (const [reference, name] of readRepoFile(file.source).matchAll(/`([^`]+)` skill/g)) {
+        expect(SKILLS, `${file.source} says "${reference}"`).toContain(name);
+      }
     }
   });
 });
