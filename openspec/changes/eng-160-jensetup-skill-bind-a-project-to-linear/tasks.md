@@ -29,3 +29,8 @@
 - [x] 4.2 Run `npm test` and `npm run typecheck` and fix what they catch.
 - [x] 4.3 Record in `cli/AGENTS.md` that the shipped skills and the pipeline's stages are now different lists, and why a second variable set over `.claude/skills` is forbidden — the double-counted deletion candidate is not obvious from reading `plan.ts`.
 - [x] 4.4 Run `openspec validate eng-160-jensetup-skill-bind-a-project-to-linear --strict` and resolve anything it reports.
+
+## 5. From testing
+
+- [x] 5.1 Point `scaffold/registry.yaml`'s comment at `setup-jen` — it names `jen:setup`, a skill that ships under neither that name nor that syntax — and record the narrow `scaffold/` exception in `design.md`'s Non-Goals.
+- [x] 5.2 Assert in `test/payload.test.ts` that every skill a scaffold file names is one the payload ships, so the next forward reference fails here rather than in an installed project.

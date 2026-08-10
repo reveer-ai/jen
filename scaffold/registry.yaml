@@ -2,7 +2,7 @@
 # project-management entry that tracks it, and anything else a stage needs to reach.
 #
 # `jen init` writes this file once, and the project owns it from then on — jen never
-# reads, rewrites, or deletes it afterward. Run the `jen:setup` skill to fill it in, or
+# reads, rewrites, or deletes it afterward. Run the `setup-jen` skill to fill it in, or
 # edit it by hand.
 #
 # Each entry names the resource, says what kind of thing it is, and carries whatever a

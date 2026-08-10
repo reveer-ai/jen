@@ -17,7 +17,7 @@ See proposal.md — Why. The constraints that shape the approach, all of them al
 
 **Non-Goals:**
 
-- Any change to the six stage skills, `AGENTS.md`, `scaffold/`, or the install and reconcile logic in `plan.ts`/`apply.ts`. The payload declaration changes; the machinery reading it does not.
+- Any change to the six stage skills, `AGENTS.md`, `scaffold/`, or the install and reconcile logic in `plan.ts`/`apply.ts`. The payload declaration changes; the machinery reading it does not. One exception, found in testing: `scaffold/registry.yaml` carried a forward reference to `jen:setup`, written by ENG-158 before this skill had a name. Settling the name on `setup-jen` turned that reference into a dead pointer, in the file an adopter reads first. Correcting the name it points at is this change's to fix; nothing else in `scaffold/` moves.
 - Any second variable set, second target directory, or per-assistant output.
 
 ## Decisions

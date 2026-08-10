@@ -12,6 +12,7 @@ import {
   STAMP_FRONTMATTER,
   type VariableSet,
 } from '../cli/payload.js';
+import { readRepoFile } from './helpers.js';
 
 const variableSets = PAYLOAD.filter((group): group is VariableSet => group.kind === 'variable-set');
 const skills = variableSets.find((set) => set.name === 'skills');
@@ -142,6 +143,17 @@ describe('the scaffold declaration', () => {
   it('ships unstamped, even where the format could carry a stamp', () => {
     for (const { file, stamped } of stagedFiles()) {
       if (SCAFFOLD.some((entry) => entry.target === file.target)) expect(stamped).toBe(false);
+    }
+  });
+
+  // The scaffold is the first thing an adopter reads after `jen init`, and it is written
+  // long before the skills it points at settle on their names. A dead pointer here is
+  // invisible in this repo and only shows up in an installed project.
+  it('points only at skills jen actually ships', () => {
+    for (const file of SCAFFOLD) {
+      for (const [reference, name] of readRepoFile(file.source).matchAll(/`([^`]+)` skill/g)) {
+        expect(SKILLS, `${file.source} says "${reference}"`).toContain(name);
+      }
     }
   });
 });
