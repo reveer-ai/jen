@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { stagedFiles } from '../cli/payload.js';
+import { SKILLS, stagedFiles } from '../cli/payload.js';
 import { readRepoFile, run } from './helpers.js';
 
 const manifest = JSON.parse(readRepoFile('package.json')) as {
@@ -70,6 +70,15 @@ describe('the packed tarball', () => {
     for (const { file } of stagedFiles()) {
       expect(contents).toContain(`dist/templates/${file.staged}`);
     }
+  });
+
+  // Both directions, because each catches a different mistake: a skill the payload gained
+  // but `files`/staging never reached, and a skill dropped from the payload whose staged
+  // directory survived in a stale `dist/` and shipped anyway.
+  it('carries one skill directory per shipped skill and no others', () => {
+    const shipped = contents.filter((path) => path.startsWith('dist/templates/skills/'));
+    expect(new Set(shipped.map((path) => path.split('/')[3]))).toEqual(new Set(SKILLS));
+    expect(shipped).toHaveLength(SKILLS.length);
   });
 
   it('names no assistant in the staged tree it ships', () => {

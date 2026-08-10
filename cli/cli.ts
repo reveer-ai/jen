@@ -14,7 +14,7 @@ import { apply, ApplyFailure, type Applied } from './apply.js';
 import { ignoredPaths } from './ignore.js';
 import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
-import { payloadFiles, SCAFFOLD, STAGE_SKILLS } from './payload.js';
+import { payloadFiles, SCAFFOLD, SKILLS } from './payload.js';
 
 const USAGE = `jen — the workflow layer for automated, agentic software development
 
@@ -31,7 +31,7 @@ Options:
   -v, --version    show the installed version
 
 \`project\` defaults to the working directory. jen writes the workflow document, the
-${STAGE_SKILLS.length} stage skills, and a scaffold the project then owns; it touches nothing else. Neither
+${SKILLS.length} skills it ships, and a scaffold the project then owns; it touches nothing else. Neither
 command prompts, and both are safe to re-run and safe in CI.`;
 
 export interface Io {

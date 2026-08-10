@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { payloadFiles, stagedFiles, STAGE_SKILLS } from '../cli/payload.js';
+import { payloadFiles, stagedFiles, SKILLS } from '../cli/payload.js';
 import { frontmatterKeys, frontmatterOf, readRepoFile, repoRoot, run, trackedFiles } from './helpers.js';
 
 const tracked = trackedFiles();
@@ -76,8 +76,8 @@ describe('.gitignore', () => {
 });
 
 describe('a fresh clone', () => {
-  it('has all six stage skills present, tracked, and valid', () => {
-    for (const name of STAGE_SKILLS) {
+  it('has every shipped skill present, tracked, and valid', () => {
+    for (const name of SKILLS) {
       const path = `.claude/skills/${name}/SKILL.md`;
       expect(existsSync(join(repoRoot, path)), `${path} is missing`).toBe(true);
       expect(tracked, `${path} is untracked`).toContain(path);

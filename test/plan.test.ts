@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { apply } from '../cli/apply.js';
-import { PAYLOAD, STAGE_SKILLS, memberShape, type VariableSet } from '../cli/payload.js';
+import { PAYLOAD, SKILLS, memberShape, type VariableSet } from '../cli/payload.js';
 import { planInstall, reconcileCandidates, stagedPayloadDir, touchedPaths, type Plan } from '../cli/plan.js';
 import { changed, link, messyProject, neighbours, project, snapshot, stamped } from './fixture.js';
 import { stageInto } from './helpers.js';
@@ -37,6 +37,7 @@ describe('reconciliation candidates', () => {
       '.claude/skills/design-task-copy/SKILL.md',
       '.claude/skills/design-task/SKILL.md',
       '.claude/skills/legacy-stage/SKILL.md',
+      '.claude/skills/openspec-explore/SKILL.md',
     ]);
   });
 
@@ -75,13 +76,13 @@ describe('the planner', () => {
     const root = messyProject(staged);
     const plan = planInstall(root, { scaffold: false, templates: staged });
 
-    // the hand-edited skill and the project's own AGENTS.md differ; the other five
-    // skills are absent, which is also a write
+    // the hand-edited skill and the project's own AGENTS.md differ; every other shipped
+    // skill is absent, which is also a write
     expect(plan.writes.filter((write) => write.replaces).map((write) => write.target)).toEqual([
       'AGENTS.md',
       '.claude/skills/design-task/SKILL.md',
     ]);
-    expect(plan.writes).toHaveLength(7);
+    expect(plan.writes).toHaveLength(SKILLS.length + 1);
     expect(plan.current).toEqual([]);
   });
 
@@ -92,12 +93,24 @@ describe('the planner', () => {
     const plan = planInstall(root, { scaffold: false, templates: staged });
     expect(plan.writes).toEqual([]);
     expect(plan.deletions).toEqual([]);
-    expect(plan.current).toHaveLength(7);
+    expect(plan.current).toHaveLength(SKILLS.length + 1);
   });
 
   it('plans the deletion of a stamped file this version no longer ships, and only that', () => {
     const plan = planInstall(messyProject(staged), { scaffold: false, templates: staged });
     expect(plan.deletions).toEqual(['.claude/skills/legacy-stage/SKILL.md']);
+  });
+
+  // Deletion is the stamp intersected with the shipped payload. Anything that widened it
+  // to "what the payload does not ship" would still pass the test above and would take
+  // these with it, since `openspec init` writes them into the same directory jen does.
+  it('spares the unstamped skills sharing the target directory, OpenSpec\'s included', () => {
+    const root = messyProject(staged);
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+
+    for (const path of ['.claude/skills/openspec-explore/SKILL.md', '.claude/skills/deploy-service/SKILL.md']) {
+      expect(existsSync(join(root, path)), `${path} was not jen's to delete`).toBe(true);
+    }
   });
 
   it('names an existing, differing fixed path as a conflict', () => {
@@ -144,7 +157,7 @@ describe('the planner', () => {
     const plan = planInstall(root, { scaffold: true, templates: staged });
 
     expect(plan.obstructions.map(({ target }) => target)).toEqual([
-      ...STAGE_SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
+      ...SKILLS.map((name) => `.claude/skills/${name}/SKILL.md`),
       '.claude/settings.json',
     ]);
     expect(plan.obstructions.every(({ ancestor }) => ancestor === '.claude')).toBe(true);

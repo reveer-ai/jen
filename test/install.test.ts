@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
-import { payloadFiles, SCAFFOLD, STAGE_SKILLS } from '../cli/payload.js';
+import { payloadFiles, SCAFFOLD, SKILLS } from '../cli/payload.js';
 import { hasStamp } from '../cli/stamp.js';
 import { changed, link, messyProject, neighbours, project, snapshot, stamped, touched, writeProject } from './fixture.js';
 import { stageInto } from './helpers.js';
@@ -56,8 +56,8 @@ describe('jen init on an empty project', () => {
     }
   });
 
-  it('writes each stage skill stamped, into .claude/skills/', () => {
-    for (const name of STAGE_SKILLS) {
+  it('writes each shipped skill stamped, into .claude/skills/', () => {
+    for (const name of SKILLS) {
       const path = join(root, '.claude/skills', name, 'SKILL.md');
       expect(existsSync(path), path).toBe(true);
       expect(hasStamp(readFileSync(path, 'utf8')), `${name} must be recognisable as jen's`).toBe(true);

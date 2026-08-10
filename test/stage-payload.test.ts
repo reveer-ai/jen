@@ -5,7 +5,7 @@ import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { payloadFiles, stagedFiles, STAMP_FRONTMATTER } from '../cli/payload.js';
+import { payloadFiles, SKILLS, stagedFiles, STAMP_FRONTMATTER } from '../cli/payload.js';
 import { frontmatterKeys, frontmatterOf, readRepoFile, repoRoot, stageInto } from './helpers.js';
 
 function filesUnder(dir: string): string[] {
@@ -32,11 +32,11 @@ describe('staging', () => {
     expect(filesUnder(staged)).toEqual(stagedFiles().map((entry) => entry.file.staged).sort());
   });
 
-  it('lays the skills out as six directories, each holding one stamped member', () => {
-    const skills = filesUnder(staged).filter((path) => path.startsWith('skills/'));
-    expect(new Set(skills.map((path) => path.split('/')[1])).size).toBe(6);
-    expect(skills.every((path) => path.endsWith('/SKILL.md'))).toBe(true);
-    expect(skills).toHaveLength(6);
+  it('lays the skills out as one directory per shipped skill, each holding one stamped member', () => {
+    const skillFiles = filesUnder(staged).filter((path) => path.startsWith('skills/'));
+    expect(new Set(skillFiles.map((path) => path.split('/')[1]))).toEqual(new Set(SKILLS));
+    expect(skillFiles.every((path) => path.endsWith('/SKILL.md'))).toBe(true);
+    expect(skillFiles).toHaveLength(SKILLS.length);
   });
 
   it('stages the scaffold unstamped, under a role-named path', () => {

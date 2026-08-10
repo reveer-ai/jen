@@ -67,6 +67,12 @@ export function link(root: string, at: string, to: string): void {
  * of its own beside the managed ones, a managed one it edited, one jen used to ship and
  * no longer does, a copy it claimed by deleting the stamp, stamped files above and below
  * the depth the set writes, a filled-in scaffold, and an `AGENTS.md` of its own.
+ *
+ * Including OpenSpec's own skills, which `jen init` puts there itself by delegating to
+ * `openspec init` — the one neighbour in the target directory jen is guaranteed to have.
+ * They land at exactly the depth reconciliation searches, and survive only because
+ * deletion is the stamp intersected with the shipped payload. Rewrite that rule as
+ * "whatever the payload does not ship" and they all disappear on the next update.
  */
 export function messyProject(staged: string): string {
   const shipped = readFileSync(join(staged, 'skills/design-task/SKILL.md'), 'utf8');
@@ -83,6 +89,8 @@ export function messyProject(staged: string): string {
       '.claude/skills/legacy-stage/SKILL.md': stamped('legacy-stage'),
       // copied from jen's and claimed by deleting the stamp
       '.claude/skills/design-task-copy/SKILL.md': shipped.replace(STAMP_FRONTMATTER, ''),
+      // OpenSpec's, written into the same directory at the same depth by `openspec init`
+      '.claude/skills/openspec-explore/SKILL.md': unstamped('openspec-explore'),
       // a directory in the target dir that holds no member
       '.claude/skills/notes/README.md': 'Scratch notes, not a skill.\n',
       // stamped, but deeper than the set writes

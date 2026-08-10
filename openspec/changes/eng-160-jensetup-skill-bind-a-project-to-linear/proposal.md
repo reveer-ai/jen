@@ -34,8 +34,8 @@ Not in scope, and deliberately: no change to the six stage skills or to `AGENTS.
 
 ## Impact
 
-- `cli/payload.ts` — the variable set's name and membership; `STAGE_SKILLS` stays the six stages, with the shipped set derived from it plus the setup skill.
+- `cli/payload.ts` — the variable set's name and membership; `STAGE_SKILLS` becomes one list of the skills jen ships, with nothing recording which of them are stages.
 - `cli/cli.ts` — the help text counts stage skills.
 - `.claude/skills/setup-jen/SKILL.md` — new, and jen's own working copy, so unstamped.
-- `test/` — `payload`, `stage-payload`, `repo-layout`, `package`, `cli`, and `install` all assert against the set's name or its count.
+- `test/` — `payload`, `stage-payload`, `repo-layout`, `package`, `cli`, `install`, and `plan` all assert against the set's name or its count.
 - No change to `AGENTS.md`, the stage skills, `scaffold/`, or the install and reconcile logic in `plan.ts`/`apply.ts`.
