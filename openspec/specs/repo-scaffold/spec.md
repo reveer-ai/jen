@@ -3,30 +3,9 @@
 ## Purpose
 TBD - created by archiving change eng-131-initialize-jen. Update Purpose after archive.
 ## Requirements
-### Requirement: Tracking is default-deny with an explicit allowlist
-
-`.gitignore` SHALL ignore all paths (`*`) and then re-admit, by explicit negation, each path the repository owns. A path not named in the allowlist SHALL NOT be tracked.
-
-#### Scenario: A file jen owns is added
-
-- **WHEN** a file the repository owns is added and named in `.gitignore` as an exception
-- **THEN** git tracks it
-
-#### Scenario: A project adds its own file
-
-- **WHEN** a project working in a fork creates a file not named in the allowlist
-- **THEN** git ignores it
-- **AND** the project must admit it deliberately to track it
-
-#### Scenario: A new directory is introduced without being admitted
-
-- **WHEN** a change creates a directory but does not add a matching exception
-- **THEN** the directory exists on disk and git does not record it
-- **AND** the omission produces no error or warning
-
 ### Requirement: Ignored files stay visible to search tooling
 
-The repository SHALL carry an `.ignore` file that re-admits every path (`!*`) for editor and search tooling, counteracting the default-deny `.gitignore` for tools that honor ignore files when searching.
+The repository SHALL carry an `.ignore` file that re-admits every path (`!*`) for editor and search tooling, so that paths `.gitignore` excludes — the governed project's sources under `src/`, build output, and dependencies — stay readable to tools that honor ignore files when searching.
 
 #### Scenario: An agent searches the working tree
 
@@ -40,24 +19,29 @@ The repository SHALL carry an `.ignore` file that re-admits every path (`!*`) fo
 - **THEN** search tooling shows it
 - **AND** git still refuses to track it
 
-### Requirement: The project's own sources live untracked under `src/`
-
-`src/` SHALL be the location for the sources the workflow acts on, and SHALL NOT be tracked by this repository.
-
-#### Scenario: A resource is checked out to work on
-
-- **WHEN** the workflow needs the sources for a registered resource
-- **THEN** they are placed under `src/`
-- **AND** git does not record them
-
 ### Requirement: Resources are declared in a registry
 
 All work SHALL happen in the context of resources declared in `registry.yaml`, which records each resource with its access and setup information.
+
+The stub `jen init` writes SHALL describe the arrangement an adopted project actually has: the project's own sources tracked under `src/` in the same repository as the workflow's files. Its illustrative content SHALL NOT depict the project's sources as a separate repository cloned into `src/`, which is jen's own arrangement rather than an adopter's and contradicts the repository model the workflow document states.
+
+Nothing in jen's repository reads the scaffold. Its content is inert text here and becomes instructions only in an installed project, so an error in it is invisible to every check jen runs on itself and SHALL be verified against an installed project rather than assumed correct.
 
 #### Scenario: An agent starts a task
 
 - **WHEN** an agent needs to know what it is acting on
 - **THEN** it consults `registry.yaml` for the resources relevant to the task
+
+#### Scenario: The stub describes the adopted project's own layout
+
+- **WHEN** an adopter reads the `registry.yaml` that `jen init` wrote
+- **THEN** its illustrative content shows the project's sources under `src/` in this same repository
+- **AND** no example depicts them as a separately cloned repository
+
+#### Scenario: The scaffold is checked where it takes effect
+
+- **WHEN** the scaffold's content is validated
+- **THEN** it is read as installed in a project rather than only as it sits in jen's repository
 
 ### Requirement: Assistant configuration is shared except where it is per-install
 

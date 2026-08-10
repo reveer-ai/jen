@@ -1,8 +1,5 @@
-# agent-instructions Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change eng-131-initialize-jen. Update Purpose after archive.
-## Requirements
 ### Requirement: A single authoritative workflow document
 
 The repository SHALL carry exactly one document stating the workflow, at `AGENTS.md` in the repository root. Any agent acting within the repository MUST adhere to it. No other file may restate the workflow.
@@ -26,36 +23,6 @@ A nested `AGENTS.md` at or below `src/` is not a second copy of the workflow and
 - **WHEN** an `AGENTS.md` exists at or below `src/` holding notes about the project's own code
 - **THEN** it coexists with the root document
 - **AND** neither restates the other
-
-### Requirement: Tool-specific instruction files are pointers
-
-A coding assistant that reads its own filename rather than `AGENTS.md` SHALL be served by a file whose entire content is a pointer to `AGENTS.md`. `CLAUDE.md` SHALL be such a pointer.
-
-#### Scenario: Claude Code reads its instruction file
-
-- **WHEN** Claude Code loads `CLAUDE.md`
-- **THEN** the file's content directs it to `AGENTS.md`
-- **AND** the workflow text itself appears only in `AGENTS.md`
-
-#### Scenario: The workflow is amended
-
-- **WHEN** `AGENTS.md` is edited
-- **THEN** no pointer file requires a corresponding edit
-- **AND** every assistant reads the amended workflow on its next load
-
-### Requirement: The workflow states what the work is anchored to
-
-`AGENTS.md` SHALL state that the task, tracked in project-management software, is the source of truth, and that OpenSpec changes, git branches, and PRs trace back to a task and exist to serve it.
-
-#### Scenario: An agent must decide where a decision is recorded
-
-- **WHEN** an agent records why work was done a particular way
-- **THEN** `AGENTS.md` directs it to the task rather than to the git log
-
-#### Scenario: An artifact exists without a task
-
-- **WHEN** an OpenSpec change, branch, or PR cannot be traced to a task
-- **THEN** it contradicts the stated source of truth and is not valid workflow output
 
 ### Requirement: The workflow states the repository model
 
@@ -89,28 +56,6 @@ It SHALL NOT describe forking as the adoption model, and SHALL NOT describe the 
 - **WHEN** `AGENTS.md` is read for how a project takes up the workflow
 - **THEN** no passage presents forking jen as the way to do it
 
-### Requirement: The workflow document states the stages and the conventions they share
-
-`AGENTS.md` SHALL state the pipeline's stages — each status, the skill it triggers, the work that stage does, and where it hands off — and the conventions every stage obeys.
-
-A stage's own instructions SHALL NOT restate a shared convention. Six copies of a rule are six things to edit and six chances to disagree, and because each stage reads only its own instructions the disagreement goes unnoticed.
-
-#### Scenario: An agent needs to know what a stage does
-
-- **WHEN** an agent reads `AGENTS.md`
-- **THEN** it finds every stage, the status that triggers it, and the status it hands off to
-
-#### Scenario: A shared convention changes
-
-- **WHEN** a convention every stage obeys is amended
-- **THEN** only `AGENTS.md` is edited
-- **AND** no stage's instructions require a corresponding edit
-
-#### Scenario: A stage's instructions are read on their own
-
-- **WHEN** one stage's instructions are read in isolation
-- **THEN** they presume the conventions stated in `AGENTS.md` rather than repeating them
-
 ### Requirement: Project notes live in the nearest `AGENTS.md`, never the root one
 
 A convention or gotcha specific to the project's own code SHALL be written to the `AGENTS.md` nearest the code it applies to. Such notes SHALL live at or below `src/`, as deep as the thing they describe, and SHALL NOT be written to the root `AGENTS.md`.
@@ -131,4 +76,3 @@ The root document is the workflow, shipped to and overwritten in every project t
 
 - **WHEN** a project has written its own notes into the root `AGENTS.md` and `jen update` runs
 - **THEN** those notes are gone, because the file is replaced wholesale
-
