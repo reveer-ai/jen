@@ -11,7 +11,7 @@ A nested `AGENTS.md` at or below `src/` is not a second copy of the workflow and
 
 #### Scenario: An agent begins work in the repository
 
-- **WHEN** an agent starts work in a repository forked from jen
+- **WHEN** an agent starts work in a project that has adopted the workflow
 - **THEN** `AGENTS.md` is present at the repository root
 - **AND** it states the workflow the agent is bound to
 
@@ -59,18 +59,35 @@ A coding assistant that reads its own filename rather than `AGENTS.md` SHALL be 
 
 ### Requirement: The workflow states the repository model
 
-`AGENTS.md` SHALL state that a project's repository is a fork of jen rather than a separate repository jen references, that source, specs, and history stay unified in that one repository, and that project-management projects and repositories are not necessarily one-to-one.
+`AGENTS.md` SHALL state that a project adopts the workflow by installing jen into the project's own repository, not by forking jen and not by creating a separate repository for jen to point at.
+
+It SHALL state how that repository is arranged: the root is jen's, holding the workflow document, the shipped skills, `openspec/`, and `registry.yaml`; and `src/` holds what would conventionally sit at the repository root — the project's own sources, tracked in the same repository.
+
+It SHALL state that source, specs, and history stay unified in that one repository, however many things deploy out of it, and that project-management projects and repositories are not necessarily one-to-one.
+
+It SHALL NOT describe forking as the adoption model, and SHALL NOT describe the project's sources as living in a repository separate from the one the workflow runs in.
 
 #### Scenario: A project is set up
 
 - **WHEN** a new project adopts the workflow
-- **THEN** it forks jen and fills the fork in
-- **AND** it does not create a separate repository for jen to point at
+- **THEN** it installs jen into its own repository
+- **AND** it neither forks jen nor creates a separate repository for jen to point at
+
+#### Scenario: An agent locates the project's own sources
+
+- **WHEN** an agent reads `AGENTS.md` to find where the project's code lives
+- **THEN** it is directed to `src/`
+- **AND** the document states that those sources are tracked by the same repository
 
 #### Scenario: Two project-management projects target one repository
 
-- **WHEN** more than one project-management project tracks work in the same fork
+- **WHEN** more than one project-management project tracks work in the same repository
 - **THEN** the model permits it, because the mapping is not one-to-one
+
+#### Scenario: Forking is not described as adoption
+
+- **WHEN** `AGENTS.md` is read for how a project takes up the workflow
+- **THEN** no passage presents forking jen as the way to do it
 
 ### Requirement: The workflow document states the stages and the conventions they share
 
@@ -98,7 +115,7 @@ A stage's own instructions SHALL NOT restate a shared convention. Six copies of 
 
 A convention or gotcha specific to the project's own code SHALL be written to the `AGENTS.md` nearest the code it applies to. Such notes SHALL live at or below `src/`, as deep as the thing they describe, and SHALL NOT be written to the root `AGENTS.md`.
 
-The root document is the workflow, shared with every fork; a project's notes do not belong in the file every other project also carries.
+The root document is the workflow, shipped to and overwritten in every project that adopts it; a project's notes do not belong in a file the next update replaces wholesale.
 
 #### Scenario: A project note is written
 
@@ -109,4 +126,9 @@ The root document is the workflow, shared with every fork; a project's notes do 
 
 - **WHEN** a note about the project's own code would be added to the root `AGENTS.md`
 - **THEN** it is redirected to the nearest `AGENTS.md` at or below `src/`
+
+#### Scenario: A note in the root document does not survive an update
+
+- **WHEN** a project has written its own notes into the root `AGENTS.md` and `jen update` runs
+- **THEN** those notes are gone, because the file is replaced wholesale
 
