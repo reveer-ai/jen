@@ -2,8 +2,18 @@
   "name": "@reveer/jen",
   "version": "0.0.0",
   "description": "The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "private": false,
+  "keywords": [
+    "agents",
+    "agentic",
+    "ai",
+    "claude-code",
+    "workflow",
+    "spec-driven-development",
+    "openspec",
+    "linear"
+  ],
   "type": "module",
   "repository": {
     "type": "git",

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { apply } from '../cli/apply.js';
-import { PAYLOAD, SKILLS, memberShape, type VariableSet } from '../cli/payload.js';
+import { PAYLOAD, SKILLS, STAMP_FRONTMATTER, memberShape, type VariableSet } from '../cli/payload.js';
 import { planInstall, reconcileCandidates, stagedPayloadDir, touchedPaths, type Plan } from '../cli/plan.js';
 import { changed, link, messyProject, neighbours, project, snapshot, stamped } from './fixture.js';
 import { stageInto } from './helpers.js';
@@ -111,6 +111,28 @@ describe('the planner', () => {
     for (const path of ['.claude/skills/openspec-explore/SKILL.md', '.claude/skills/deploy-service/SKILL.md']) {
       expect(existsSync(join(root, path)), `${path} was not jen's to delete`).toBe(true);
     }
+  });
+
+  // The stamp gates deletion and nothing else, which is not what "ownership stamp" sounds
+  // like it means. Unstamping a file the payload still ships buys an adopter nothing: it
+  // is rewritten from the payload, stamp included. `README.md` tells adopters exactly this
+  // — an adoption run caught draft text promising the opposite — so it is asserted rather
+  // than left as a property of which branch happens to read `hasStamp`.
+  it('rewrites a shipped skill whose stamp the project removed', () => {
+    const shipped = readFileSync(join(staged, 'skills/design-task/SKILL.md'), 'utf8');
+    const root = project(
+      { '.claude/skills/design-task/SKILL.md': `${shipped.replace(STAMP_FRONTMATTER, '')}\nA local edit.\n` },
+      'unstamped-shipped',
+    );
+
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+    expect(plan.writes.map((write) => write.target)).toContain('.claude/skills/design-task/SKILL.md');
+    expect(plan.deletions).toEqual([]);
+
+    apply(plan);
+    const after = readFileSync(join(root, '.claude/skills/design-task/SKILL.md'), 'utf8');
+    expect(after).toBe(shipped);
+    expect(after, 'the stamp is restored along with the content').toContain(STAMP_FRONTMATTER);
   });
 
   it('names an existing, differing fixed path as a conflict', () => {

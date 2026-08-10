@@ -1,31 +1,112 @@
 # jen
 
-The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed. [`AGENTS.md`](AGENTS.md) is the workflow itself; the six stage skills in `.claude/skills/` carry it out.
+The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed.
 
-## Working on jen
+jen installs a workflow into your project's repository: a workflow document every agent working there is bound to, and a set of skills that carry it out. Work is anchored to a task in your tracker, specified before it is written, and reviewed as a pull request that holds the specs and the code together. Each stage runs when its task reaches that stage's status.
 
-```bash
-npm install
+jen does not host your project or point at it from somewhere else. It installs *into* your repository — the root becomes jen's (`AGENTS.md`, `.claude/`, `openspec/`, `registry.yaml`), and your own sources live under `src/`, tracked right there beside the workflow that governs them.
+
+## What jen owns, and what you own
+
+Read this before you install. jen overwrites its own files on every update, and an edit to one of them is gone the next time you take a version — so where the boundary falls decides where it is safe to work.
+
+| Path | Who owns it | What an update does |
+|---|---|---|
+| `AGENTS.md` (root) | jen | **Replaced wholesale.** This is the workflow document. Notes you write here are lost. |
+| `.claude/skills/<stage>/SKILL.md` (the seven shipped skills) | jen | **Replaced wholesale.** A skill jen stops shipping is deleted. |
+| `registry.yaml` | you, from the moment it exists | Nothing. Written once when it is absent, then never read, rewritten, or deleted. |
+| `.claude/settings.json` | you, from the moment it exists | Nothing. Same once-only rule. |
+| `src/`, your `openspec/` content, skills you write yourself | you | Nothing. jen does not touch them and never deletes an unstamped file. |
+| your `.gitignore` | you | Nothing. jen writes no ignore rules and imposes no arrangement on what you track. |
+
+### The stamp, and what it does and does not protect
+
+`.claude/skills/` is shared: jen's skills sit in it beside any you write. Every skill jen put there carries an ownership stamp in its frontmatter, which is how it tells the two apart:
+
+```yaml
+metadata:
+  jen: true
 ```
 
-The six stage skills work straight out of a clone — no build, no install, no init. They are the same files the package ships; editing one is editing a file.
+The stamp marks a file as **jen's to remove**. It governs deletion, not overwriting, and the difference is the one thing worth knowing before you edit anything:
 
-OpenSpec's own skills and commands are **not** vendored. `npm install` runs `openspec init` for you through `prepare`, writing `.claude/skills/openspec-*` and `.claude/commands/opsx/*` from the version in the lockfile. Both are gitignored — committing them re-vendors the frozen snapshot this repository deliberately dropped.
+- **A skill jen still ships is overwritten on every update, stamped or not.** Deleting the stamp does not claim it. The next `jen update` rewrites the file and puts the stamp back, and your edit is gone either way.
+- **A skill jen has stopped shipping is deleted only if it still carries the stamp.** Deleting the stamp keeps it, which is how you hold on to a skill a later version dropped.
+- **A skill jen never shipped is never touched.** Unstamped and not in the payload means jen leaves it exactly where it is.
 
-`openspec init` also writes `openspec/config.yaml`, and that one **is** tracked. It is seeded by init but owned by the project: it declares the schema and carries the project's context and per-artifact rules, so it is config a human edits rather than a snapshot to regenerate. Gitignoring it would leave every clone reporting a dirty tree and hide the schema declaration from anyone who has not run an install.
+So there is no supported way to keep an edit to a skill jen currently ships. If you want different behaviour, write your own skill under its own name — that file is yours, permanently, and no update will look at it.
 
-`prepare` rather than `postinstall` on purpose: `postinstall` fires for anyone installing jen as a dependency, and would run `openspec init` inside their project uninvited. `prepare` only runs for a local install here.
+The same goes for the workflow document. Root `AGENTS.md` carries no stamp at all — jen owns that path outright and replaces it on every update. Project notes go in an `AGENTS.md` nearer the code they describe, at or below `src/`, which jen never touches.
 
-## Checks
+## Adopting jen
+
+### 1. Install
 
 ```bash
-npm run build && npm run typecheck && npm test
+npm i -D @reveer/jen
 ```
 
-CI runs the same three on every pull request, on the minimum Node version `engines.node` allows.
+A devDependency rather than a bare `npx`, so that jen and the OpenSpec version it drives are both pinned in your project's lockfile. Every stage of the workflow runs OpenSpec, and it has to resolve from your project rather than from wherever `npx` cached it.
 
-## Packaging
+### 2. Initialize
 
-`npm pack` compiles the CLI to `dist/` and stages the payload into `dist/templates/` — the six skills, stamped, plus the workflow document and the once-only scaffold `jen init` writes. `files: ["dist"]` ships that and nothing else.
+```bash
+npx jen init
+```
 
-See [`cli/AGENTS.md`](cli/AGENTS.md) for how the payload declaration and staging fit together.
+Writes the workflow document, the seven skills, and a scaffold your project owns from then on, then initializes OpenSpec in the project. It prompts for nothing, is safe to re-run, and is safe in CI. It reports every path it wrote, refreshed, or left alone.
+
+### 3. Bind the project to its tracker — your step, not a command
+
+`jen init` leaves the workflow pointing at nothing. `registry.yaml` is a stub, and nobody has checked that your tracker carries the statuses the stages move tasks through. Binding closes that gap.
+
+**No subcommand does this.** It is a conversation: which team, which project, and a look at whether the statuses and labels the pipeline needs are actually there. The CLI never reaches your tracker. Ask your assistant to run the `setup-jen` skill:
+
+```
+Run the setup-jen skill
+```
+
+It confirms the team and project with you, verifies that the pipeline's statuses exist (`Backlog`, `Todo`, `In Design`, `In Progress`, `In Review`, `In Testing`, `In Delivery`, `Done`), ensures the `epic` and `task` labels, and records the result in `registry.yaml`. It creates no status and renames nothing — a missing one is reported for you to add. Re-run it as often as you like; it holds no state and every step is idempotent.
+
+Once it reports the project bound and the statuses satisfied, the pipeline can run.
+
+### 4. Take a later version
+
+```bash
+npm i -D @reveer/jen@latest && npx jen update
+```
+
+`update` refreshes every managed file and removes the ones jen no longer ships. It writes no scaffold — `registry.yaml` and `.claude/settings.json` stay yours, untouched, however many times you run it.
+
+## Which assistants this reaches
+
+jen writes into `.claude/` and nowhere else. Claude Code picks the skills up with no further configuration.
+
+For another assistant, symlink the directory it reads to jen's — substituting whatever directory yours actually uses:
+
+```bash
+mkdir -p .agents && ln -s ../.claude/skills .agents/skills
+```
+
+That symlink is yours. jen neither creates it nor reads it, and it survives every update because nothing jen ships knows it exists. Whether your assistant picks skills up that way is between you and it.
+
+Point the link *at* `.claude/`, never the other way around. jen refuses to write through a symlinked directory on the way to one of its own paths, so making `.claude` itself a link stops `init` and `update` outright.
+
+## What adoption does not cover
+
+**A project that already has its own root `AGENTS.md` cannot be adopted as it stands.** `jen init` refuses it and writes nothing at all — no skills, no scaffold, nothing partial. jen owns that path wholesale and cannot tell your file from one it wrote earlier, and merging the two is a migration jen does not perform.
+
+You have two ways forward, and both are decisions rather than workarounds:
+
+- Move your file aside, run `jen init`, and fold what you need back into the workflow document knowing an update replaces it.
+- Run `npx jen init --force`, which replaces your root `AGENTS.md` wholesale with jen's. `--force` applies to `init` only, and only to this one ambiguity — it never overrides a scaffold file that already exists, and it never makes jen delete something it did not write.
+
+`jen init` also refuses a project that reaches a managed path through a symlinked directory, `--force` included. Everything below such a link belongs to wherever it points, possibly outside your project entirely.
+
+## Changing jen itself
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+## License
+
+[Apache-2.0](LICENSE).
