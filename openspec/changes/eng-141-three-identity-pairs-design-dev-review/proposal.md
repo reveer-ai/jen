@@ -14,7 +14,7 @@ Attended, that is a cosmetic problem — the user is right there, and the verdic
 - **The default branch requires an approving review**, which is what converts the verdict from advisory into load-bearing. GitHub's refusal to accept a review from the author is what guarantees the approving actor is someone other than whoever pushed the branch, so the gate does not depend on naming the reviewer.
 - **`registry.yaml` records the identities' non-secret coordinates** — enough to identify each role's application and the workspace's agent user, and no secret of any kind.
 
-Nothing here changes what a stage skill does. `review-task` already says it closes with a verdict; this change is what makes that sentence true rather than aspirational, and the `COMMENT`-review fallback stops being necessary.
+**This task changes no stage skill, but it does not leave them workable either.** Design probed the tracker with a real agent token and found its diff surface invisible to any non-human identity — `list_diffs` empty and `get_diff` reporting `Diff not found` for pull requests a human reads fine, because Linear's diffs link a Linear user to a GitHub account and an app user has none. Every stage that touches the pull request calls those tools today, so all six must move that work to `gh`. That lands in ENG-166, which already owns hardening the stages for unattended runs. Until it does, these identities are registered and correct and no stage can yet submit a verdict with them.
 
 This is additive for an existing install: binding a project again reports identity registration as outstanding rather than failing, and a project driving its stages attended keeps working untouched.
 
@@ -51,3 +51,7 @@ Deliberately unmodified: `stage-conventions` and `agent-instructions`. A stage n
 **Depends on this**
 
 - ENG-163 and ENG-164, which launch a stage session under a role and therefore need the roles to exist.
+
+**This depends on**
+
+- ENG-166, for the pull-request work to reach a surface the agent identity can actually see. The identities are independently correct without it; the review path is not complete until both have landed, and the merge gate should not be tightened on any repository before then.

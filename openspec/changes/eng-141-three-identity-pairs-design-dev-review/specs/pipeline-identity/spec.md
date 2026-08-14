@@ -74,6 +74,31 @@ jen SHALL NOT publish an identity common to more than one adopter, and no creden
 - **WHEN** a stage authenticates as its role
 - **THEN** no request is made to any service operated by the jen project
 
+### Requirement: Pull-request work goes to the git host directly
+
+A stage SHALL perform pull-request work — review comments, threads, verdicts, and merges — against the git host directly, under its role's application identity.
+
+It SHALL NOT route that work through the tracker. The tracker's view of a pull request is derived from an integration that links a tracker user to an account on the git host, and the pipeline's identities have no such account, so that view is empty for every identity the pipeline runs as. Tooling built on it is present but inert.
+
+Issue work — reading a task, moving its status, commenting on it, attaching artifacts — SHALL continue to go to the tracker under the shared agent, which serves it correctly.
+
+#### Scenario: A stage comments on the change under review
+
+- **WHEN** a stage anchors a comment to a file and hunk
+- **THEN** it does so against the git host
+- **AND** the comment is attributed to the stage's role
+
+#### Scenario: A stage looks for the pull request through the tracker
+
+- **WHEN** a stage authenticated as the pipeline's tracker agent queries the tracker for the task's pull request
+- **THEN** nothing is returned
+- **AND** the stage does not treat that emptiness as the pull request being absent
+
+#### Scenario: A stage records something on the task
+
+- **WHEN** a stage comments on the issue or moves its status
+- **THEN** it does so through the tracker under the shared agent
+
 ### Requirement: A run holds its stage's identity and never selects one
 
 A run SHALL begin with the credentials of its stage's role already in place, and a stage SHALL NOT choose which role it acts as, switch roles mid-run, or obtain a credential belonging to another role.

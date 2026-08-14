@@ -7,6 +7,7 @@ See [proposal.md](./proposal.md) — Why. The constraints that shape the approac
 - **A CI platform's default workflow credential produces a review that does not count.** `github-actions[bot]` reviewing under the default token is recorded and rendered indistinguishably from any other review, and satisfies no approval requirement. A custom application's installation token does count.
 - **The two hosts' registration flows are not equivalent.** The git host's app manifest can create an application and return its credentials; the tracker's manifest only pre-populates a creation form and returns nothing.
 - **Today every stage authenticates as one human**, through `gh` for the git host and through the tracker's MCP server for the tracker. Neither is role-aware.
+- **The tracker's diff surface is invisible to a non-human identity.** Probed live during design: an `actor=app` token sees all 53 MCP tools and a fully working issue surface, but `list_diffs` returns empty and `get_diff` returns `Diff not found` for pull requests a human token reads fine. Linear's diffs link a Linear user to a GitHub account, and an app user has none.
 - **jen's own default branch** carries a ruleset requiring a pull request with an approving-review count of `0`, a required `check` status check, and one human bypass.
 
 ## Goals / Non-Goals
@@ -15,7 +16,7 @@ See [proposal.md](./proposal.md) — Why. The constraints that shape the approac
 
 - Three roles usable by both runners ENG-165 will ship, with no code path that only works under one.
 - A stage session that is role-agnostic: it holds one identity, cannot name it, and cannot reach another.
-- No stage skill's text changes.
+- No stage skill changed *by this task*. Moving their pull-request calls off the tracker is required and belongs to ENG-166.
 - A gate that holds structurally, not by the pipeline's good behaviour.
 
 **Non-Goals:**
@@ -38,13 +39,26 @@ This is what makes "a run holds its stage's identity and never selects one" true
 
 *Alternative rejected:* role-suffixed names inside the session (`GH_TOKEN_REVIEW` and so on). It would let a stage discover and potentially use another role's credential, and every skill would need to know its own role — pushing role awareness into the layer that must not have it.
 
-### The tracker is reached by injecting the role's token into the MCP server, not by rewriting the skills
+### The tracker carries issue work; the git host carries pull-request work
 
-The skills call the tracker through its MCP server. The agent token is supplied to that server as a bearer credential interpolated from `LINEAR_TOKEN`, so every tool name a skill calls is unchanged and no skill learns anything new.
+The agent token is supplied to the tracker's MCP server as a bearer credential interpolated from `LINEAR_TOKEN`, and stages use it for issue-surface work: reading the task, moving its status, commenting, attaching artifacts. Pull-request work — review comments, threads, verdicts, merges — goes to the git host directly through `gh`, under the role's installation token.
 
-This is a documented path rather than an inference. Linear's MCP documentation states the server "supports passing OAuth token and API keys directly in the `Authorization: Bearer <yourtoken>` header instead of using the interactive authentication flow," and names interacting with it **as an app user** among the reasons to do so — which is exactly the `actor=app` case.
+**This split is forced, not preferred**, and the probe below is what forced it.
 
-*Alternative rejected:* moving the skills onto the tracker's GraphQL API directly. It would give precise control over the acting identity, and it would rewrite all six stage skills — contradicting this change's premise that no stage's behaviour changes, and turning a three-point task into a rewrite of the workflow layer. If the MCP path proves unworkable (see Risks), that is a blocker to route back with, not a fallback to quietly take.
+Bearer-token authentication as an app user is documented and works: Linear's MCP server "supports passing OAuth token and API keys directly in the `Authorization: Bearer <yourtoken>` header," naming use **as an app user** among the reasons. Probed live against a real `actor=app` token, the server returns all 53 tools, and the issue surface reads and writes correctly with actions attributed to the agent.
+
+The diff surface does not work under that identity, and cannot be made to:
+
+| Call | As app user | As a human |
+|---|---|---|
+| `list_diffs`, unfiltered | `{"diffs":[]}` | returns the repository's pull requests |
+| `get_diff` on a known pull request | `Error: Diff not found` | returns the diff |
+
+The tools are *listed* and have nothing to act on. Linear's diffs originate in its GitHub integration, which links a Linear **user** to a **GitHub account**. An app user has no GitHub account to link, so no diff is ever visible to it. No scope widens this; it is structural.
+
+*Alternative rejected:* holding a human's tracker token for diff work. It would restore the diff tools, and it would restore the original problem with them — a verdict submitted under the human who authored the pull request, which is the thing this change exists to stop.
+
+**Consequence for scope.** Every stage that touches the pull request calls tracker diff tools today, so all six need those calls moved to `gh`. That is not this task's work: it lands in ENG-166, which already owns hardening the six stages for unattended runs, and a surface invisible to the unattended identity is exactly what unattended operation breaks. This change therefore **no longer claims that no stage skill's text changes** — it claims only that this task does not change them.
 
 ### Registration is guided on both hosts, and jen never receives a private key
 
@@ -90,7 +104,9 @@ The application's private key signs a short-lived assertion, which is exchanged 
 
 ## Risks / Trade-offs
 
-**The tracker's MCP server may not expose every tool to an app user** → Bearer-token authentication as an app user is documented and no longer in question. What the documentation does not enumerate is per-tool behaviour under such a token, and the tools this pipeline leans hardest on are the diff ones, which are the tracker proxying to the git host rather than acting on its own data — the likeliest place for a gap. Verified during design against a live app-user token rather than deferred; see the verification note below. Had it failed, the response was to route back rather than quietly rewrite the skills onto GraphQL, because that alternative changes this change's scope entirely.
+**The pipeline's review path now depends on ENG-166 landing** → Resolved from a risk into a known dependency. The identities this change registers cannot produce a working verdict until the stage skills move their pull-request calls to `gh`, because the diff tools are invisible to the agent identity. Registering the identities is still independently useful and independently correct, but the epic needs both, and ENG-141 delivering alone leaves the gate satisfiable only by a human. Ordering: the merge gate should not be tightened on any repository until ENG-166 has landed there, or delivery blocks on an approval no stage can give.
+
+**A future reader may assume the diff tools work because they appear in `tools/list`** → They are listed for every token; only their contents differ. Anyone debugging an empty `list_diffs` will reasonably suspect the GitHub integration is disconnected, because that is the other cause and it looks identical. This is exactly what the note in task 6 exists to prevent.
 
 **An installation token expires after an hour, and a stage run may outlast it** → `implement-task` is the plausible case. Mint at run start, and treat a mid-run expiry as a resumable failure rather than a fatal one: the status stays put and the next tick re-enters, which ENG-166 is making safe anyway. If it turns out to bite often, refreshing mid-run is a contained change behind the same contract.
 
@@ -104,9 +120,11 @@ The application's private key signs a short-lived assertion, which is exchanged 
 
 ## Migration Plan
 
-1. Verify the tracker MCP assumption above. A failure here stops the rest.
-2. Register the three applications and the one agent against jen's own organization and workspace, recording their non-secret coordinates in `registry.yaml` and their credentials in the runner's secret store.
-3. Tighten jen's `primary` ruleset from an approving-review count of `0` to the gate above. Do this **after** the roles exist, since raising the count first blocks merges nobody can yet approve.
-4. Confirm on the first pull request opened by `design` that CI triggers and that a verdict submitted by `deliver` counts toward the requirement.
+1. Register the three applications and the one agent against jen's own organization and workspace, recording their non-secret coordinates in `registry.yaml` and their credentials in the runner's secret store. The tracker agent already exists — it is the `jen` app user the design probe registered.
+2. Confirm on the first pull request opened by `design` that CI triggers, since a pull request whose checks never run can never merge.
+3. **Wait for ENG-166.** Until the stage skills issue their pull-request calls through `gh`, no stage can submit a verdict at all.
+4. Only then tighten jen's `primary` ruleset from an approving-review count of `0` to the gate above, and confirm that a verdict submitted by `deliver` counts toward the requirement.
+
+The ordering is the plan. Tightening the gate before step 3 blocks delivery on an approval no stage is able to give, leaving the human bypass as the only way to merge anything — which looks like a working pipeline while it is doing nothing.
 
 Rollback is dropping the count back to `0`: the identities can stay registered and unused, and the pipeline degrades to what it does today rather than breaking.
