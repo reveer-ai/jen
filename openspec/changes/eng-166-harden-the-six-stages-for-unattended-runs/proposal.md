@@ -18,6 +18,8 @@ Underneath all four, one pattern: the skills carry instructions that don't survi
 
 - **Reading the task's record replaces it.** Every stage begins by reading the issue's history — its status trail, its comments, its PR — as context. That is what tells a stage whether it is resuming an interrupted run, picking up work a later stage routed back, or starting fresh, and it is what lets a stage notice a task that is circling. One act serving the judgment the counting rule was a poor proxy for.
 
+- **Every session ends with a comment on the task.** Whatever the outcome — finished, stopped early, or blocked — the stage says so on the issue before it exits. The convention today asks for a comment when there is a blocker or a handoff to report, which lets a stage finish silently and makes a completed run indistinguishable from a crashed one. The comment is also what a re-entering stage reads to tell those apart.
+
 - **Each skill is cut back to what only it can say.** `agent-instructions` already requires that a stage's instructions not restate a shared convention — six copies of a rule being six chances to disagree — and several of them do restate one. Removing staging and the churn ceiling exposes more: most of what `test-task` says about writing down what it learns is the shared "notes as you work" convention with staging examples attached, and `deliver-task`'s resumption paragraph becomes shared once every stage has one. This is compliance with a requirement already on the books, applied across all six.
 
 - **The permission surface covers what the stages are told to do.** A stage instructed to run the project's checks must be permitted to run them. `scaffold/settings.json` seeds the shape, and the adopter's documentation states that the project's own check commands have to be added — the assistant settings are written once and owned by the project from then on, so documentation is what reaches an existing install.
@@ -31,7 +33,7 @@ None.
 ### Modified Capabilities
 
 - `task-pipeline`: design's attendedness becomes conditional on whether a run has a user rather than absolute; the shared backward-routing budget stops being a rule stages enforce and becomes one the dispatcher enforces.
-- `stage-conventions`: adds that a stage reads the task's record before acting, that a stage is resumable after an interrupted run, and that a stage's permitted command set covers what its instructions tell it to run.
+- `stage-conventions`: adds that a stage reads the task's record before acting, that a stage is resumable after an interrupted run, that every session ends with a comment on the task, and that a stage's permitted command set covers what its instructions tell it to run.
 - `adoption-docs`: adds that the documentation states which permissions the adopter must grant for the pipeline's stages to run unattended.
 
 ## Impact
