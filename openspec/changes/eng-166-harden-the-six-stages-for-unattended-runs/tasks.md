@@ -2,14 +2,14 @@
 
 Root `AGENTS.md` comes first: every skill defers to it, and the cuts in section 2 depend on these being in place to defer to.
 
-- [ ] 1.1 Change the stages table so `design-task` hands off to nothing — the task stays at `In Design` and the user promotes — leaving every other row as it is.
-- [ ] 1.2 Rewrite the paragraph below the table: `Todo` → `In Design` and `In Design` → `In Progress` are both the user's, and the pipeline drives itself from `In Progress` onward.
-- [ ] 1.3 Rewrite the attendedness sentence: design confirms before each artifact when it can, writes the set and lets the draft PR carry the confirmation when it cannot, and no stage waits on a reply.
-- [ ] 1.4 Remove the **Churn is budgeted** convention entirely.
-- [ ] 1.5 Add a **Read the record** convention: read the task's status history, comments, and PR threads before acting — context for resuming, for work routed back, and for a task that is circling, but never a reason to refuse the work.
-- [ ] 1.6 Add a **Resume, don't restart** convention: assume you may be resuming; treat any completion marker as a claim and check it against the commits, the PR, and the threads; where they disagree the evidence wins. Say why — a run is a fresh checkout, discarded at the end, so uncommitted work does not survive the session that made it.
-- [ ] 1.7 Add a **Comment at the end of every session** convention: what the stage did, what it decided, where it stopped and why, what the next stage picks up. Never finish silently, including when nothing went wrong.
-- [ ] 1.8 Re-read the conventions list as a whole for ordering and duplication now that three have been added and one removed.
+- [x] 1.1 Change the stages table so `design-task` hands off to nothing — the task stays at `In Design` and the user promotes — leaving every other row as it is.
+- [x] 1.2 Rewrite the paragraph below the table: `Todo` → `In Design` and `In Design` → `In Progress` are both the user's, and the pipeline drives itself from `In Progress` onward.
+- [x] 1.3 Rewrite the attendedness sentence: design confirms before each artifact when it can, writes the set and lets the draft PR carry the confirmation when it cannot, and no stage waits on a reply.
+- [x] 1.4 Remove the **Churn is budgeted** convention entirely.
+- [x] 1.5 Add a **Read the record** convention: read the task's status history, comments, and PR threads before acting — context for resuming, for work routed back, and for a task that is circling, but never a reason to refuse the work.
+- [x] 1.6 Add a **Resume, don't restart** convention: assume you may be resuming; treat any completion marker as a claim and check it against the commits, the PR, and the threads; where they disagree the evidence wins. Say why — a run is a fresh checkout, discarded at the end, so uncommitted work does not survive the session that made it.
+- [x] 1.7 Add a **Comment at the end of every session** convention: what the stage did, what it decided, where it stopped and why, what the next stage picks up. Never finish silently, including when nothing went wrong.
+- [x] 1.8 Re-read the conventions list as a whole for ordering and duplication now that three have been added and one removed.
 
 ## 2. The stage skills
 
