@@ -14,6 +14,10 @@ Underneath all four, one pattern: the skills carry instructions that don't survi
 
 - **`design-task` becomes bimodal.** Attended, it confirms before each artifact as it does today. Unattended, it writes the artifact set and lets the draft PR carry the confirmation asynchronously — a human comments on the draft, the task re-enters `In Design`, and design resolves the threads. The stage already treats unresolved threads as normal re-entry; this makes the PR the review surface rather than inventing a second one.
 
+- **Design stops advancing the task.** It finishes at `In Design` and leaves it there. `In Progress` is what triggers implementation, and implementation is user-led, so promoting out of design is a person's call — the second such transition, alongside `Todo` → `In Design`. Both `AGENTS.md` and the pipeline spec currently claim there is only one, and both are corrected.
+
+- **The trigger is the transition, not the status.** A task parked at `In Design` is indistinguishable, by status alone, from one being actively designed and one nothing has run against — so the pipeline can no longer claim, as the spec does today, that a task's position is recorded nowhere but its status. The trigger is a move *into* a stage's status rather than residence in it. That stays pollable, since a tracker's status history carries every transition; building the detection is ENG-163's, and this change fixes the requirement that contradicts it.
+
 - **The churn ceiling leaves the skills.** The instruction to count backward transitions and stop on the third is removed from `AGENTS.md` and from the pipeline spec. Enforcement belongs to the dispatcher (ENG-163), where it is a mechanical gate rather than something six skills are trusted to compute consistently.
 
 - **Reading the task's record replaces it.** Every stage begins by reading the issue's history — its status trail, its comments, its PR — as context. That is what tells a stage whether it is resuming an interrupted run, picking up work a later stage routed back, or starting fresh, and it is what lets a stage notice a task that is circling. One act serving the judgment the counting rule was a poor proxy for.
@@ -43,5 +47,5 @@ None.
 - **`scaffold/settings.json`** and **`.claude/settings.json`** — the allow list.
 - **`README.md`** — the adopter-facing statement of what to permit.
 - **Testing loses its live-environment story until staging gets its own task.** That is a real reduction in what the pipeline verifies, taken deliberately: a stage that halts on a missing setup routine was not delivering that verification either, it was blocking on it.
-- **Work already in flight.** These are shipped skills the manual workflow depends on, and ENG-133 is still running against them. The changes are to skill prose rather than to the pipeline's shape — no status, stage, or handoff moves — so a session mid-stage stays valid; a session that re-reads a skill mid-task sees the new instructions, which is the intended behavior.
+- **Work already in flight.** These are shipped skills the manual workflow depends on, and ENG-133 is still running against them. One handoff moves — design's — and no status is added or removed, so a session mid-stage stays valid; a session that re-reads a skill mid-task sees the new instructions, which is the intended behavior. A task sitting in `In Design` when this lands is simply one whose promotion is now expected of a person.
 - **ENG-163** inherits the churn ceiling as its own scope, and is the reason removing it here leaves no permanent gap.

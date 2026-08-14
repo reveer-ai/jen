@@ -23,7 +23,7 @@ See proposal.md — Why. What shapes the approach:
 - The dispatcher's gates — churn ceiling, repeat-failure budget, leases (ENG-163).
 - The invocation itself — flags, MCP config, permission mode on the command line (ENG-164).
 - How a change reaches a live environment. Removed here, and owed its own task.
-- The pipeline's shape. No status, stage, handoff, or artifact order moves.
+- The set of statuses, the stages, or the artifact order. Design's handoff changes; nothing else about the pipeline's shape does, and no status is added or removed.
 
 ## Decisions
 
@@ -33,13 +33,30 @@ See proposal.md — Why. What shapes the approach:
 
 *Alternative considered:* the dispatcher sets `JEN_UNATTENDED=1` and the skill branches on it. Rejected — it creates a contract between ENG-164's invocation and this skill's prose with nothing keeping the two in sync, and it is wrong in exactly the cases that matter: a hand-run session in a shell that happens to export it, or a dispatched run where the variable didn't get through. Discovery is self-correcting because the signal *is* the condition — if the stage can confirm, there is someone to confirm with.
 
-### Unattended design hands off; it does not park
+### Design ends at `In Design`, and the user promotes
 
-Having written its artifacts without confirmation, design moves the task to `In Progress` as it always does. It does not hold the task at `In Design` waiting for someone to read the draft PR.
+Design does not advance the task when it finishes. It writes its artifacts, opens the draft PR, comments, and stops — leaving the task where it found it.
 
-Parking would be blocking with extra steps, and blocking is what this change removes. The review the confirmation would have provided still happens — asynchronously, on the draft PR, where a human can comment at any point. The routing for that already exists and needs nothing new: a comment arriving before handoff re-enters design, and one arriving after is picked up by `implement-task`, whose order of work puts unresolved threads ahead of `tasks.md`, and which routes back to `In Design` if the thread is a design problem rather than an implementation one.
+`In Progress` is what triggers implementation, and implementation is user-led. A stage that advances the task is a stage deciding the next stage should run, which is not design's decision to make while a human owns that call. This makes the promotion out of `In Design` the second user-owned transition, alongside `Todo` → `In Design`; the claim in `AGENTS.md` and `task-pipeline` that the latter is "the only transition none of them owns" is no longer true and is corrected here.
 
-*Trade-off accepted:* implementation can begin on a design no human has read. That is what an unattended pipeline means, and ENG-167 is where it gets proven rather than asserted.
+The review that per-artifact confirmation would have provided still happens on the draft PR, which is open from the first artifact. Feedback arriving while the task is parked re-enters design; feedback arriving after promotion is picked up by `implement-task`, whose order of work puts unresolved threads ahead of `tasks.md` and which routes back to `In Design` when a thread is a design problem rather than an implementation one.
+
+*Alternative considered:* a `Design Complete` status that nothing polls, with the user promoting from there. Rejected — it buys the dispatcher an unambiguous level at the cost of a seventh status and a stage-table row that exists only to work around how the trigger is read.
+
+### The trigger is the transition, not the status
+
+Design ending without advancing breaks a requirement `task-pipeline` states today: that no stage needs a trigger beyond the status, and that the pipeline records a task's position nowhere but the status itself. A task parked at `In Design` is indistinguishable, by status alone, from one an agent is actively designing and one nothing has ever run against.
+
+The fix is to read the trigger as the *edge* rather than the *level*, which is what `AGENTS.md` already describes — "moving a task to its next status is the trigger." A transition into a stage's status is unambiguous where residence in it is not.
+
+The edge stays observable without abandoning polling. A tracker's status history carries each transition and its timestamp, so a dispatcher can poll and still trigger on edges by comparing a candidate's latest transition against what it has already dispatched. This matters for a reason outside this change: ENG-163's tick is a single poll-map-gate pass so that a scheduled CI job and a long-running local process share one code path, and a scheduled job cannot receive a webhook. Event semantics, poll transport.
+
+Two things this is not:
+
+- **Not the in-flight lease.** ENG-163 plans a lease with a TTL to stop a second session starting against a task a live run already holds. That answers concurrency; it does not answer parking, because the lease expires and the parked task looks actionable again.
+- **Not this change's to build.** ENG-166 states the requirement and corrects the spec that contradicts it. Detecting the edge, and recording what has been dispatched, is ENG-163's.
+
+What this change owes the dispatcher is the distinction being *observable*, which the end-of-session comment below provides: design is the one stage that deliberately ends without advancing, so for design a task resting at its own status is a valid terminal state, while for every other stage it means a run crashed or is still going.
 
 ### Evidence outranks bookkeeping
 
@@ -61,7 +78,11 @@ It is explicitly not a gate. A stage does not stop because of what it reads ther
 
 A stage comments on the issue at the end of every session, whatever the outcome — finished, stopped early, or blocked. Not only when it has a blocker or a handoff to report, which is what the existing convention asks for and which lets a stage finish silently.
 
-The reason this is more than observability is that it completes the previous decision. "Evidence outranks bookkeeping" tells a re-entering stage to trust commits over markers, but a run killed before it committed anything leaves no evidence at all — the task looks identical whether the last run did nothing, did work it never pushed, or was never dispatched. A terminating comment is the one artifact that distinguishes them: its presence says the run reached its own end and what it concluded, and its absence says the run died mid-work and every marker on the task is suspect.
+The reason this is more than observability is that two earlier decisions depend on it.
+
+It completes "evidence outranks bookkeeping." That rule tells a re-entering stage to trust commits over markers, but a run killed before it committed anything leaves no evidence at all — the task looks identical whether the last run did nothing, did work it never pushed, or was never dispatched. A terminating comment is the one artifact that distinguishes them: its presence says the run reached its own end and what it concluded, and its absence says the run died mid-work and every marker on the task is suspect.
+
+It also carries the distinction that design's parking creates. A task resting at `In Design` is either a finished design awaiting promotion or a design run that died; a task resting at any other stage's status is either a live run or a dead one. Status cannot tell those apart and is not supposed to — the comment is where the difference is written down, for a re-entering stage and for whatever the dispatcher eventually reads.
 
 That sets the bar for content. The comment carries what the stage did, what it decided, where it stopped and why, and what the next stage is picking up. A bare "done" satisfies the letter of the rule and is worth nothing as evidence.
 
@@ -85,7 +106,8 @@ This change states the requirement and does the first half. The second half is n
 ## Risks / Trade-offs
 
 - **Testing has no live-environment story until staging gets its own task** → The stage was blocking on a missing routine rather than verifying anything with it, so what is lost is the block, not the coverage. The follow-up task is the mitigation and should be filed with this change.
-- **Implementation can start on a design nobody read** → The draft PR is open from the first artifact, and thread routing carries late feedback to whichever stage owns it. ENG-167 is where this is proven end to end.
+- **The pipeline no longer runs unbroken from `In Design` to `Done`** → A human promotes out of design, so ENG-167's end-to-end proof covers `In Progress` onward with a person starting it. Deliberate: implementation is user-led for now, and this is what that means in practice rather than an oversight to work around.
+- **A parked task and a crashed design run look alike until something reads the comment** → The comment is required of every session, so the evidence exists; consuming it is ENG-163's, and until that lands a task parked in design can be re-dispatched. Wasteful rather than harmful — a re-entering design run finds a complete artifact set and exits.
 - **Discovery-based attendedness misfires** → The two failure directions aren't equal. Proceeding unattended when a human was present costs a review comment on a draft PR. Waiting when nobody is there costs the run. The skill states the unattended path as the one to take under any doubt.
 - **No churn enforcement until ENG-163 lands** → Bounded by that task, and visible in the meantime because every stage now reads the history it would have counted.
 - **Cutting something load-bearing** → The `AGENTS.md` test, applied per line rather than per paragraph.
