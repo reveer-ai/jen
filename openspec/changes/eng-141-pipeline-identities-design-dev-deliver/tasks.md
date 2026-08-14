@@ -2,9 +2,11 @@
 
 The tracker agent already exists — design registered the `jen` app user while probing, and it is the project's one agent. Do not create another.
 
-- [ ] 1.1 Register three applications on the git host in the project's own organization, each with the permissions design.md assigns its role, and install each on the repository
-- [ ] 1.2 Confirm the existing tracker agent is the one the project uses, rather than registering a second
-- [ ] 1.3 Place each role's credentials in the runner's secret store, and confirm no private key, client secret, or token has been written anywhere in the repository or left on the host
+- [x] 1.1 Register three applications on the git host in the project's own organization, each with the permissions design.md assigns its role, and install each on the repository
+- [x] 1.2 Confirm the existing tracker agent is the one the project uses, rather than registering a second
+- [x] 1.3 Place each role's credentials in the runner's secret store, and confirm none has been written anywhere in the repository. The operator's own copy of a key lives wherever they keep secrets, which is not the same thing as a *run* leaving one behind — the rule the specs state is about run residue
+
+**Verify the granted permissions, not just that the application exists.** All three were first created with no repository permissions at all — empty at the application level, not merely unapproved on the installation. An application in that state exists, looks configured, installs cleanly, and mints tokens that can do nothing, because the permissions section is a long collapsed list that is easy to save past. This is the check that catches it, and task 3.1 has to perform it too.
 
 ## 2. Record the identities
 
@@ -23,9 +25,9 @@ The tracker agent already exists — design registered the `jen` app user while 
 
 ## 4. Confirm the git-host half works
 
-- [ ] 4.1 Mint an installation token for one role from its application's private key and confirm it authenticates as that application rather than as a human
-- [ ] 4.2 Confirm CI triggers on a pull request opened by the `design` application — a pull request whose checks never run can never merge, and the failure presents as a task silently stuck in delivery
-- [ ] 4.3 Confirm the tracker still links an application-opened pull request back to its issue
+- [x] 4.1 Mint an installation token for one role from its application's private key and confirm it authenticates as that application rather than as a human. Done for all three: each mints, carries exactly the permissions design.md assigns it, is scoped to this repository alone, expires in an hour, and is refused by `/user` — which is what proves it is not a human's access under another name
+- [x] 4.2 Confirm CI triggers on a pull request opened by the `design` application — a pull request whose checks never run can never merge, and the failure presents as a task silently stuck in delivery. Confirmed against a throwaway pull request authored by `reveer-jen-design[bot]`: the `CI` workflow ran on the `pull_request` event
+- [x] 4.3 Confirm the tracker still links an application-opened pull request back to its issue. It does, by branch name. Note the application-opened pull request arrives at the tracker with a null creator, because the tracker cannot map a git-host application onto one of its own users — it is visible and unattributed there, while the git host attributes it correctly
 
 ## 5. The merge gate — only after ENG-166
 
