@@ -1,64 +1,72 @@
 ## Purpose
 
-Defines the identities the pipeline acts under — three roles spanning the six stages, each pairing an identity on the git host with one on the tracker — how a run comes to hold the right one, where its credentials come from and where they may not go, and the merge gate that makes a review verdict load-bearing rather than advisory.
+Defines the identities the pipeline acts under — three roles spanning the six stages, distinguished on the git host where the distinction is load-bearing and sharing one agent on the tracker where it is not — how a run comes to hold the right one, where its credentials come from and where they may not go, and the merge gate that makes a review verdict load-bearing rather than advisory.
 
 ## ADDED Requirements
 
 ### Requirement: Three roles cover the stages
 
-The pipeline SHALL act under exactly three roles — `design`, `dev`, and `review` — and every stage SHALL belong to exactly one of them:
+The pipeline SHALL act under exactly three roles — `design`, `dev`, and `deliver` — and every stage SHALL belong to exactly one of them:
 
 | Role | Stages |
 |---|---|
 | `design` | `design-task` |
 | `dev` | `implement-task` |
-| `review` | `review-task`, `test-task`, `deliver-task` |
+| `deliver` | `review-task`, `test-task`, `deliver-task` |
 
-Two roles would satisfy the git host's refusal of a review from a pull request's own author. Three SHALL be used, so that attribution on both surfaces names the work actually done rather than the minimum the constraint demanded.
+Two roles would satisfy the git host's refusal of a review from a pull request's own author. Three SHALL be used, so that attribution names the work actually done rather than the minimum the constraint demanded.
 
 #### Scenario: A stage runs
 
 - **WHEN** a stage does its work
-- **THEN** every action it takes on the git host and on the tracker is attributed to its own role
+- **THEN** every action it takes on the git host is attributed to its own role
 
 #### Scenario: The later stages share a role
 
 - **WHEN** `review-task`, `test-task`, or `deliver-task` runs
-- **THEN** each acts as `review`
+- **THEN** each acts as `deliver`
 - **AND** none of them acts as the role that authored or implemented the change
 
-### Requirement: Each role pairs a git-host identity with a tracker identity
+### Requirement: Roles are distinct on the git host and share one identity on the tracker
 
-Each role SHALL comprise an application identity on the git host together with an agent identity on the tracker, distinct per role.
+Each role SHALL have its own application identity on the git host. All three SHALL share a single agent identity on the tracker.
 
-A role SHALL NOT be a human user's account, and SHALL NOT be an account that occupies a paid seat on either surface. An application identity is what gives a role its own actor in a pull request's timeline and its own author on a tracker comment, which is what makes attribution real rather than cosmetic.
+The asymmetry is deliberate and follows the constraint. Distinct identities are required on the git host because that host refuses a review from a pull request's own author, so the pipeline cannot review its own work without them. The tracker imposes no equivalent constraint: separate tracker identities would carry identical scopes and identical capability, differing only in the name on a comment, at the cost of multiplying the registration an adopter performs by hand. One identity is what the tracker's job — letting an unattended run authenticate at all — actually requires.
 
-#### Scenario: A stage moves an issue
-
-- **WHEN** a stage transitions its task's status or comments on it
-- **THEN** the tracker records the role's agent as the author
-- **AND** not the human who owns the workspace
+No identity SHALL be a human user's account, and none SHALL occupy a paid seat on either surface.
 
 #### Scenario: A stage acts on the pull request
 
 - **WHEN** a stage pushes, opens, reviews, or merges the task's pull request
-- **THEN** the git host records the role's application as the actor
+- **THEN** the git host records that stage's own role as the actor
+
+#### Scenario: A stage acts on the task
+
+- **WHEN** a stage transitions its task's status, comments on it, or attaches an artifact
+- **THEN** the tracker records the shared agent as the author
+- **AND** not the human who authorized it
+
+#### Scenario: Two roles act on the same task
+
+- **WHEN** one stage and then a later stage in a different role both act on the tracker
+- **THEN** both are attributed to the same shared agent
+- **AND** the pull request still distinguishes which role performed each git-host action
 
 #### Scenario: No seat is consumed
 
-- **WHEN** the three roles are registered
+- **WHEN** the identities are registered
 - **THEN** none of them occupies a paid seat on the git host or the tracker
 
 ### Requirement: Identities are registered per project, never published centrally
 
-Each role's identities SHALL be registered into the adopting project's own organization on the git host and its own workspace on the tracker.
+Every identity — each role's application on the git host, and the shared agent on the tracker — SHALL be registered into the adopting project's own organization and its own workspace.
 
-jen SHALL NOT publish a shared identity, and no credential SHALL be minted by, pass through, or depend on the availability of any service the jen project operates. A pipeline that cannot run without somebody else's endpoint being up is not one an adopter owns.
+jen SHALL NOT publish an identity common to more than one adopter, and no credential SHALL be minted by, pass through, or depend on the availability of any service the jen project operates. A pipeline that cannot run without somebody else's endpoint being up is not one an adopter owns.
 
 #### Scenario: A project registers its identities
 
-- **WHEN** an adopter registers the three roles
-- **THEN** the identities exist in that project's own organization and workspace
+- **WHEN** an adopter registers the three applications and the agent
+- **THEN** they exist in that project's own organization and workspace
 - **AND** they are usable by that project alone
 
 #### Scenario: No central dependency exists
@@ -134,7 +142,7 @@ The token a run uses on the git host SHALL be minted for that run, scoped to its
 
 The default branch SHALL require at least one approving review, and SHALL require that approval to postdate the most recent reviewable push.
 
-Together those two exclude both the pull request's author and whoever pushed to it last. Because `design` opens the pull request and `dev` pushes the implementation, `review` is the only pipeline role that can satisfy the requirement — the guarantee therefore holds by construction rather than by naming a reviewer, which matters because the git host's required-reviewer setting cannot name an application identity at all.
+Together those two exclude both the pull request's author and whoever pushed to it last. Because `design` opens the pull request and `dev` pushes the implementation, `deliver` is the only pipeline role that can satisfy the requirement — the guarantee therefore holds by construction rather than by naming a reviewer, which matters because the git host's required-reviewer setting cannot name an application identity at all.
 
 No role SHALL be permitted to bypass the requirement. A human MAY retain a bypass, since somebody has to be able to break the glass.
 
@@ -155,7 +163,7 @@ No role SHALL be permitted to bypass the requirement. A human MAY retain a bypas
 
 #### Scenario: A change reaches delivery reviewed
 
-- **WHEN** delivery attempts to merge a pull request approved by `review` after the last push
+- **WHEN** delivery attempts to merge a pull request approved by `deliver` after the last push
 - **THEN** the merge is permitted
 
 #### Scenario: A role attempts to bypass
@@ -163,16 +171,16 @@ No role SHALL be permitted to bypass the requirement. A human MAY retain a bypas
 - **WHEN** any of the three roles attempts to merge without satisfying the requirement
 - **THEN** it cannot, because no role holds a bypass
 
-### Requirement: A verdict is submitted under the review role's own credential
+### Requirement: A verdict is submitted under the delivering role's own credential
 
-A review verdict SHALL be submitted with a credential belonging to the `review` role's application identity.
+A review verdict SHALL be submitted with a credential belonging to the `deliver` role's application identity.
 
 It SHALL NOT be submitted with the credential a CI platform supplies to a workflow by default. Such a review is recorded and displayed like any other but does not count toward a required approval, which makes it the most dangerous available failure: the pipeline appears to have reviewed the change while the gate remains unsatisfied.
 
 #### Scenario: A verdict is recorded
 
 - **WHEN** `review-task` submits its verdict
-- **THEN** it is submitted under the `review` role
+- **THEN** it is submitted under the `deliver` role
 - **AND** it counts toward the default branch's approval requirement
 
 #### Scenario: A CI platform's default credential is available

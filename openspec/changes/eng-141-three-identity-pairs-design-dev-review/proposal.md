@@ -6,12 +6,13 @@ Attended, that is a cosmetic problem — the user is right there, and the verdic
 
 ## What Changes
 
-- **Three identity pairs — `design`, `dev`, and `review`** — each a GitHub App together with a Linear agent. `design` covers `design-task`; `dev` covers `implement-task`; `review` covers `review-task`, `test-task`, and `deliver-task`. Two pairs would satisfy GitHub's constraint; three matches the agent mapping and gives real attribution on both surfaces, so the issue shows which agent moved it and the PR shows which agent reviewed it.
-- **Registration is driven from `setup-jen`, per fork.** Both halves of each pair are registered into the adopter's own GitHub organization and Linear workspace. Nothing is published centrally, because a jen-published App would mint tokens through infrastructure somebody operates, and this epic's premise is that nothing centralizes.
+- **Three roles — `design`, `dev`, and `deliver`** — distinguished by a separate application identity on the git host each. `design` covers `design-task`; `dev` covers `implement-task`; `deliver` covers `review-task`, `test-task`, and `deliver-task`. Two would satisfy GitHub's constraint; three matches the agent mapping and makes the PR timeline name the stage that acted.
+- **One shared tracker agent, not one per role.** This **corrects the epic**, which decided three identity pairs. The constraint that makes distinct identities necessary — a host refusing a review from the pull request's own author — is GitHub's alone and has no tracker equivalent. Three tracker agents would carry identical scopes and identical capability, differing only in the name attached to a comment, while tripling the manual half of every adopter's setup. The tracker identity exists so an unattended run can authenticate at all; that job needs exactly one.
+- **Registration is driven from `setup-jen`, per fork.** The three applications and the one agent are registered into the adopter's own GitHub organization and Linear workspace. Nothing is published centrally, because a jen-published App would mint tokens through infrastructure somebody operates, and this epic's premise is that nothing centralizes.
 - **A run authenticates as its stage's role.** The role's installation token is minted per run rather than held, and the session is launched with it already in place — a stage never selects its own identity.
 - **Credentials resolve from the environment and are never written to disk.** This **corrects the epic's wording**: ENG-141 says "credential storage and scoping," and there is no store. ENG-163 establishes `jen run` as a resolver rather than a store, and the same rule governs here — a resolver, nothing outside the process, nothing left behind on the host.
 - **The default branch requires an approving review**, which is what converts the verdict from advisory into load-bearing. GitHub's refusal to accept a review from the author is what guarantees the approving actor is someone other than whoever pushed the branch, so the gate does not depend on naming the reviewer.
-- **`registry.yaml` records each role's non-secret coordinates** — enough to identify which App and which agent user a role corresponds to, and no secret of any kind.
+- **`registry.yaml` records the identities' non-secret coordinates** — enough to identify each role's application and the workspace's agent user, and no secret of any kind.
 
 Nothing here changes what a stage skill does. `review-task` already says it closes with a verdict; this change is what makes that sentence true rather than aspirational, and the `COMMENT`-review fallback stops being necessary.
 
@@ -21,11 +22,11 @@ This is additive for an existing install: binding a project again reports identi
 
 ### New Capabilities
 
-- `pipeline-identity`: the three roles and the stages each covers; each role as a GitHub App paired with a Linear agent; per-fork registration; credentials resolved from the environment and never stored; a run acting as its stage's role; and the merge gate that makes a review verdict load-bearing.
+- `pipeline-identity`: the three roles and the stages each covers; a distinct application identity per role on the git host and one shared agent identity on the tracker; per-fork registration; credentials resolved from the environment and never stored; a run acting as its stage's role; and the merge gate that makes a review verdict load-bearing.
 
 ### Modified Capabilities
 
-- `project-binding`: binding grows identity registration alongside tracker binding, and the registry records each role's non-secret coordinates. Today the capability covers the tracker only — the team, the project, the statuses, and the labels — and says the registry holds "the shape the stages read when they need to know what they are acting on." Identities are part of that shape, and binding is where they are established.
+- `project-binding`: binding grows identity registration alongside tracker binding, and the registry records the identities' non-secret coordinates. Today the capability covers the tracker only — the team, the project, the statuses, and the labels — and says the registry holds "the shape the stages read when they need to know what they are acting on." Identities are part of that shape, and binding is where they are established.
 
 Deliberately unmodified: `stage-conventions` and `agent-instructions`. A stage never chooses its own identity — it inherits credentials the dispatcher put in its environment — so no convention shared by every stage changes, and the root workflow document gains no new rule. The identity mapping is operator-facing, which places it in `pipeline-identity` and in what binding reports.
 
@@ -33,7 +34,7 @@ Deliberately unmodified: `stage-conventions` and `agent-instructions`. A stage n
 
 **Changed here**
 
-- `.claude/skills/setup-jen/SKILL.md` — registration of both halves of each pair, verification on re-run, and the merge gate check.
+- `.claude/skills/setup-jen/SKILL.md` — registration of the three applications and the agent, verification on re-run, and the merge gate check.
 - `scaffold/registry.yaml` — the documented resource shape gains identity entries.
 - jen's own repository configuration — the existing `primary` ruleset requires a pull request but with an approving-review count of `0`, which has to rise for the gate to bite.
 

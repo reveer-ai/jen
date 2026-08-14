@@ -3,7 +3,7 @@
 See [proposal.md](./proposal.md) — Why. The constraints that shape the approach, all verified rather than assumed:
 
 - **The git host refuses a review from a pull request's author**, and returns `422 "Review Can not request changes on your own pull request"`. Through Linear's `submit_diff_review` the same refusal surfaces as a generic `400 invalid_request` with the reason stripped, so the condition is not diagnosable from the error. Recorded on ENG-141.
-- **A required-reviewer rule cannot name an application identity.** The ruleset's required-reviewers setting takes teams only — up to fifteen, per file path, each needing write permission — and an application cannot join a team. The gate therefore cannot be expressed as "the `review` role must approve."
+- **A required-reviewer rule cannot name an application identity.** The ruleset's required-reviewers setting takes teams only — up to fifteen, per file path, each needing write permission — and an application cannot join a team. The gate therefore cannot be expressed as "the `deliver` role must approve."
 - **A CI platform's default workflow credential produces a review that does not count.** `github-actions[bot]` reviewing under the default token is recorded and rendered indistinguishably from any other review, and satisfies no approval requirement. A custom application's installation token does count.
 - **The two hosts' registration flows are not equivalent.** The git host's app manifest can create an application and return its credentials; the tracker's manifest only pre-populates a creation form and returns nothing.
 - **Today every stage authenticates as one human**, through `gh` for the git host and through the tracker's MCP server for the tracker. Neither is role-aware.
@@ -28,7 +28,9 @@ See [proposal.md](./proposal.md) — Why. The constraints that shape the approac
 
 ### The session sees role-agnostic variable names
 
-The dispatcher resolves three role-specific secret sets and injects **role-agnostic** names into the stage session: `GH_TOKEN` for the git host, `LINEAR_TOKEN` for the tracker. A stage reads the same two names whatever role it is running as, and nothing inside the session reveals which of the three it holds or how to reach another.
+The dispatcher resolves the role's git-host credential and injects **role-agnostic** names into the stage session: `GH_TOKEN` for the git host, `LINEAR_TOKEN` for the tracker. A stage reads the same two names whatever role it is running as, and nothing inside the session reveals which of the three it holds or how to reach another.
+
+Only `GH_TOKEN` actually varies by role; `LINEAR_TOKEN` is the one shared agent's and is constant across all three. That asymmetry stays *inside* the dispatcher — the session's contract is two names either way, so a later decision to split the tracker agent per role would change what the dispatcher resolves and nothing a stage sees.
 
 This is what makes "a run holds its stage's identity and never selects one" true by construction rather than by instruction — there is no role-selection API inside the session to misuse, because the role was resolved before it started.
 
@@ -38,13 +40,15 @@ This is what makes "a run holds its stage's identity and never selects one" true
 
 ### The tracker is reached by injecting the role's token into the MCP server, not by rewriting the skills
 
-The skills call the tracker through its MCP server. The role's agent token is supplied to that server as a bearer credential interpolated from `LINEAR_TOKEN`, so every tool name a skill calls is unchanged and no skill learns anything new.
+The skills call the tracker through its MCP server. The agent token is supplied to that server as a bearer credential interpolated from `LINEAR_TOKEN`, so every tool name a skill calls is unchanged and no skill learns anything new.
+
+This is a documented path rather than an inference. Linear's MCP documentation states the server "supports passing OAuth token and API keys directly in the `Authorization: Bearer <yourtoken>` header instead of using the interactive authentication flow," and names interacting with it **as an app user** among the reasons to do so — which is exactly the `actor=app` case.
 
 *Alternative rejected:* moving the skills onto the tracker's GraphQL API directly. It would give precise control over the acting identity, and it would rewrite all six stage skills — contradicting this change's premise that no stage's behaviour changes, and turning a three-point task into a rewrite of the workflow layer. If the MCP path proves unworkable (see Risks), that is a blocker to route back with, not a fallback to quietly take.
 
 ### Registration is guided on both hosts, and jen never receives a private key
 
-Both halves of each pair are registered by the user, with the binding skill pre-filling what each host allows and verifying the result afterward. The credential goes from the host to the operator's secret store without passing through jen.
+Every identity is registered by the user — the three applications on the git host and the one agent on the tracker — with the binding skill pre-filling what each host allows and verifying the result afterward. The credential goes from the host to the operator's secret store without passing through jen.
 
 This **corrects the epic's expectation** that manifest flows make registration "a redirect and a confirm." That holds only for the git host, and only if something is listening on a redirect URL to exchange the temporary code for credentials — which a skill running inside an assistant is not. The tracker's manifest cannot return credentials at all. Rather than build a local listener for one host and hand-hold the other, both are guided the same way, and the asymmetry costs the operator a few minutes once per project.
 
@@ -52,21 +56,29 @@ The stronger reason is that it keeps jen's process from ever holding an applicat
 
 *Alternative rejected:* a transient localhost listener to complete the git host's manifest conversion automatically. Fewer steps on one surface, at the cost of jen handling the private key and of a code path that behaves differently depending on whether a browser can reach the loopback interface.
 
+### The tracker gets one agent, not one per role
+
+Roles are distinguished on the git host and share a single agent on the tracker. See proposal.md — What Changes, for why: the constraint forcing distinct identities is the git host's refusal of an author's own review, and the tracker has no equivalent, so per-role tracker agents would differ only in the name on a comment while tripling the hand-registration an adopter performs.
+
+The consequence worth stating here is what it costs. The tracker's issue timeline will read as one actor for all six stages, so "which stage moved this" has to be read from the status transition rather than from the author. And if ENG-163 settles on the tracker's `delegate` field as its in-flight lease carrier, `delegate` will say that *a* run holds the task rather than *which* stage does. Both are recoverable — splitting the agent later changes what the dispatcher resolves and nothing a stage sees — but ENG-163 should choose its carrier knowing this rather than discovering it.
+
+*Alternative rejected:* three agents, matching the epic's original "three identity pairs." Rejected on cost: attribution on a surface that already records the status transition, bought with three passes through the manual registration flow for every adopter.
+
 ### Per-role permissions are the minimum each role's stages actually use
 
 | Role | Git-host permissions | Why |
 |---|---|---|
 | `design` | `contents:write`, `pull_requests:write` | pushes the artifacts, opens the draft pull request |
 | `dev` | `contents:write`, `pull_requests:write` | pushes the implementation, replies to and resolves threads |
-| `review` | `contents:write`, `pull_requests:write`, `checks:read` | reviews and merges, reads whether checks passed, pushes the archive and spec sync |
+| `deliver` | `contents:write`, `pull_requests:write`, `checks:read` | reviews and merges, reads whether checks passed, pushes the archive and spec sync |
 
-`review` holding `contents:write` is unavoidable rather than generous: `deliver-task` merges the pull request and pushes the spec sync and archive. It is not a bypass — the gate constrains what may merge, not who holds write.
+`deliver` holding `contents:write` is unavoidable rather than generous: `deliver-task` merges the pull request and pushes the spec sync and archive. It is not a bypass — the gate constrains what may merge, not who holds write.
 
 ### The gate is a count plus most-recent-push approval
 
 The ruleset's pull-request rule becomes `required_approving_review_count: 1` with `require_last_push_approval: true`, leaving the existing `check` requirement and human bypass in place, and adding no role to the bypass list.
 
-The second setting is not a refinement; it is what makes the gate sound. A count alone excludes only the pull request's *author*, and under three roles the author is `design` — so `dev` could approve the implementation it just pushed, and nothing structural would stop it. Requiring the approval to postdate the last push excludes the pusher too, leaving `review` (or the human) as the only actor able to satisfy it.
+The second setting is not a refinement; it is what makes the gate sound. A count alone excludes only the pull request's *author*, and under three roles the author is `design` — so `dev` could approve the implementation it just pushed, and nothing structural would stop it. Requiring the approval to postdate the last push excludes the pusher too, leaving `deliver` (or the human) as the only actor able to satisfy it.
 
 `dismiss_stale_reviews_on_push` stays off: `require_last_push_approval` already invalidates an approval overtaken by a push, and dismissing outright would erase the verdict from the record that ENG-136 wants readable after the fact.
 
@@ -78,7 +90,7 @@ The application's private key signs a short-lived assertion, which is exchanged 
 
 ## Risks / Trade-offs
 
-**The tracker's MCP server may not accept an `actor=app` token, or may not expose every tool under one** → This is the design's load-bearing unverified assumption, and implementation verifies it first, before anything is built on it: authenticate as one role's agent and exercise the tools the stages actually depend on, `save_diff_comment`, `get_diff_threads`, `resolve_diff_thread`, `submit_diff_review`, and `merge_diff` among them. If it fails, the fix is not to rewrite the skills quietly — it is to route the task back to design with what was found, because the alternative changes this change's scope entirely.
+**The tracker's MCP server may not expose every tool to an app user** → Bearer-token authentication as an app user is documented and no longer in question. What the documentation does not enumerate is per-tool behaviour under such a token, and the tools this pipeline leans hardest on are the diff ones, which are the tracker proxying to the git host rather than acting on its own data — the likeliest place for a gap. Verified during design against a live app-user token rather than deferred; see the verification note below. Had it failed, the response was to route back rather than quietly rewrite the skills onto GraphQL, because that alternative changes this change's scope entirely.
 
 **An installation token expires after an hour, and a stage run may outlast it** → `implement-task` is the plausible case. Mint at run start, and treat a mid-run expiry as a resumable failure rather than a fatal one: the status stays put and the next tick re-enters, which ENG-166 is making safe anyway. If it turns out to bite often, refreshing mid-run is a contained change behind the same contract.
 
@@ -93,8 +105,8 @@ The application's private key signs a short-lived assertion, which is exchanged 
 ## Migration Plan
 
 1. Verify the tracker MCP assumption above. A failure here stops the rest.
-2. Register the three pairs against jen's own organization and workspace, recording their non-secret coordinates in `registry.yaml` and their credentials in the runner's secret store.
+2. Register the three applications and the one agent against jen's own organization and workspace, recording their non-secret coordinates in `registry.yaml` and their credentials in the runner's secret store.
 3. Tighten jen's `primary` ruleset from an approving-review count of `0` to the gate above. Do this **after** the roles exist, since raising the count first blocks merges nobody can yet approve.
-4. Confirm on the first pull request opened by `design` that CI triggers and that a verdict submitted by `review` counts toward the requirement.
+4. Confirm on the first pull request opened by `design` that CI triggers and that a verdict submitted by `deliver` counts toward the requirement.
 
 Rollback is dropping the count back to `0`: the identities can stay registered and unused, and the pipeline degrades to what it does today rather than breaking.

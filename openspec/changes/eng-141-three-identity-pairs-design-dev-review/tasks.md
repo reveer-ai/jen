@@ -2,15 +2,15 @@
 
 Nothing else in this change is safe to build before these pass. A failure here is a blocker to route back with, not something to work around — see design.md, Risks.
 
-- [ ] 1.1 Register one tracker agent as a probe (the `review` role), authorizing it with `actor=app`, and confirm the resulting token authenticates against the tracker's MCP server
+- [ ] 1.1 Register the tracker agent, authorizing it with `actor=app`, and confirm the resulting token authenticates against the tracker's MCP server by bearer header
 - [ ] 1.2 Under that token, exercise every tracker tool the stages depend on against a scratch pull request: `get_diff`, `save_diff_comment`, `get_diff_threads`, `resolve_diff_thread`, `submit_diff_review`, and `merge_diff`
 - [ ] 1.3 Confirm the probe's actions are attributed to the agent rather than to the human who authorized it, on both an issue comment and a diff comment
 - [ ] 1.4 If 1.1–1.3 fail, stop: record what failed on the issue and route the task back to `In Design`, because the alternative changes this change's scope entirely
 
-## 2. Register the three pairs
+## 2. Register the identities
 
 - [ ] 2.1 Register three applications on the git host in the project's own organization, each with the permissions design.md assigns its role, and install each on the repository
-- [ ] 2.2 Register the three tracker agents, authorizing each with `actor=app`, promoting the probe from 1.1 to the real `review` agent rather than creating a fourth
+- [ ] 2.2 Keep the tracker agent registered in 1.1 as the project's one agent rather than registering another
 - [ ] 2.3 Place each role's credentials in the runner's secret store, and confirm no private key, client secret, or token has been written anywhere in the repository or left on the host
 
 ## 3. Record the identities
@@ -35,7 +35,7 @@ Ordered after 2 deliberately: raising the approval count before the roles exist 
 - [ ] 5.1 Raise jen's `primary` ruleset to an approving-review count of 1 with approval of the most recent push required, leaving the `check` requirement and the human bypass in place and adding no role to the bypass list
 - [ ] 5.2 Confirm CI triggers on a pull request opened by the `design` application — a pull request whose checks never run can never merge, and the failure presents as a task silently stuck in delivery
 - [ ] 5.3 Confirm the tracker still links an application-opened pull request back to its issue
-- [ ] 5.4 Confirm a verdict submitted by `review` counts toward the approval requirement, rather than merely being recorded
+- [ ] 5.4 Confirm a verdict submitted by `deliver` counts toward the approval requirement, rather than merely being recorded
 - [ ] 5.5 Confirm `dev` cannot approve a pull request it pushed last, which is the exclusion the count alone does not provide
 - [ ] 5.6 Confirm the human bypass still works, since it is the only way to break the glass on an unattended pipeline
 

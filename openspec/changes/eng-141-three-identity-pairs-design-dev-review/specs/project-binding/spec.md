@@ -2,19 +2,19 @@
 
 ### Requirement: Binding establishes the pipeline's three identities
 
-Binding SHALL establish that the project carries the three roles the `pipeline-identity` capability names, guiding the user through registering any that are absent — an application identity in the project's own organization on the git host, and an agent identity in its own workspace on the tracker, for each of `design`, `dev`, and `review`.
+Binding SHALL establish that the project carries the identities the `pipeline-identity` capability names — an application in the project's own organization on the git host for each of `design`, `dev`, and `deliver`, and one shared agent in its own workspace on the tracker — guiding the user through registering any that are absent.
 
 Binding SHALL confirm with the user before registering anything, and SHALL NOT register an identity into an organization or workspace the user has not named.
 
-Because the two surfaces expose different registration mechanics, binding SHALL NOT assume either half can be completed in a single confirmation. Where a surface can only pre-populate a form the user must submit, binding SHALL hand the user that form and then verify the result, rather than reporting success it did not observe.
+Because the two surfaces expose different registration mechanics, binding SHALL NOT assume any identity can be completed in a single confirmation. Where a surface can only pre-populate a form the user must submit, binding SHALL hand the user that form and then verify the result, rather than reporting success it did not observe.
 
-While any role is incompletely registered, binding SHALL name which roles and which halves are missing, and SHALL NOT report the project as ready for the pipeline. This SHALL NOT prevent the rest of the binding from completing.
+While any identity is missing, binding SHALL name which ones, and SHALL NOT report the project as ready for the pipeline. This SHALL NOT prevent the rest of the binding from completing.
 
 #### Scenario: No identities exist yet
 
-- **WHEN** binding runs against a project carrying none of the three roles
-- **THEN** it names all three as missing
-- **AND** guides the user through registering each half of each
+- **WHEN** binding runs against a project carrying none of them
+- **THEN** it names the three applications and the agent as missing
+- **AND** guides the user through registering each
 - **AND** does not report the project as ready for the pipeline until they are complete
 
 #### Scenario: A surface cannot complete registration unattended
@@ -23,29 +23,40 @@ While any role is incompletely registered, binding SHALL name which roles and wh
 - **THEN** binding hands the user that form
 - **AND** verifies the identity exists before recording it as registered
 
-#### Scenario: One half of a role is missing
+#### Scenario: The applications exist but the agent does not
 
-- **WHEN** a role carries its git-host application but no tracker agent
-- **THEN** binding names that role's tracker half as missing
-- **AND** leaves the half that exists untouched
+- **WHEN** the project carries all three git-host applications and no tracker agent
+- **THEN** binding names the tracker agent as missing
+- **AND** leaves the applications untouched
+
+#### Scenario: One role's application is missing
+
+- **WHEN** two of the three applications are registered and the third is not
+- **THEN** binding names that role's application as missing
+- **AND** does not re-register the two that exist
 
 #### Scenario: A second run finds the identities present
 
-- **WHEN** binding runs again against a project whose three roles are fully registered
+- **WHEN** binding runs again against a project whose identities are fully registered
 - **THEN** it reports them as already satisfied
 - **AND** registers nothing a second time
 
 ### Requirement: Binding records the identities without recording their secrets
 
-Binding SHALL record each registered role in `registry.yaml` with enough to identify which application and which agent the role corresponds to, and with nothing more.
+Binding SHALL record each registered identity in `registry.yaml` with enough to identify which application each role corresponds to and which agent the project uses on the tracker, and with nothing more.
 
 Binding SHALL NOT write a private key, a client secret, a token, or any other credential to `registry.yaml` or to any other file. The registry names identities; the environment supplies their credentials, and the two SHALL NOT meet on disk.
 
-#### Scenario: A role is registered
+#### Scenario: An identity is registered
 
-- **WHEN** binding completes registration of a role
-- **THEN** `registry.yaml` names that role and identifies its application and agent
-- **AND** the credentials that authenticate them appear nowhere in the repository
+- **WHEN** binding completes registration of a role's application
+- **THEN** `registry.yaml` names that role and identifies its application
+- **AND** the credential that authenticates it appears nowhere in the repository
+
+#### Scenario: The tracker agent is recorded once
+
+- **WHEN** binding records the tracker agent
+- **THEN** it appears once, belonging to the project rather than to any one role
 
 #### Scenario: The registry is inspected after binding
 
