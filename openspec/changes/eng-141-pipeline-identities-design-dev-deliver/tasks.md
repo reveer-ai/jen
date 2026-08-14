@@ -10,18 +10,18 @@ The tracker agent already exists — design registered the `jen` app user while 
 
 ## 2. Record the identities
 
-- [ ] 2.1 Extend the documented resource shape in `scaffold/registry.yaml` with identity entries — a role's application, and the project's tracker agent — naming them and nothing that authenticates them
-- [ ] 2.2 Record jen's own identities in its `registry.yaml`, editing the entry in place rather than round-tripping the file, so the stub's documenting comments survive
-- [ ] 2.3 Confirm `registry.yaml` holds no secret
+- [x] 2.1 Extend the documented resource shape in `scaffold/registry.yaml` with identity entries — a role's application, and the project's tracker agent — naming them and nothing that authenticates them
+- [x] 2.2 Record jen's own identities in its `registry.yaml`, editing the entry in place rather than round-tripping the file, so the stub's documenting comments survive. jen had never had one — it is the tool rather than an installation of it — so the stub was written first and then filled in, which is the same two steps `jen init` and `setup-jen` perform
+- [x] 2.3 Confirm `registry.yaml` holds no secret. Asserted rather than eyeballed: `test/registry.test.ts` rejects a credential-shaped field on any entry, and scans every tracked file for a PEM key block or a host token prefix
 
 ## 3. Teach the binding skill the identities
 
-- [ ] 3.1 Add identity establishment to `setup-jen`: guided registration per host, confirmation before registering anything, and verification of the result rather than assumed success
-- [ ] 3.2 Make a partially registered project a first-class state — name which identities are outstanding, complete the rest of the binding anyway, and recognise on re-run what already exists
-- [ ] 3.3 Add registry recording of the identities, with the prohibition on writing any credential stated where it will be read
-- [ ] 3.4 Add merge gate handling: verify the default branch, present the exact change when it is absent or insufficient, apply it only on explicit confirmation, and report it outstanding when declined
-- [ ] 3.5 Ensure declining the gate or leaving an identity unregistered both withhold "ready for the pipeline" without ending the run
-- [ ] 3.6 Extend the skill's closing report to separate what was already correct from what this run did, for the identities and the gate as it already does for statuses and labels
+- [x] 3.1 Add identity establishment to `setup-jen`: guided registration per host, confirmation before registering anything, and verification of the result rather than assumed success
+- [x] 3.2 Make a partially registered project a first-class state — name which identities are outstanding, complete the rest of the binding anyway, and recognise on re-run what already exists
+- [x] 3.3 Add registry recording of the identities, with the prohibition on writing any credential stated where it will be read. Stated in three places, because each is read without the others: the skill's opening claim of what is not its to hold, the registry section it would be written from, and the stub itself
+- [x] 3.4 Add merge gate handling: verify the default branch, present the exact change when it is absent or insufficient, apply it only on explicit confirmation, and report it outstanding when declined
+- [x] 3.5 Ensure declining the gate or leaving an identity unregistered both withhold "ready for the pipeline" without ending the run
+- [x] 3.6 Extend the skill's closing report to separate what was already correct from what this run did, for the identities and the gate as it already does for statuses and labels
 
 ## 4. Confirm the git-host half works
 
@@ -33,7 +33,7 @@ The tracker agent already exists — design registered the `jen` app user while 
 
 Ordering is load-bearing. Until ENG-166 moves the stages' pull-request calls to `gh`, no stage can submit a verdict at all, so tightening the gate first blocks delivery on an approval nothing can give and leaves the human bypass as the only way to merge.
 
-- [ ] 5.1 Confirm ENG-166 has landed and a stage can submit a verdict under the `deliver` role before touching the ruleset
+- [ ] 5.1 Confirm ENG-166 has landed. Checked during implementation: it is in `Todo`, so the whole of group 5 stays untouched and the ruleset keeps its approving-review count of `0` and a stage can submit a verdict under the `deliver` role before touching the ruleset
 - [ ] 5.2 Raise jen's `primary` ruleset to an approving-review count of 1 with approval of the most recent push required, leaving the `check` requirement and the human bypass in place and adding no role to the bypass list
 - [ ] 5.3 Confirm a verdict submitted by `deliver` counts toward the approval requirement, rather than merely being recorded
 - [ ] 5.4 Confirm `dev` cannot approve a pull request it pushed last, which is the exclusion the count alone does not provide
@@ -41,5 +41,5 @@ Ordering is load-bearing. Until ENG-166 moves the stages' pull-request calls to 
 
 ## 6. Record what a future session would otherwise rediscover
 
-- [ ] 6.1 Record in `.github/AGENTS.md` that the review verdict must never be submitted under the CI platform's default workflow credential, and that `GH_TOKEN` is named in preference to `GITHUB_TOKEN` because `gh` prefers it — the failure is a review that renders identically and satisfies nothing, and ENG-165 is where it would be introduced
-- [ ] 6.2 Record there too that the tracker's diff tools appear in `tools/list` for every token but return nothing under a non-human identity, so an empty `list_diffs` under an agent means the identity, not a disconnected integration — the two are indistinguishable from the output alone
+- [x] 6.1 Record in `.github/AGENTS.md` that the review verdict must never be submitted under the CI platform's default workflow credential, and that `GH_TOKEN` is named in preference to `GITHUB_TOKEN` because `gh` prefers it — the failure is a review that renders identically and satisfies nothing, and ENG-165 is where it would be introduced
+- [x] 6.2 Record there too that the tracker's diff tools appear in `tools/list` for every token but return nothing under a non-human identity, so an empty `list_diffs` under an agent means the identity, not a disconnected integration — the two are indistinguishable from the output alone

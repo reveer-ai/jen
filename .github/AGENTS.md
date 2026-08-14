@@ -117,3 +117,36 @@ There are three kill switches outside this repository, none needing a commit: re
 trusted publisher entry, uninstall the App, or remove `main` from the `release`
 environment's deployment branches. They sever different links — publishing, Version PRs,
 and the credential itself.
+
+## Running a stage from a workflow
+
+Nothing here does this yet — ENG-165 is where a stage first runs on Actions. Both of these
+fail silently when they are got wrong, which is why they are written down before the code
+that can trip on them exists.
+
+**The review verdict must never be submitted under `GITHUB_TOKEN`.** A review submitted
+with the default workflow credential is recorded and rendered exactly like any other, and
+satisfies no approval requirement — so the pull request shows a review, the gate stays
+unsatisfied, and delivery blocks on an approval that appears to already be there. It is the
+worst shape a failure can take: not an error, a lie. The verdict goes out under the
+`deliver` role's own installation token, minted from its App's private key.
+
+**`GH_TOKEN`, not `GITHUB_TOKEN`, is the name a stage's credential is supplied under.** This
+is not a style preference. `gh` prefers `GH_TOKEN` when both are set, and on an Actions
+runner `GITHUB_TOKEN` is present whether or not anyone put it there — it is the very
+credential above, sitting in the variable a stage would otherwise read. Naming the good
+credential so that it *wins* is what keeps the default from silently taking over. If you
+find a stage reading `GITHUB_TOKEN`, that is the bug, not the fallback.
+
+**An empty `list_diffs` under the tracker agent means the identity, not a broken
+integration.** Linear's diff tools — `list_diffs`, `get_diff`, `get_diff_threads`,
+`save_diff_comment`, `submit_diff_review`, `merge_diff` — appear in `tools/list` for every
+token, including an `actor=app` one. Under an app user they return nothing: `list_diffs` is
+empty and `get_diff` reports `Diff not found` for pull requests a human token reads fine.
+Linear's diffs link a Linear *user* to a *GitHub account*, and an app user has neither, so
+the tools are present and inert. No scope widens this.
+
+The trap is that a disconnected GitHub integration looks identical from the output alone,
+and it is the cause anyone will suspect first — it was in fact broken here once, and fixing
+it was real. Check which identity the token belongs to before checking the integration.
+Pull-request work goes to GitHub through `gh`; the tracker carries issue work only.
