@@ -135,9 +135,17 @@ The second is not a refinement of the first. A count alone excludes only the pul
 
 Report a branch that requires a pull request but zero approving reviews as insufficient too. It is the most misleading state on this list, because protection is visibly configured and admits unreviewed changes anyway.
 
+### Two mechanisms protect a branch, and one of them lies by omission
+
+The git host guards a branch two independent ways — a **ruleset** targeting it, and **classic branch protection** on it — and a branch may carry either, both, or neither. Read both. The classic endpoint is the one you reach for first, and on a branch governed only by a ruleset it returns `404 Branch not protected`: a successful read whose answer is *no gate*, on a branch that is actively gated. jen's own repository is in exactly that state. Reporting a gate absent off one of two endpoints is the same failure as the application registered with no permissions two sections up — the call succeeds and the conclusion is wrong.
+
+Either mechanism carrying both conditions satisfies the gate; you need one of them, not both.
+
+When you apply, **extend the ruleset already governing the branch** rather than adding a second mechanism beside it. Two overlapping mechanisms have to be kept in sync from then on, and a ruleset left at an approving-review count of `0` next to a new classic rule is a gate the next run will read inconsistently depending on which endpoint it asks. Only when nothing governs the branch at all do you choose which to create, and then say which one you created.
+
 ### Changing it is the user's call, every time
 
-Read the default branch's protection and report what you find. If it already satisfies both, say so and change nothing.
+Read the default branch's protection — both mechanisms — and report what you find. If it already satisfies both conditions, say so and change nothing.
 
 If it does not, present the **exact** change you would make — the settings and the values, not "tighten the branch protection" — and apply it only after the user explicitly agrees. A merge policy governs a repository jen does not own; the user may have reasons you cannot see, and a silent tightening is an intrusion whichever way it turns out.
 
