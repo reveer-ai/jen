@@ -2,42 +2,44 @@
 
 ## Purpose
 
-Defines the pipeline a task travels: the ordered stages, the status that triggers each one, how a stage hands off, which stages have a user to talk to and which run with nobody watching, and the budget that stops a task from circling the pipeline forever.
+Defines the pipeline a task travels: the ordered stages, the transition that triggers each one, how a stage hands off, which transitions belong to the user rather than to any stage, what a stage does when there is nobody to confirm with, and how a task is routed backward when a stage finds the previous stage's output unusable.
 
 ## Requirements
 
-### Requirement: Each stage is one skill, triggered by the task's status
+### Requirement: Each stage is one skill, triggered by the transition into its status
 
-The workflow SHALL define one skill per stage, and the task reaching that stage's status SHALL be what triggers the skill's work. The stages, their statuses, and their handoffs SHALL be:
+The workflow SHALL define one skill per stage, and the task's transition *into* that stage's status SHALL be what triggers the skill's work. The stages, their statuses, and their handoffs SHALL be:
 
 | Status | Skill | Hands off |
 |---|---|---|
 | — | `refine-epic` | tasks land in `Todo` |
-| `In Design` | `design-task` | `In Progress` |
+| `In Design` | `design-task` | stays at `In Design`; the user promotes |
 | `In Progress` | `implement-task` | `In Review` |
 | `In Review` | `review-task` | `In Testing`, or back to `In Progress` |
 | `In Testing` | `test-task` | `In Delivery`, or back to `In Progress` |
 | `In Delivery` | `deliver-task` | `Done` |
 
-No stage SHALL require any trigger beyond the status, and the pipeline SHALL NOT record a task's position in it anywhere other than the task's own status.
+The trigger SHALL be the transition rather than the task's residence in the status. A task resting in a status is not by itself a trigger, because residence cannot distinguish work that has finished from work in progress from work nothing has yet run against.
 
-#### Scenario: A task reaches a stage's status
+No stage SHALL require any trigger beyond that transition, and the pipeline SHALL NOT record a task's position in it anywhere other than the task's own status and the history of its transitions.
 
-- **WHEN** a task is moved to `In Design`
-- **THEN** that transition is what triggers `design-task` to do its work
+#### Scenario: A task is moved into a stage's status
+
+- **WHEN** a task is moved to `In Progress`
+- **THEN** that transition is what triggers `implement-task` to do its work
 - **AND** no queue, run record, or separate pipeline-position field is consulted
+
+#### Scenario: A task rests in a status it was already moved into
+
+- **WHEN** a task has been in `In Design` since its last transition and design has already run against it
+- **THEN** its presence in that status is not a fresh trigger
+- **AND** the stage is not run again on account of the status alone
 
 #### Scenario: A stage completes its work
 
-- **WHEN** a stage finishes
+- **WHEN** a stage that hands off finishes
 - **THEN** it moves the task to the status of the stage it hands off to
 - **AND** that transition is the next stage's trigger
-
-#### Scenario: A stage is re-entered after an interrupted run
-
-- **WHEN** a stage begins against a task already in its own status
-- **THEN** it checks for work it has already done before producing more
-- **AND** it resumes rather than restarting
 
 ### Requirement: Refinement precedes the pipeline and ends in `Todo`
 
@@ -59,30 +61,64 @@ Promoting a task from `Todo` to `In Design` SHALL be the user's decision. No sta
 #### Scenario: A refined task is picked up
 
 - **WHEN** a task in `Todo` is moved to `In Design`
-- **THEN** a human made that transition, and the pipeline drives itself from there
+- **THEN** a human made that transition
+- **AND** the pipeline drives itself from `In Progress` onward, the promotion out of `In Design` being the user's as well
 
-### Requirement: Design is attended and every later stage is not
+### Requirement: Design ends at `In Design` and promotion is the user's
 
-`design-task` SHALL confirm with the user before each artifact. Every stage after it SHALL run unattended and SHALL NOT wait on a reply.
+`design-task` SHALL NOT advance the task when it finishes. It SHALL leave the task at `In Design`, having written its artifacts, opened the draft PR, and commented.
 
-An unattended stage that needs a human SHALL write what is needed to the Linear issue or the PR and stop cleanly, leaving the task's status truthful about where the work actually is.
+Moving a task from `In Design` to `In Progress` SHALL be the user's decision, because that transition starts implementation and implementation is user-led. Together with `Todo` → `In Design`, this SHALL be one of two transitions no stage makes.
 
-#### Scenario: Design produces an artifact
+A design run that finishes SHALL therefore be distinguishable from one that was interrupted, since both leave the task at the same status. The comment every session ends with is what carries that distinction.
 
-- **WHEN** `design-task` is about to write an artifact
+#### Scenario: Design finishes its artifacts
+
+- **WHEN** `design-task` completes the full artifact set and validates it
+- **THEN** the task is left at `In Design`
+- **AND** no stage moves it to `In Progress`
+
+#### Scenario: A designed task is promoted
+
+- **WHEN** a task whose design is complete is moved to `In Progress`
+- **THEN** a human made that transition
+
+#### Scenario: A design run is interrupted
+
+- **WHEN** a design session is killed before finishing
+- **THEN** the task is left at `In Design`, as a finished design run would also leave it
+- **AND** what distinguishes the two is whether the run left its end-of-session comment
+
+### Requirement: Design confirms with the user when it can, and no stage waits on a reply
+
+`design-task` SHALL confirm with the user before each artifact when confirmation is available to it. When it is not — a run in which asking is denied or impossible — `design-task` SHALL write the artifact set without confirming rather than waiting, and the task's draft PR SHALL be the surface on which that confirmation happens afterward.
+
+`design-task` SHALL determine which of these applies from whether confirmation is actually available to it, and SHALL NOT depend on a flag, an environment variable, or a declared mode to tell it.
+
+No stage SHALL wait on a reply. A stage that needs a human SHALL write what is needed to the task or the PR and stop cleanly, leaving the task's status truthful about where the work actually stands.
+
+#### Scenario: Design runs with a user present
+
+- **WHEN** `design-task` is about to write an artifact and can ask
 - **THEN** it confirms with the user first
 
-#### Scenario: An unattended stage hits something only a human can decide
+#### Scenario: Design runs with nobody to ask
 
-- **WHEN** a stage after design cannot proceed without a human
-- **THEN** it records what is needed on the issue or as a comment anchored to what it concerns
+- **WHEN** `design-task` is about to write an artifact and confirmation is unavailable
+- **THEN** it writes the artifact without confirming
+- **AND** the artifact reaches the user through the draft PR rather than through a question
+
+#### Scenario: A stage hits something only a human can decide
+
+- **WHEN** a stage cannot proceed without a human
+- **THEN** it records what is needed on the task or as a comment anchored to what it concerns
 - **AND** the run stops rather than waiting for an answer
 
-#### Scenario: An unattended stage stops early
+#### Scenario: A stage stops early
 
 - **WHEN** a stage stops before finishing its work
 - **THEN** the task is left in a status that reflects where the work actually stands
-- **AND** the reason it stopped is readable on the issue or the PR
+- **AND** the reason it stopped is readable on the task or the PR
 
 ### Requirement: A stage may route a task backward
 
@@ -99,28 +135,3 @@ A stage that finds the previous stage's output unusable SHALL move the task back
 - **WHEN** `implement-task` finds the design absent or self-contradictory
 - **THEN** the task moves back to `In Design`
 - **AND** the blocker is recorded against the artifact it belongs to
-
-### Requirement: Backward routing is budgeted across the whole pipeline
-
-Backward routing SHALL be governed by a single budget shared by every stage, not one budget per stage or per pair of stages.
-
-Before starting its work, a stage SHALL count the backward transitions in the issue's `stateHistory` — every move to a status earlier in the pipeline than the one the task was in. On the third such transition the stage SHALL NOT begin: it SHALL comment on the issue with what sent the task back each round and what appears unresolvable, and SHALL leave the task's status unchanged.
-
-#### Scenario: A task has been sent back once
-
-- **WHEN** a stage begins and the issue's history shows one backward transition
-- **THEN** the stage does its work normally
-
-#### Scenario: A task has exhausted the budget
-
-- **WHEN** a stage begins and the issue's history shows three backward transitions
-- **THEN** the stage does not start the work
-- **AND** it comments with what sent the task back each round and what looks unresolvable
-- **AND** the task's status is left where it is
-
-#### Scenario: A task oscillates between two different pairs of stages
-
-- **WHEN** a task is routed backward once between review and implementation, and twice between testing and implementation
-- **THEN** the budget counts three backward transitions in total
-- **AND** the third stops the run, because the budget is shared rather than per-pair
-
