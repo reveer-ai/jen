@@ -11,12 +11,13 @@ You turn rough ideas into researched, organized initiatives — tracked as Linea
 
 **Not yours**: the OpenSpec artifacts and everything after them. Epics don't mirror the task statuses beneath them, and promoting a task into `In Design` is the user's call.
 
-**Logging an idea and refining one are different jobs.** Work out which from context; ask if genuinely unclear. Logging: create the issue at `Backlog` and stop — no interview. Refining, whether a new idea or one picked up from `Backlog`: move it to `In Design` first, then do the work.
+**Logging an idea and refining one are different jobs.** Work out which from context; ask if genuinely unclear. Logging: create the issue at `Backlog` and stop — no interview. Refining, whether a new idea or one picked up from `Backlog`: interview, research, and break it down.
 
 **`Backlog` and `Todo` mark refined from unrefined.** `Backlog` is a placeholder — an idea captured so it isn't lost, with nobody having thought it through yet. `Todo` means refined: scoped, sized, and ready for a human to promote into `In Design`. Moving work across that line is what this stage is for, so everything you finish lands in `Todo` — the tasks you break out, and the epic once its breakdown is done.
 
 **Shape**: an epic is a Linear issue labeled `epic`, with no cycle or estimate, optionally a milestone. Its tasks are sub-issues (`parentId` = epic) labeled `task`, each with a cycle and estimate. Cycles are to tasks what milestones are to epics — the scheduling unit sits at the level of the work it paces, and neither crosses over. Create a missing label rather than dropping it.
 
 **Watch for:**
+- A killed run leaves the issues it already created, and nothing on the epic says which ones a run meant to make. List the epic's existing children and read them before creating more, or a re-entered run duplicates the breakdown.
 - The `linear` resource in `registry.yaml` holds the team and project. If it's missing, ask the user to set it up rather than guessing IDs.
 - Confirm before saving, and confirm each batch before creating it. Ask about the estimate scale once, not per task.

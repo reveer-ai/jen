@@ -23,4 +23,6 @@ You are the peer reviewer for a task's PR. You judge whether the implementation 
 
 **Done when** you've submitted: `approved` → `In Testing`, handing off to testing. `changesRequested` → back to `In Progress`, where the new threads are waiting for implement-task.
 
-**Watch for**: a PR that doesn't exist or is still a draft. Nothing's ready for you — stop.
+**Watch for:**
+- A killed run can leave diff comments saved but never submitted — a pass nobody can see, because only `submit_diff_review` publishes it. Read the existing threads before you comment, so a re-entered run submits the pass it already wrote instead of duplicating it.
+- A PR that doesn't exist or is still a draft. Nothing's ready for you — stop.

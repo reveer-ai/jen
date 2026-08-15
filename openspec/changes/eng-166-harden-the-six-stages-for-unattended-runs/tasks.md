@@ -15,18 +15,18 @@ Root `AGENTS.md` comes first: every skill defers to it, and the cuts in section 
 
 Each skill keeps only what that stage alone needs to be told. Before cutting a line, check whether `AGENTS.md` now carries it — that is the test, not length.
 
-- [ ] 2.1 `test-task`: remove every mention of staging, deploy routines, and live environments. What remains is running the full suite, the integration and e2e checks the project defines beyond unit scope, and the spec's scenarios worth confirming end to end.
-- [ ] 2.2 `test-task`: cut the paragraph on writing down what it learned — it is the shared notes convention with staging examples attached. Keep only what is specific to this stage: its notes land after review has already passed.
-- [ ] 2.3 `test-task`: rewrite the three endings without the staging premise, and add what a killed run can leave behind.
-- [ ] 2.4 `design-task`: state the two modes — confirm before each artifact when confirmation is available, otherwise write the set and let the draft PR carry it — and that which one applies is discovered from whether asking works, not read from a flag or an environment variable.
-- [ ] 2.5 `design-task`: change **Done when** so the stage stops at `In Design` and does not move the issue. Say that promotion is the user's, and that the end-of-session comment is what distinguishes a finished design from an interrupted one.
-- [ ] 2.6 `design-task`: name what a killed run leaves behind — a partial artifact set, an artifact written but not committed, a PR that may or may not be open — and that the last artifact is read before its completion status is trusted.
-- [ ] 2.7 `implement-task`: name its own hazard — a checked box in `tasks.md` with no commit behind it is work to redo, not work to skip — and fold the existing `isComplete` warning into it as the same rule rather than a separate curiosity.
-- [ ] 2.8 `review-task`: name its own hazard — diff comments saved but never submitted. Read the existing threads before commenting, so a re-entered run submits the pass it already wrote instead of duplicating it.
-- [ ] 2.9 `deliver-task`: cut **Assume you're resuming** now that it is shared, keeping only what is specific to delivery — a partial archive, a sync already applied, a merge already made.
-- [ ] 2.10 `refine-epic`: name its own hazard — issues created by a run that died before finishing. Check the epic's existing children before creating more.
-- [ ] 2.11 Remove the churn-counting instruction from every skill that carries one.
-- [ ] 2.12 Read all seven skills end to end in one pass, checking that none restates a convention `AGENTS.md` now carries and that each still reads as instructions to one stage.
+- [x] 2.1 `test-task`: remove every mention of staging, deploy routines, and live environments. What remains is running the full suite, the integration and e2e checks the project defines beyond unit scope, and the spec's scenarios worth confirming end to end.
+- [x] 2.2 `test-task`: cut the paragraph on writing down what it learned — it is the shared notes convention with staging examples attached. Keep only what is specific to this stage: its notes land after review has already passed.
+- [x] 2.3 `test-task`: rewrite the three endings without the staging premise, and add what a killed run can leave behind.
+- [x] 2.4 `design-task`: state the two modes — confirm before each artifact when confirmation is available, otherwise write the set and let the draft PR carry it — and that which one applies is discovered from whether asking works, not read from a flag or an environment variable.
+- [x] 2.5 `design-task`: change **Done when** so the stage stops at `In Design` and does not move the issue. Say that promotion is the user's, and that the end-of-session comment is what distinguishes a finished design from an interrupted one.
+- [x] 2.6 `design-task`: name what a killed run leaves behind — a partial artifact set, an artifact written but not committed, a PR that may or may not be open — and that the last artifact is read before its completion status is trusted.
+- [x] 2.7 `implement-task`: name its own hazard — a checked box in `tasks.md` with no commit behind it is work to redo, not work to skip — and fold the existing `isComplete` warning into it as the same rule rather than a separate curiosity.
+- [x] 2.8 `review-task`: name its own hazard — diff comments saved but never submitted. Read the existing threads before commenting, so a re-entered run submits the pass it already wrote instead of duplicating it.
+- [x] 2.9 `deliver-task`: cut **Assume you're resuming** now that it is shared, keeping only what is specific to delivery — a partial archive, a sync already applied, a merge already made.
+- [x] 2.10 `refine-epic`: name its own hazard — issues created by a run that died before finishing. Check the epic's existing children before creating more.
+- [x] 2.11 Remove the churn-counting instruction from every skill that carries one.
+- [x] 2.12 Read all seven skills end to end in one pass, checking that none restates a convention `AGENTS.md` now carries and that each still reads as instructions to one stage.
 
 ## 3. Permissions
 
