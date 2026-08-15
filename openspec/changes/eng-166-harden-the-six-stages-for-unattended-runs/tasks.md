@@ -30,18 +30,18 @@ Each skill keeps only what that stage alone needs to be told. Before cutting a l
 
 ## 3. Permissions
 
-- [ ] 3.1 Add jen's own check commands to `.claude/settings.json` so its stages can run typecheck, lint, build, and the test suite unattended.
-- [ ] 3.2 Add the same shape to `scaffold/settings.json`, so a new install starts with the workflow's own tooling permitted and an obvious place for the project's commands.
-- [ ] 3.3 Confirm the tests that read `.claude/settings.json` and the scaffold still pass, since the fixture supplies its own and the assertions are about paths rather than contents.
+- [ ] 3.1 Add jen's own check commands to `.claude/settings.json` so its stages can run typecheck, lint, build, and the test suite unattended. **Blocked:** the harness denies an agent write access to the settings file governing its own permissions. Left for the user to apply by hand; see the PR thread.
+- [x] 3.2 Add the same shape to `scaffold/settings.json`, so a new install starts with the workflow's own tooling permitted and an obvious place for the project's commands.
+- [x] 3.3 Confirm the tests that read `.claude/settings.json` and the scaffold still pass, since the fixture supplies its own and the assertions are about paths rather than contents.
 
 ## 4. The adopter's documentation
 
-- [ ] 4.1 Add a section to `README.md` stating which permissions the pipeline needs, that jen writes the ones common to every project, and that the project's own typecheck, lint, build, and test commands are the adopter's to add.
-- [ ] 4.2 State what fails without them — the stages that run those checks cannot complete an unattended run — and that an existing install has to be edited by hand, since the assistant settings are written once and never rewritten.
+- [x] 4.1 Add a section to `README.md` stating which permissions the pipeline needs, that jen writes the ones common to every project, and that the project's own typecheck, lint, build, and test commands are the adopter's to add.
+- [x] 4.2 State what fails without them — the stages that run those checks cannot complete an unattended run — and that an existing install has to be edited by hand, since the assistant settings are written once and never rewritten.
 
 ## 5. Verification
 
-- [ ] 5.1 Run `openspec validate eng-166-harden-the-six-stages-for-unattended-runs --strict`.
-- [ ] 5.2 Run the project's checks and the full test suite.
-- [ ] 5.3 Re-read each spec delta against what was actually written, particularly the three requirements removed from `task-pipeline`, and confirm nothing still refers to what they said.
-- [ ] 5.4 Add a changeset describing the change for the release notes.
+- [x] 5.1 Run `openspec validate eng-166-harden-the-six-stages-for-unattended-runs --strict`.
+- [x] 5.2 Run the project's checks and the full test suite.
+- [x] 5.3 Re-read each spec delta against what was actually written, particularly the three requirements removed from `task-pipeline`, and confirm nothing still refers to what they said.
+- [x] 5.4 Add a changeset describing the change for the release notes.
