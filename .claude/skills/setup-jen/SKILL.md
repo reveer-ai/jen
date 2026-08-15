@@ -67,8 +67,10 @@ Each application carries the permissions its role's stages actually use, and not
 | Role | Repository permissions |
 |---|---|
 | `design` | Contents: write, Pull requests: write |
-| `dev` | Contents: write, Pull requests: write |
-| `deliver` | Contents: write, Pull requests: write, Checks: read |
+| `dev` | Contents: write, Pull requests: write, Workflows: write |
+| `deliver` | Contents: write, Pull requests: write, Checks: read, Workflows: write |
+
+`Workflows: write` is the one on that list that looks like more than the role needs, and the one most likely to be dropped as excessive. It is not. An application cannot create or update any file under `.github/workflows/` without it, and the host refuses the push naming the permission rather than the cause — so the error arrives at the wrong layer, on a task that did everything else right. Grant it even to a project that has no workflows today: `dev` needs it the first time a task's implementation touches CI, and `deliver` needs it because updating a pull request's branch from a base that has moved pushes those files too, which is exactly what delivery does before merging. `design` does not get it — it pushes OpenSpec artifacts and nothing else. The cost is worth naming to the user rather than glossing: `dev` can edit the very check its own pull request must pass, and what catches that is `deliver` reading the diff, the same as any other self-serving change.
 
 ### Which organization and which workspace
 
@@ -126,26 +128,36 @@ Leave every resource the file already declares alone. If an entry already record
 
 Three identities are what make a real review *possible*. The gate on the default branch is what makes it *required*. Without it the review stage submits a verdict nothing consults, and delivery merges whether or not it got one — a pipeline that looks like it reviews its work and does not.
 
-The default branch needs two things together:
+The default branch needs one thing: **at least one approving review** before a pull request may merge.
 
-- at least one approving review, and
-- that approval postdating the most recent push.
+Report a branch that requires a pull request but zero approving reviews as **insufficient**, not as present. It is the most misleading state on this list, because protection is visibly configured and admits unreviewed changes anyway.
 
-The second is not a refinement of the first. A count alone excludes only the pull request's author, which is `design` — so `dev` could approve the implementation it had just pushed and nothing structural would stop it. Requiring the approval to come after the last push excludes whoever pushed as well, which leaves `deliver` and the human as the only actors who can satisfy it. Report a branch carrying the count without the last-push requirement as **insufficient**, not as present.
+### Two settings must stay off, and they are the ones that look like the next step
 
-Report a branch that requires a pull request but zero approving reviews as insufficient too. It is the most misleading state on this list, because protection is visibly configured and admits unreviewed changes anyway.
+Neither of these tightens the gate. Each makes it unsatisfiable by any role the pipeline has:
+
+- **Requiring the approval to postdate the most recent push.** It removes the last pusher from the eligible set. `deliver-task` is a pusher and *then* a merger — it syncs the delta specs, moves the change under `openspec/changes/archive/`, pushes that, and only then merges — so `deliver` is the last pusher on every pull request the pipeline completes, and cannot approve its own push. `design` authored the pull request and the host refuses its review outright. `dev` is not running by then. Nothing is left that can approve.
+- **Dismissing stale reviews on push.** The same dead end by another route: delivery's own archive push would dismiss the approval it is about to merge on.
+
+Under either one, every task parks in delivery waiting for an approval no stage can give, and the human bypass becomes the only way anything merges — a pipeline that looks like it is running while a person does all of the finishing. Read both settings, and report a branch carrying either as not satisfying the gate: present turning it off as part of the change you propose, with what it does to delivery, and apply nothing until the user agrees. Never turn one on.
+
+### One approval from anyone is all the branch can be asked for
+
+The host's exclusions are subtractive — they take the author, and optionally the last pusher, out of the eligible set — and never name an approver. Its required-reviewer setting names teams, and an application cannot join a team. So there is no configuration in which the reviewing role is the one that has to approve, and nothing here to check for it: what you are verifying is one approval from anyone with write access.
+
+Say that plainly when you report the gate. Which role approves and which merges is workflow convention, stated once in the workflow document (`AGENTS.md`) and honoured by the stages — not something the branch enforces. A user who believes otherwise will never look at the pull request timeline, and the timeline is the only place a breach is visible: the roles are distinct identities, so the approving identity is on the record even though nothing rejects the wrong one.
 
 ### Two mechanisms protect a branch, and one of them lies by omission
 
 The git host guards a branch two independent ways — a **ruleset** targeting it, and **classic branch protection** on it — and a branch may carry either, both, or neither. Read both. The classic endpoint is the one you reach for first, and on a branch governed only by a ruleset it returns `404 Branch not protected`: a successful read whose answer is *no gate*, on a branch that is actively gated. jen's own repository is in exactly that state. Reporting a gate absent off one of two endpoints is the same failure as the application registered with no permissions two sections up — the call succeeds and the conclusion is wrong.
 
-Either mechanism carrying both conditions satisfies the gate; you need one of them, not both.
+Either mechanism carrying the approval requirement satisfies the gate; you need one of them, not both. The two settings that must stay off are read the same way — on whichever mechanism is in force, and on both when both are.
 
 When you apply, **extend the ruleset already governing the branch** rather than adding a second mechanism beside it. Two overlapping mechanisms have to be kept in sync from then on, and a ruleset left at an approving-review count of `0` next to a new classic rule is a gate the next run will read inconsistently depending on which endpoint it asks. Only when nothing governs the branch at all do you choose which to create, and then say which one you created.
 
 ### Changing it is the user's call, every time
 
-Read the default branch's protection — both mechanisms — and report what you find. If it already satisfies both conditions, say so and change nothing.
+Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review and carries neither of the two settings above, say so and change nothing.
 
 If it does not, present the **exact** change you would make — the settings and the values, not "tighten the branch protection" — and apply it only after the user explicitly agrees. A merge policy governs a repository jen does not own; the user may have reasons you cannot see, and a silent tightening is an intrusion whichever way it turns out.
 
