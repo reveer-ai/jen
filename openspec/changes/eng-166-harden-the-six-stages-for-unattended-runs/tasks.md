@@ -30,7 +30,7 @@ Each skill keeps only what that stage alone needs to be told. Before cutting a l
 
 ## 3. Permissions
 
-- [ ] 3.1 Add jen's own check commands to `.claude/settings.json` so its stages can run typecheck, lint, build, and the test suite unattended. **Blocked:** the harness denies an agent write access to the settings file governing its own permissions. Left for the user to apply by hand; see the PR thread.
+- [x] 3.1 Add jen's own check commands to `.claude/settings.json` so its stages can run typecheck, lint, build, and the test suite unattended.
 - [x] 3.2 Add the same shape to `scaffold/settings.json`, so a new install starts with the workflow's own tooling permitted and an obvious place for the project's commands.
 - [x] 3.3 Confirm the tests that read `.claude/settings.json` and the scaffold still pass, since the fixture supplies its own and the assertions are about paths rather than contents.
 
