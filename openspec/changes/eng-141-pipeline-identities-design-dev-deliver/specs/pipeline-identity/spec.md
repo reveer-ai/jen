@@ -163,18 +163,15 @@ The token a run uses on the git host SHALL be minted for that run, scoped to its
 - **THEN** it mints its own token
 - **AND** does not reuse a previous run's
 
-### Requirement: The default branch admits only a change a third identity approved
+### Requirement: The default branch admits only an approved change
 
-The default branch SHALL require at least one approving review, and SHALL require that approval to postdate the most recent reviewable push.
+The default branch SHALL require at least one approving review before a pull request may merge.
 
-Together those two exclude both the pull request's author and whoever pushed to it last. Because `design` opens the pull request and `dev` pushes the implementation, `deliver` is the only pipeline role that can satisfy the requirement — the guarantee therefore holds by construction rather than by naming a reviewer, which matters because the git host's required-reviewer setting cannot name an application identity at all.
+It SHALL NOT require that approval to postdate the most recent reviewable push, and SHALL NOT dismiss existing approvals on push. Both settings would exclude the delivering role from approving after its own push, and `deliver` pushes the spec sync and archive to the branch before merging it — so either one makes the gate unsatisfiable by any pipeline role rather than merely strict.
+
+The requirement excludes the pull request's author, which the git host enforces on its own. It does not exclude any other role, and the host offers no setting that would: its exclusions are subtractive and cannot name an approver, and its required-reviewer setting takes teams, which an application cannot join. Which role approves is therefore governed by the requirement below rather than by the branch.
 
 No role SHALL be permitted to bypass the requirement. A human MAY retain a bypass, since somebody has to be able to break the glass.
-
-#### Scenario: The implementing role attempts to approve
-
-- **WHEN** `dev` has pushed the implementation and an approval is submitted under `dev`
-- **THEN** the change is not mergeable on that approval
 
 #### Scenario: The authoring role attempts to approve
 
@@ -188,13 +185,33 @@ No role SHALL be permitted to bypass the requirement. A human MAY retain a bypas
 
 #### Scenario: A change reaches delivery reviewed
 
-- **WHEN** delivery attempts to merge a pull request approved by `deliver` after the last push
-- **THEN** the merge is permitted
+- **WHEN** delivery has pushed the spec sync and archive to a pull request already approved by `deliver`
+- **THEN** the approval still stands and the merge is permitted
 
 #### Scenario: A role attempts to bypass
 
 - **WHEN** any of the three roles attempts to merge without satisfying the requirement
 - **THEN** it cannot, because no role holds a bypass
+
+### Requirement: Approving is the reviewing stage's alone, by convention
+
+The workflow SHALL state that only `review-task` submits an approving review and only `deliver-task` merges, and SHALL state it once, in the workflow document that every stage reads, rather than in individual stage skills.
+
+This is the half of the gate the git host cannot enforce. `dev` holds `pull_requests:write` and is excluded by nothing on the branch, so it is capable of approving the implementation it just pushed and the branch would record that approval as satisfying the requirement. The prohibition is what stands in its place, and it is stated as a convention because there is no configuration that expresses it.
+
+The roles SHALL remain distinct identities on the git host, which is what makes a breach of the convention legible: an approval carries the approving identity in the pull request timeline, so an approval by `dev` is visibly the wrong actor rather than indistinguishable from a correct one.
+
+#### Scenario: The implementing role could approve
+
+- **WHEN** `dev` has pushed the implementation to a pull request awaiting review
+- **THEN** nothing in the branch's configuration prevents `dev` approving it
+- **AND** the workflow prohibits it, and `dev` does not
+
+#### Scenario: An approval is audited
+
+- **WHEN** someone checks whether the convention was honoured on a merged pull request
+- **THEN** the approving identity is readable from the pull request timeline
+- **AND** an approval submitted by a role other than `deliver` is identifiable as such
 
 ### Requirement: A verdict is submitted under the delivering role's own credential
 

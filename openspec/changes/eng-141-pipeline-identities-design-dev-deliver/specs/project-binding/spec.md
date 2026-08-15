@@ -70,7 +70,9 @@ Binding SHALL NOT write a private key, a client secret, a token, or any other cr
 
 ### Requirement: Binding verifies the merge gate and changes it only on explicit confirmation
 
-Binding SHALL verify that the repository's default branch carries the protection the `pipeline-identity` capability requires — an approving review, and that approval postdating the most recent reviewable push — and SHALL report what it finds.
+Binding SHALL verify that the repository's default branch carries the protection the `pipeline-identity` capability requires — at least one approving review — and SHALL report what it finds.
+
+A branch may be governed by a ruleset, by classic branch protection, by both, or by neither, and these are independent mechanisms. Binding SHALL read both before reporting, because the classic endpoint answers `404 Branch not protected` for a branch governed only by a ruleset: a successful read whose answer is *no gate* on a branch that is actively gated. Either mechanism carrying the requirement satisfies it.
 
 When the protection is absent or insufficient, binding SHALL present the exact change it would make and SHALL apply it only after the user explicitly agrees. When the user declines, binding SHALL report the gate as outstanding, SHALL state what would satisfy it, and SHALL NOT report the project as ready for the pipeline.
 
@@ -78,9 +80,14 @@ Binding SHALL NOT alter protection the repository already carries beyond what th
 
 #### Scenario: The gate is already satisfied
 
-- **WHEN** the default branch already requires an approving review postdating the last push
+- **WHEN** the default branch already requires at least one approving review
 - **THEN** binding reports the gate as satisfied
 - **AND** changes nothing
+
+#### Scenario: Only one of the two protection mechanisms is read
+
+- **WHEN** the default branch is governed by a ruleset and carries no classic branch protection
+- **THEN** binding does not report the gate as absent on the strength of the classic endpoint's `404`
 
 #### Scenario: The gate is absent and the user agrees
 
