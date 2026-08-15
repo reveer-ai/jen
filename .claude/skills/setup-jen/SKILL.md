@@ -90,7 +90,9 @@ Do not build anything that receives the credential. The host can hand an applica
 
 ### Verifying them
 
-**Verify what was granted, not that something exists.** Read each application back from the host and compare its actual repository permissions against the table above, then confirm the installation is on this repository.
+**Verify what was granted, not that something exists.** Read the permissions back from the **installation** — not from the application — and compare them against the table above, then confirm the installation is on this repository. The application's permissions are what it *requests*; the installation's are what it *has*, and the token a stage mints carries the latter.
+
+The distinction only matters once, and it matters exactly when a project is being repaired. Amending an application already installed somewhere does not change that installation: the host holds the new permissions as a request until an owner of the organization accepts them, and until they do, the application reads as amended while every token it mints carries the old set. So a run that verified against the application would report a permission granted that no stage can use. When you find an installation short of the table, say so as a request to accept rather than as an amendment to make — the amendment may well have already happened.
 
 This is not belt-and-braces. An application created with *no* repository permissions at all exists, reads as configured, installs cleanly, and mints tokens that can do nothing — and the permissions section on the creation page is a long collapsed list that is easy to save straight past. Nothing downstream reports it either: the first symptom is a stage failing on an authorization error, on a host, hours later. An existence check passes on that application. A permissions check is what catches it.
 
