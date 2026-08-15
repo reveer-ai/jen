@@ -50,6 +50,21 @@ describe('reconciliation candidates', () => {
     expect(candidates).not.toContain('docs/SKILL.md');
   });
 
+  // A member occupies a slot, so a file lying directly in the target directory is not one,
+  // whatever it is called and whatever it carries. jen keeps its own notes for the stage
+  // skills at `.claude/skills/AGENTS.md`, which puts a real file in that position, and an
+  // adopter may keep their own there for the same reason. Deletion is the stamp intersected
+  // with the slot enumeration; the danger is a future reconciliation that reaches for the
+  // stamp alone — walking the target directory for stamped files is the obvious shortcut,
+  // and it would take this one, because the stamp is genuinely there.
+  it('spares a file lying directly in the target directory, stamp and all', () => {
+    const root = messyProject(staged);
+    expect(reconcileCandidates(root, skills)).not.toContain('.claude/skills/AGENTS.md');
+
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+    expect(existsSync(join(root, '.claude/skills/AGENTS.md'))).toBe(true);
+  });
+
   it('is empty when the target directory does not exist', () => {
     expect(reconcileCandidates(project({}, 'bare'), skills)).toEqual([]);
   });

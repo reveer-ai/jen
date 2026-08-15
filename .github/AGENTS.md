@@ -138,15 +138,6 @@ credential above, sitting in the variable a stage would otherwise read. Naming t
 credential so that it *wins* is what keeps the default from silently taking over. If you
 find a stage reading `GITHUB_TOKEN`, that is the bug, not the fallback.
 
-**An empty `list_diffs` under the tracker agent means the identity, not a broken
-integration.** Linear's diff tools — `list_diffs`, `get_diff`, `get_diff_threads`,
-`save_diff_comment`, `submit_diff_review`, `merge_diff` — appear in `tools/list` for every
-token, including an `actor=app` one. Under an app user they return nothing: `list_diffs` is
-empty and `get_diff` reports `Diff not found` for pull requests a human token reads fine.
-Linear's diffs link a Linear *user* to a *GitHub account*, and an app user has neither, so
-the tools are present and inert. No scope widens this.
-
-The trap is that a disconnected GitHub integration looks identical from the output alone,
-and it is the cause anyone will suspect first — it was in fact broken here once, and fixing
-it was real. Check which identity the token belongs to before checking the integration.
-Pull-request work goes to GitHub through `gh`; the tracker carries issue work only.
+Which surface a stage reaches for its pull-request work is not a workflow question — see
+`.claude/skills/AGENTS.md` for why the tracker's diff tools are inert under the pipeline's
+own identity, and why that is invisible from their output.

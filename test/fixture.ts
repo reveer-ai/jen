@@ -93,6 +93,10 @@ export function messyProject(staged: string): string {
       '.claude/skills/openspec-explore/SKILL.md': unstamped('openspec-explore'),
       // a directory in the target dir that holds no member
       '.claude/skills/notes/README.md': 'Scratch notes, not a skill.\n',
+      // a file sitting directly in the target dir, occupying no slot — stamped, which is
+      // the worst case: jen writes one of these in its own repository (notes beside the
+      // skills), so an adopter can have one too, and the stamp must not be enough to take it
+      '.claude/skills/AGENTS.md': stamped('notes-beside-the-skills'),
       // stamped, but deeper than the set writes
       '.claude/skills/team/nested/SKILL.md': stamped('nested'),
       // stamped, but outside any declared target directory
