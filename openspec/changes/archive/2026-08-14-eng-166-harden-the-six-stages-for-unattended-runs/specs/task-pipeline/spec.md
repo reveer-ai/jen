@@ -1,10 +1,4 @@
-# task-pipeline Specification
-
-## Purpose
-
-Defines the pipeline a task travels: the ordered stages, the transition that triggers each one, how a stage hands off, which transitions belong to the user rather than to any stage, what a stage does when there is nobody to confirm with, and how a task is routed backward when a stage finds the previous stage's output unusable.
-
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Each stage is one skill, triggered by the transition into its status
 
@@ -40,29 +34,6 @@ No stage SHALL require any trigger beyond that transition, and the pipeline SHAL
 - **WHEN** a stage that hands off finishes
 - **THEN** it moves the task to the status of the stage it hands off to
 - **AND** that transition is the next stage's trigger
-
-### Requirement: Refinement precedes the pipeline and ends in `Todo`
-
-`refine-epic` SHALL turn an idea into an epic and its sub-issue tasks, and SHALL leave everything it produces in `Todo`. `Backlog` SHALL hold unrefined placeholders and `Todo` SHALL hold refined tasks ready to design.
-
-Promoting a task from `Todo` to `In Design` SHALL be the user's decision. No stage SHALL make that transition.
-
-#### Scenario: An idea is refined
-
-- **WHEN** `refine-epic` finishes breaking an epic down
-- **THEN** the epic and its tasks are in `Todo`
-- **AND** none of them has been moved into `In Design`
-
-#### Scenario: An idea is logged without being refined
-
-- **WHEN** an idea is captured that nobody has thought through
-- **THEN** it is created in `Backlog`
-
-#### Scenario: A refined task is picked up
-
-- **WHEN** a task in `Todo` is moved to `In Design`
-- **THEN** a human made that transition
-- **AND** the pipeline drives itself from `In Progress` onward, the promotion out of `In Design` being the user's as well
 
 ### Requirement: Design ends at `In Design` and promotion is the user's
 
@@ -120,18 +91,47 @@ No stage SHALL wait on a reply. A stage that needs a human SHALL write what is n
 - **THEN** the task is left in a status that reflects where the work actually stands
 - **AND** the reason it stopped is readable on the task or the PR
 
-### Requirement: A stage may route a task backward
+## MODIFIED Requirements
 
-A stage that finds the previous stage's output unusable SHALL move the task back to the status that owns the fix rather than doing that work itself. Review and testing SHALL route to `In Progress`; implementation SHALL route to `In Design` when there is no usable design to implement.
+### Requirement: Refinement precedes the pipeline and ends in `Todo`
 
-#### Scenario: Review finds the implementation wanting
+`refine-epic` SHALL turn an idea into an epic and its sub-issue tasks, and SHALL leave everything it produces in `Todo`. `Backlog` SHALL hold unrefined placeholders and `Todo` SHALL hold refined tasks ready to design.
 
-- **WHEN** `review-task` requests changes
-- **THEN** the task moves back to `In Progress`
-- **AND** the comments backing the verdict are what implementation acts on
+Promoting a task from `Todo` to `In Design` SHALL be the user's decision. No stage SHALL make that transition.
 
-#### Scenario: Implementation finds no usable design
+#### Scenario: An idea is refined
 
-- **WHEN** `implement-task` finds the design absent or self-contradictory
-- **THEN** the task moves back to `In Design`
-- **AND** the blocker is recorded against the artifact it belongs to
+- **WHEN** `refine-epic` finishes breaking an epic down
+- **THEN** the epic and its tasks are in `Todo`
+- **AND** none of them has been moved into `In Design`
+
+#### Scenario: An idea is logged without being refined
+
+- **WHEN** an idea is captured that nobody has thought through
+- **THEN** it is created in `Backlog`
+
+#### Scenario: A refined task is picked up
+
+- **WHEN** a task in `Todo` is moved to `In Design`
+- **THEN** a human made that transition
+- **AND** the pipeline drives itself from `In Progress` onward, the promotion out of `In Design` being the user's as well
+
+## REMOVED Requirements
+
+### Requirement: Each stage is one skill, triggered by the task's status
+
+**Reason**: The trigger is the transition into a status, not residence in it. Once a stage can finish without advancing the task, residence no longer distinguishes finished work from work in progress, and a pipeline reading the status alone would run that stage again on every check.
+
+**Migration**: Replaced by "Each stage is one skill, triggered by the transition into its status", which keeps the stage table and the prohibition on a separate position record, and adds the history of transitions as part of what records position.
+
+### Requirement: Design is attended and every later stage is not
+
+**Reason**: Design's attendedness is conditional rather than absolute — the stage can be run where there is nobody to confirm with, and needed an answer for that case rather than a rule it would break.
+
+**Migration**: Replaced by "Design confirms with the user when it can, and no stage waits on a reply", which keeps the unattended guarantees for every stage and states what design does when confirmation is unavailable.
+
+### Requirement: Backward routing is budgeted across the whole pipeline
+
+**Reason**: Enforcement moves to the dispatcher, which gates a task before dispatching it. A ceiling each of six skills computes for itself is a rule that can be applied inconsistently and disagree with the gate that also applies it; one mechanical enforcement point replaces both.
+
+**Migration**: The dispatcher owns counting backward transitions and refusing to dispatch. Stages read the task's record on entry as context — which surfaces a circling task among other things — but SHALL NOT gate on it. See the `stage-conventions` requirement "A stage reads the task's record before it acts".

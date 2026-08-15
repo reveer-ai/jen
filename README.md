@@ -70,7 +70,35 @@ It confirms the team and project with you, verifies that the pipeline's statuses
 
 Once it reports the project bound and the statuses satisfied, the pipeline can run.
 
-### 4. Take a later version
+### 4. Grant the permissions the stages need — also yours
+
+The pipeline's stages run with nobody watching, and a denied permission is not a prompt an unattended run can wait out. A stage told to run your typecheck, lint, build, or tests, in a session that isn't permitted to run them, cannot finish: implementation can't hand off a change it was unable to check, and testing can't verify one.
+
+`jen init` writes `.claude/settings.json` with the permissions that are the same in every project — `git`, `gh`, and `openspec`, the tooling the workflow itself runs — plus the standard `npm run` script names as a starting shape.
+
+**Your project's own check commands are not among them, and jen cannot add them.** It has no way to know whether your tests run under `pytest`, `cargo test`, `make check`, or something else. Add them yourself:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(openspec:*)",
+      "Bash(npx openspec:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(mypy:*)"
+    ]
+  }
+}
+```
+
+The tracker's own tools are granted where the pipeline is invoked rather than here, since their identifiers differ per install.
+
+**This is a file you have to edit by hand, including on a project installed before this guidance existed.** `.claude/settings.json` is yours from the moment it exists — `jen update` never rewrites it, so no version you take will add these for you, and a project that predates this section will keep whatever list it was given until you change it.
+
+### 5. Take a later version
 
 ```bash
 npm i -D @reveer/jen@latest && npx jen update

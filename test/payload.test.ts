@@ -146,6 +146,20 @@ describe('the scaffold declaration', () => {
     }
   });
 
+  // A stage told to run something the harness denies cannot do its work, and an unattended
+  // run has nobody to grant the permission when it asks. The workflow's own tooling is the
+  // part jen can grant for every project — the adopter's own check commands are theirs to add,
+  // which is why this asserts the shared floor rather than the whole list.
+  it('grants the tooling every stage is told to run', () => {
+    const settings = SCAFFOLD.find((file) => file.target === '.claude/settings.json');
+    expect(settings, 'the scaffold must carry assistant settings to grant anything in').toBeDefined();
+
+    const allow = JSON.parse(readRepoFile(settings!.source)).permissions?.allow;
+    for (const tool of ['git', 'gh', 'openspec']) {
+      expect(allow, `every stage runs ${tool}`).toContain(`Bash(${tool}:*)`);
+    }
+  });
+
   // The scaffold is the first thing an adopter reads after `jen init`, and it is written
   // long before the skills it points at settle on their names. A dead pointer here is
   // invisible in this repo and only shows up in an installed project.

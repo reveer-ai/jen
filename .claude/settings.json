@@ -1,5 +1,15 @@
 {
   "permissions": {
-    "allow": ["Bash(openspec:*)", "Bash(git*)"]
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(openspec:*)",
+      "Bash(npx openspec:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm test:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx tsc:*)"
+    ]
   }
 }
