@@ -42,3 +42,11 @@ Three findings from the review of this PR, all prose, no code.
 - [x] 6.2 Carry the design's indeterminate-identity decision into the `stage-conventions` delta: a paragraph in the requirement, a scenario for it, and the reviewer-is-author scenario scoped to what the comparison reports rather than to who the author in fact is.
 - [x] 6.3 `review-task`: give `POST /pulls/N/reviews/ID/events` its required `event` field. *The sibling `DELETE` on the same endpoint — the other half of the sentence — is written out with it.*
 - [x] 6.4 Re-run the checks and `openspec validate --strict`.
+
+## 7. Review round two
+
+One finding and one note, both prose, no code and no spec change.
+
+- [x] 7.1 In the root `AGENTS.md` **Threads** convention, state that the anchored-comment endpoint requires `LINE` to be in the diff and refuses anything else with a `422`, and route the note that can't be anchored to the Linear issue. Keep `gh pr comment` as the wrong answer where an anchor is possible.
+- [ ] 7.2 Answer the pending-review recovery note on `review-task` either way, on its thread. *Agreed rather than defended: the recovery path now reads the pending body first, deletes and reposts by default, and submits only when the body is already the verdict.*
+- [x] 7.3 Re-run the checks and `openspec validate --strict`. *Typecheck, build, 139 tests, `openspec validate --strict` all pass.*

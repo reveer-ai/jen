@@ -49,12 +49,12 @@ Different means record the real event. Equal means `event: COMMENT` with the ver
   gh api repos/OWNER/REPO/pulls/N/reviews --jq '.[] | {id, state, user: .user.login}'
   ```
 
-  A `PENDING` one is yours to finish, not to duplicate — submit it, or delete it and post the review whole:
+  A `PENDING` one is yours to finish, not to duplicate. Read its body before you decide what to do with it: the one call above never leaves a review pending, so a pending one is the wreckage of a two-step pass, and what it was saved with may be nothing. Delete it and post the review whole — that's the default, because submitting an empty body publishes every anchor under no verdict, which is the outcome the one call exists to prevent. Submit it only when the body already says what you'd say:
 
   ```bash
-  gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
   gh api repos/OWNER/REPO/pulls/N/reviews/ID --method DELETE
+  gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
   ```
 
-  `event` is required and is the one the comparison above chose; the body the review was saved with stands. Read the existing threads before you comment either way.
+  `event` is required and is the one the comparison above chose. Read the existing threads before you comment either way.
 - A PR that doesn't exist or is still a draft. Nothing's ready for you — stop.
