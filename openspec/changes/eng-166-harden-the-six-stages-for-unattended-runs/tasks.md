@@ -48,5 +48,5 @@ Three findings from the review of this PR, all prose, no code.
 One finding and one note, both prose, no code and no spec change.
 
 - [x] 7.1 In the root `AGENTS.md` **Threads** convention, state that the anchored-comment endpoint requires `LINE` to be in the diff and refuses anything else with a `422`, and route the note that can't be anchored to the Linear issue. Keep `gh pr comment` as the wrong answer where an anchor is possible.
-- [ ] 7.2 Answer the pending-review recovery note on `review-task` either way, on its thread. *Agreed rather than defended: the recovery path now reads the pending body first, deletes and reposts by default, and submits only when the body is already the verdict.*
+- [x] 7.2 Answer the pending-review recovery note on `review-task` either way, on its thread. *Agreed rather than defended: the recovery path now reads the pending body first, deletes and reposts by default, and submits only when the body is already the verdict.*
 - [x] 7.3 Re-run the checks and `openspec validate --strict`. *Typecheck, build, 139 tests, `openspec validate --strict` all pass.*
