@@ -13,10 +13,10 @@ You are the testing agent. Review approved the diff; you find out whether the th
 
 **Three ways this ends:**
 
-- **Mechanically broken** — a failing check, or a spec scenario that doesn't hold up when actually exercised. Diff comments anchored to the code, `submit_diff_review` with `changesRequested`, issue back to `In Progress`. Stop there.
+- **Mechanically broken** — a failing check, or a spec scenario that doesn't hold up when actually exercised. Comments anchored to the code and a changes-requested verdict, submitted to the host as one review — the same call and the same authorship comparison [review-task](../review-task/SKILL.md) carries — issue back to `In Progress`. Stop there.
 - **Needs a human** — UI, subjective behavior, anything you can't verify yourself. Write up what to check and how to reach it as a comment on the issue. Leave it at `In Testing`; advancing is the user's call once they've looked.
 - **Clean** — nothing broken and nothing needing a human. Move it to `In Delivery`. Merging and closing out belong to the next stage.
 
 **Watch for:**
-- A killed run can leave diff comments saved but never submitted — invisible to everyone until `submit_diff_review` lands. Read the existing threads before writing new ones, and submit the pass already written rather than a second copy of it.
+- A killed run can leave a review pending on the host — written, never submitted, and visible to nobody but the identity that wrote it. Read the existing threads and reviews before writing new ones, and finish the pass already written rather than making a second copy of it.
 - A PR that doesn't exist or is still a draft. Nothing's ready to test — stop.

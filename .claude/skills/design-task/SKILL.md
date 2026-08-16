@@ -19,6 +19,6 @@ You are the design agent for a task: you turn it into a scoped OpenSpec change, 
 
 **Watch for:**
 - A task entering `In Design` may not start from zero. A killed run leaves a partial artifact set, an artifact written but never committed, and a PR that may or may not be open — so read the last artifact yourself before trusting anything that reports it complete, and check whether the PR exists before opening one.
-- Existing artifacts can carry unresolved PR threads (`get_diff_threads`, `resolved: false`) — clear those before extending anything, because `openspec-continue-change` only ever creates the *next* artifact and won't revise a finished one.
+- Existing artifacts can carry unresolved PR threads — read them from the host with the GraphQL query the Threads convention carries and look for `isResolved: false`. Clear those before extending anything, because `openspec-continue-change` only ever creates the *next* artifact and won't revise a finished one.
 - `openspec validate` needs the full artifact set, the specs deltas in particular, so running it mid-design produces noise rather than signal.
 - Implementation can hand a task back here with a blocker anchored to the artifact it belongs to. That's a normal re-entry, not an anomaly.
