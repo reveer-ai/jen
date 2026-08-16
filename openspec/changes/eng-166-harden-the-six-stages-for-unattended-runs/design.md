@@ -23,7 +23,7 @@ The current state is four surfaces: the Threads convention and the one-PR conven
 - **Tightening the merge gate.** Also ENG-141, and explicitly sequenced after this.
 - **Moving issue work.** Status, comments, and attachments stay on the tracker and work correctly under an application identity.
 - **Supporting a second git host.** The workflow already names `gh` in `AGENTS.md`; this change follows that, and the spec stays worded as "the git host's own client" so the prose is what would change, not the requirement.
-- **The two unresolved threads on the merged PR #11.** Real, still open, and about adoption-docs wording rather than this migration — and unresolvable by pushing here, since that PR is merged.
+- **Resolving PR #11's threads.** The findings they carry are fixed here, but the threads themselves stay open: #11 is merged, so nothing pushed to this branch can answer them. They are answered by the fix existing, not by a reply.
 
 ## Decisions
 
@@ -97,6 +97,16 @@ The one-PR convention's second paragraph currently explains that the tracker can
 A test alongside the existing tooling-floor test in `test/payload.test.ts`, reading the skills named in the payload declaration plus the root `AGENTS.md`, asserting that none of them names a tracker diff tool.
 
 It must not be a tree-wide grep. ENG-141's branch adds a `.claude/skills/AGENTS.md` whose *purpose* is to name these tools and explain that they are inert under an application identity — a note that would fail a tree-wide check forever. Scoping to the payload declaration also means a skill added later is covered automatically.
+
+### The permissions section says what jen actually writes, and its example stops being a whole file
+
+Two defects in the section ENG-166 itself added, found by that task's review and approved through as non-blocking. They are corrected here because this is the change that touches the same work, and because a doc fix does not earn its own trip through six stages.
+
+The claim to fix is "your project's own check commands are not among them, and jen cannot add them", which sits one line below the statement that `jen init` writes the standard `npm run` names. The resolution is not to stop writing them — that was a deliberate decision of the same task — but to say the true thing: jen writes the workflow's own tooling for everyone, plus a starting shape that assumes one ecosystem, and a project outside that ecosystem has entries that are useless to it and entries missing that it needs. What jen cannot know is the project's commands, which is the durable half of the original claim.
+
+The example becomes a fragment showing the entries an adopter *adds*, rather than a complete file. A whole-file example is what makes copying it lossy, and the section's purpose is to establish permissions, not to hand over a file that quietly drops four of them.
+
+The `adoption-docs` requirement carries the same wording, so the delta moves with the README rather than after it. Shipping one without the other leaves the spec asserting something the documentation it governs no longer says.
 
 ## Risks / Trade-offs
 

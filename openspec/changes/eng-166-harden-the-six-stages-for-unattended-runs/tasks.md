@@ -20,9 +20,16 @@ The skills defer to these, so they land first.
 - [ ] 3.1 Add a test in `test/payload.test.ts`, beside the existing tooling-floor test, asserting that no skill named in the payload declaration and not the root `AGENTS.md` mentions a tracker diff tool (`list_diffs`, `get_diff`, `get_diff_threads`, `save_diff_comment`, `resolve_diff_thread`, `submit_diff_review`, `merge_diff`).
 - [ ] 3.2 Verify the guard is scoped to the payload declaration rather than the tree, so ENG-141's `.claude/skills/AGENTS.md` — which names these tools deliberately, to explain they are inert — can still merge.
 
-## 4. Verification
+## 4. The permissions section this task got wrong
 
-- [ ] 4.1 Run the project's checks: `npm run typecheck`, `npm run lint`, `npm run build`, and the full suite.
-- [ ] 4.2 `openspec validate eng-166-harden-the-six-stages-for-unattended-runs --strict`.
-- [ ] 4.3 Re-read the four edited documents as a set, in the order a stage meets them, and confirm no skill restates what the conventions now carry.
-- [ ] 4.4 Confirm every command named in the instructions is one that was actually run, not one inferred from documentation.
+- [ ] 4.1 In `README.md` section 4, replace "Your project's own check commands are not among them, and jen cannot add them" with what is actually true: jen writes the workflow's own tooling for every project plus a starting shape that assumes npm, a project on another stack holds entries that do not apply and lacks the ones that do, and what jen cannot know is the project's commands. Do not remove the npm entries from the scaffold — writing them was a deliberate decision of the same task.
+- [ ] 4.2 Turn the example JSON from a complete file into the entries an adopter adds, so copying it cannot drop the four `npm run` entries jen writes.
+- [ ] 4.3 Apply the matching delta to `adoption-docs`, in the same commit as the README — the requirement carries the same wording, and shipping one without the other leaves the spec governing text that no longer says what it asserts.
+
+## 5. Verification
+
+- [ ] 5.1 Run the project's checks: `npm run typecheck`, `npm run lint`, `npm run build`, and the full suite.
+- [ ] 5.2 `openspec validate eng-166-harden-the-six-stages-for-unattended-runs --strict`.
+- [ ] 5.3 Re-read the four edited documents as a set, in the order a stage meets them, and confirm no skill restates what the conventions now carry.
+- [ ] 5.4 Confirm every command named in the instructions is one that was actually run, not one inferred from documentation.
+- [ ] 5.5 Read section 4 of `README.md` against the scaffold's actual allow list and confirm every claim it makes about what jen writes is true of that file.
