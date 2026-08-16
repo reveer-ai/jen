@@ -49,5 +49,12 @@ Different means record the real event. Equal means `event: COMMENT` with the ver
   gh api repos/OWNER/REPO/pulls/N/reviews --jq '.[] | {id, state, user: .user.login}'
   ```
 
-  A `PENDING` one is yours to finish, not to duplicate — submit it with `POST /pulls/N/reviews/ID/events`, or delete it and post the review whole. Read the existing threads before you comment either way.
+  A `PENDING` one is yours to finish, not to duplicate — submit it, or delete it and post the review whole:
+
+  ```bash
+  gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
+  gh api repos/OWNER/REPO/pulls/N/reviews/ID --method DELETE
+  ```
+
+  `event` is required and is the one the comparison above chose; the body the review was saved with stands. Read the existing threads before you comment either way.
 - A PR that doesn't exist or is still a draft. Nothing's ready for you — stop.

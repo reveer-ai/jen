@@ -33,3 +33,12 @@ The skills defer to these, so they land first.
 - [x] 5.3 Re-read the four edited documents as a set, in the order a stage meets them, and confirm no skill restates what the conventions now carry.
 - [x] 5.4 Confirm every command named in the instructions is one that was actually run, not one inferred from documentation. *All eight run against PR #13: the thread read, the reviews POST carrying inline anchors, the replies POST, the `resolveReviewThread` mutation, the reviews listing, the events submit, the pending-review DELETE, and the two-value authorship probe. The self-review refusal was reproduced firsthand — `422 Review Can not request changes on your own pull request`. Probe threads deleted afterward; two self-labeled `COMMENTED` review shells remain, which the host offers no way to remove.*
 - [x] 5.5 Read section 4 of `README.md` against the scaffold's actual allow list and confirm every claim it makes about what jen writes is true of that file.
+
+## 6. Review round one
+
+Three findings from the review of this PR, all prose, no code.
+
+- [x] 6.1 Give **Where the work goes**'s "anchoring a comment to a line of the diff" a mechanism. The command lands in **Threads**, beside the reply and resolve it belongs with, rather than in the division bullet that only enumerates the operation. *`POST /pulls/N/comments` with `commit_id`, run against #13 before being written down; the probe comment was deleted afterward.*
+- [x] 6.2 Carry the design's indeterminate-identity decision into the `stage-conventions` delta: a paragraph in the requirement, a scenario for it, and the reviewer-is-author scenario scoped to what the comparison reports rather than to who the author in fact is.
+- [x] 6.3 `review-task`: give `POST /pulls/N/reviews/ID/events` its required `event` field. *The sibling `DELETE` on the same endpoint — the other half of the sentence — is written out with it.*
+- [x] 6.4 Re-run the checks and `openspec validate --strict`.

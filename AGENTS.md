@@ -71,6 +71,16 @@ Shared by every stage, so no stage restates them.
   ```
 
   `COMMENT_ID` is the `databaseId` of the thread's first comment; `THREAD_ID` is the thread's node id (`PRRT_…`). Both come from the read, because both are needed and neither is reachable from the other. Use the GraphQL read rather than the REST comments endpoint: `isResolved` exists only on this connection, so a stage reading REST cannot tell an answered thread from an open one. Resolution is likewise only the mutation — there is no REST equivalent to reach for.
+
+  Opening a *new* thread — what a stage leaves when something needs a person, anchored to what it concerns — is a different endpoint, and `commit_id` is the part that isn't guessable:
+
+  ```bash
+  gh api repos/OWNER/REPO/pulls/N/comments --method POST \
+    -f commit_id="$(gh pr view N --json headRefOid --jq .headRefOid)" \
+    -f path=PATH -F line=LINE -f side=RIGHT -f body='…'
+  ```
+
+  `gh pr comment` is not this: it takes no path or line and posts to the conversation, which is the unanchored comment the anchor was for. Anchoring costs one empty-bodied `COMMENTED` review in the PR's reviews listing — the host wraps every standalone comment in one. It is an artifact of the endpoint, never a verdict, and a stage reading that listing for a verdict reads the body.
 - **Notes as you work.** A convention this change establishes, or a gotcha a future session would otherwise rediscover the hard way, goes in the AGENTS.md nearest the code it applies to — written by the stage that learned it, at the point it learned it, so it rides in the diff and gets reviewed and tested like everything else. Never the root AGENTS.md: that's the workflow, and the next `jen update` replaces it wholesale — a note written there isn't impolite, it's lost. They live at or below `src/`, as deep as the thing they describe. Skip it when nothing clears the bar — a note nobody needed is worse than no note.
 - **Comment at the end of every session.** Whatever the outcome — finished, stopped early, or blocked — comment on the issue before you exit. Never finish silently, including when nothing went wrong. Carry what the stage did, what it decided, where it stopped and why, and what the next stage picks up; a bare "done" satisfies the letter of this and is worth nothing. This is what makes a finished run distinguishable from a crashed one, since both leave the status untouched. Its absence is how the next stage knows a run died mid-work and every marker on the task is unverified.
 - **No stage waits on a human.** A run may have nobody watching it, and a denied question is not a prompt you can wait out. What needs a human goes on the Linear issue or the PR, anchored to what it concerns, and the run stops cleanly — leaving the status truthful about where the work actually stands.
