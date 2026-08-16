@@ -50,3 +50,12 @@ One finding and one note, both prose, no code and no spec change.
 - [x] 7.1 In the root `AGENTS.md` **Threads** convention, state that the anchored-comment endpoint requires `LINE` to be in the diff and refuses anything else with a `422`, and route the note that can't be anchored to the Linear issue. Keep `gh pr comment` as the wrong answer where an anchor is possible.
 - [x] 7.2 Answer the pending-review recovery note on `review-task` either way, on its thread. *Agreed rather than defended: the recovery path now reads the pending body first, deletes and reposts by default, and submits only when the body is already the verdict.*
 - [x] 7.3 Re-run the checks and `openspec validate --strict`. *Typecheck, build, 139 tests, `openspec validate --strict` all pass.*
+
+## 8. Review round three
+
+Two findings, both prose, both in `review-task`'s pending-review recovery. No code and no spec change — the requirement says nothing about recovery mechanics.
+
+- [x] 8.1 Add `body` to the reviews-listing projection, so the command answers the question the next sentence asks of it. It serves the verdict read in **Where the work goes** too, where `state` alone can't tell an anchoring shell from a verdict.
+- [x] 8.2 Mark the `DELETE` and the events `POST` as alternatives rather than a sequence, at the commands themselves and not only in the prose above them.
+- [x] 8.3 Act on the churn observation the review left as context: lift the recovery out of the **Watch for** bullet that has now carried three rounds of findings, and give it its own block at the altitude of the mechanism it describes.
+- [x] 8.4 Re-run the checks and `openspec validate --strict`.

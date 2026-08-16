@@ -40,21 +40,24 @@ Different means record the real event. Equal means `event: COMMENT` with the ver
 - **Quality** — duplication, premature abstraction, dead code, anything [AGENTS.md](../../../AGENTS.md) calls out.
 - **What went unwritten** — did this change establish a convention, or leave behind a gotcha, that never made it into an AGENTS.md? A missing note earns a comment like anything else. So does one written into the root workflow file instead of alongside the code it describes.
 
+**A killed run can leave a review pending on the host** — comments written into a review that was never submitted. A pending review is visible to nobody but the identity that opened it, so the pass reads as though it never happened. List the reviews carrying their bodies, because the body is what both the recovery and a verdict turn on:
+
+```bash
+gh api repos/OWNER/REPO/pulls/N/reviews --jq '.[] | {id, state, body, user: .user.login}'
+```
+
+A `PENDING` one is yours to finish, not to duplicate. Read its body before you decide what to do with it: the one call above never leaves a review pending, so a pending one is the wreckage of a two-step pass, and what it was saved with may be nothing. The two ways out are alternatives, not a sequence:
+
+```bash
+# the default: delete it, then post the whole review as above
+gh api repos/OWNER/REPO/pulls/N/reviews/ID --method DELETE
+
+# the exception, only when the saved body already says what you'd say: submit in place
+gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
+```
+
+Delete-and-repost is the default because submitting an empty body publishes every anchor under no verdict, which is the outcome the one call exists to prevent. `event` is required on that submit and is the one the comparison above chose. Read the existing threads before you comment either way.
+
 **Done when** you've submitted: an approving verdict → `In Testing`, handing off to testing. Changes requested → back to `In Progress`, where the new threads are waiting for implement-task.
 
-**Watch for:**
-- A killed run can leave a review pending on the host — comments written into a review that was never submitted. A pending review is visible to nobody but the identity that opened it, so the pass reads as though it never happened:
-
-  ```bash
-  gh api repos/OWNER/REPO/pulls/N/reviews --jq '.[] | {id, state, user: .user.login}'
-  ```
-
-  A `PENDING` one is yours to finish, not to duplicate. Read its body before you decide what to do with it: the one call above never leaves a review pending, so a pending one is the wreckage of a two-step pass, and what it was saved with may be nothing. Delete it and post the review whole — that's the default, because submitting an empty body publishes every anchor under no verdict, which is the outcome the one call exists to prevent. Submit it only when the body already says what you'd say:
-
-  ```bash
-  gh api repos/OWNER/REPO/pulls/N/reviews/ID --method DELETE
-  gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
-  ```
-
-  `event` is required and is the one the comparison above chose. Read the existing threads before you comment either way.
-- A PR that doesn't exist or is still a draft. Nothing's ready for you — stop.
+**Watch for** a PR that doesn't exist or is still a draft. Nothing's ready for you — stop.
