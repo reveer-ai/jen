@@ -108,6 +108,35 @@ describe('the payload declaration', () => {
     );
   });
 
+  // A tracker renders a pull request through an integration binding a tracker user to a
+  // git-host account. An identity acting as an application has no such account, so that
+  // surface reads empty for it rather than failing — a review that anchors nothing and
+  // submits nothing, and reports success. Nothing at runtime catches it, so this does.
+  //
+  // Scoped to the payload declaration rather than the tree deliberately: a skills-directory
+  // AGENTS.md that names these tools in order to explain they are inert is a legitimate file
+  // this must not fail. Reading the declaration also covers a skill added later without
+  // anyone remembering to list it here.
+  it('tells no shipped instruction to reach for the tracker\'s diff tooling', () => {
+    const trackerDiffTools = [
+      'list_diffs',
+      'get_diff',
+      'get_diff_threads',
+      'save_diff_comment',
+      'resolve_diff_thread',
+      'submit_diff_review',
+      'merge_diff',
+    ];
+
+    for (const { file } of payloadFiles()) {
+      const contents = readRepoFile(file.source);
+      for (const tool of trackerDiffTools) {
+        expect(contents, `${file.source} must not name ${tool} — the PR is the git host's`)
+          .not.toMatch(new RegExp(`\\b${tool}\\b`));
+      }
+    }
+  });
+
   it('will not guess a shape it cannot derive', () => {
     const empty: VariableSet = { kind: 'variable-set', name: 'nothing', targetDir: '.claude/skills', members: [] };
     expect(() => memberShape(empty)).toThrow(/no members/);
@@ -143,6 +172,20 @@ describe('the scaffold declaration', () => {
   it('ships unstamped, even where the format could carry a stamp', () => {
     for (const { file, stamped } of stagedFiles()) {
       if (SCAFFOLD.some((entry) => entry.target === file.target)) expect(stamped).toBe(false);
+    }
+  });
+
+  // A stage told to run something the harness denies cannot do its work, and an unattended
+  // run has nobody to grant the permission when it asks. The workflow's own tooling is the
+  // part jen can grant for every project — the adopter's own check commands are theirs to add,
+  // which is why this asserts the shared floor rather than the whole list.
+  it('grants the tooling every stage is told to run', () => {
+    const settings = SCAFFOLD.find((file) => file.target === '.claude/settings.json');
+    expect(settings, 'the scaffold must carry assistant settings to grant anything in').toBeDefined();
+
+    const allow = JSON.parse(readRepoFile(settings!.source)).permissions?.allow;
+    for (const tool of ['git', 'gh', 'openspec']) {
+      expect(allow, `every stage runs ${tool}`).toContain(`Bash(${tool}:*)`);
     }
   });
 
