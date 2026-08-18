@@ -60,7 +60,7 @@ The pipeline acts under identities of its own, not under whoever launched it. Th
 | `deliver` application | git host | `review-task`, `test-task`, `deliver-task` |
 | one shared agent | tracker | all six |
 
-Three on the git host because that host refuses a review from a pull request's own author — which is exactly the refusal that makes the review stage real, and exactly why one identity cannot drive the whole pipeline. One on the tracker because the tracker imposes no such constraint: a second tracker agent would carry identical scope and identical capability and differ only in the name on a comment, while costing the user another pass through a registration flow. Register exactly one, and if the workspace already has one, register none.
+Three on the git host because that host refuses a review from a pull request's own author — which is exactly the refusal that makes the review stage real, and exactly why one identity cannot drive the whole pipeline. One on the tracker because the tracker imposes no such constraint: a second tracker agent would carry identical scope and identical capability and differ only in the name on a comment, while costing the user another pass through a registration flow. Register exactly one — **the project's own**, identified by name — and register none only when that one already exists. Not any agent: a workspace accumulates agents from products with nothing to do with jen, and one of those satisfies "the workspace has an agent" while the pipeline still has no identity to authenticate as. `registry.yaml`'s tracker entry records which agent is the project's, by `agent` and `agent_id`; where it has not recorded one yet, ask the user which agent is jen's rather than inferring it from the workspace having exactly one.
 
 Each application carries the permissions its role's stages actually use, and nothing else:
 
@@ -157,11 +157,25 @@ The git host guards a branch two independent ways — a **ruleset** targeting it
 
 Either mechanism carrying the approval requirement satisfies the gate; you need one of them, not both. The two settings that must stay off are read the same way — on whichever mechanism is in force, and on both when both are.
 
+Confirm any ruleset you read actually **targets the default branch**. The repository's ruleset list returns every ruleset it has, including ones targeting other branches or tags, so an active ruleset in that list is not evidence that this branch is governed by it — the same shape of mistake as the `404`, arriving from the opposite direction. Asking the host which rules apply to the branch answers directly; reading the list and assuming answers something else.
+
 When you apply, **extend the ruleset already governing the branch** rather than adding a second mechanism beside it. Two overlapping mechanisms have to be kept in sync from then on, and a ruleset left at an approving-review count of `0` next to a new classic rule is a gate the next run will read inconsistently depending on which endpoint it asks. Only when nothing governs the branch at all do you choose which to create, and then say which one you created.
+
+### Read who is allowed to bypass it, not only what it requires
+
+A gate the pipeline's own roles can step around is not a gate, and the requirement is absolute: no role may hold a bypass, while a human may keep one. That distinction is the whole rule.
+
+So read the bypass list as part of reading the gate. The actors come back on the same read that answers the approving-review count and the two settings above, on whichever mechanism is in force — a ruleset's `bypass_actors`, where an application appears with `actor_type: "Integration"`, and classic protection's `bypass_pull_request_allowances.apps`. Read both when both govern the branch.
+
+**One of the three roles on a bypass list means the gate is not satisfied**, however correct the count is. Report it the way you report a branch carrying one of the two forbidden settings: say what you found, present removing that actor as part of the change you propose, and apply nothing until the user agrees. This is worse than either of those settings rather than comparable — they make the gate unsatisfiable, which at least stops a pipeline visibly, while a bypassing role leaves every check reading green and the requirement inert.
+
+A team that adds its bot to the bypass list is not doing anything strange: it is what you do the first time your own protection blocks your automation, and it is a checkbox in the ruleset's UI. Expect to find it.
+
+**A human bypass is not this** — leave it exactly where it is. Somebody has to be able to break the glass on a pipeline that runs with nobody watching.
 
 ### Changing it is the user's call, every time
 
-Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review and carries neither of the two settings above, say so and change nothing.
+Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review, carries neither of the two settings above, and lists none of the three roles as a bypass actor, say so and change nothing. All three have to hold: the count alone is the condition that looks sufficient and is not.
 
 If it does not, present the **exact** change you would make — the settings and the values, not "tighten the branch protection" — and apply it only after the user explicitly agrees. A merge policy governs a repository jen does not own; the user may have reasons you cannot see, and a silent tightening is an intrusion whichever way it turns out.
 

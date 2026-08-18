@@ -76,11 +76,13 @@ A branch may be governed by a ruleset, by classic branch protection, by both, or
 
 When the protection is absent or insufficient, binding SHALL present the exact change it would make and SHALL apply it only after the user explicitly agrees. When the user declines, binding SHALL report the gate as outstanding, SHALL state what would satisfy it, and SHALL NOT report the project as ready for the pipeline.
 
+Binding SHALL read which actors may bypass the requirement, and SHALL report the gate as insufficient when any of the pipeline's roles holds a bypass, however the approving-review count is set. A role that can bypass the gate is a role the gate does not constrain. This is a distinct failure from an absent or weak requirement: every other reading is correct and the requirement is inert, so a check that stops at the count answers the wrong question. Bypass actors are carried by both mechanisms — a ruleset's bypass list and classic protection's pull-request bypass allowances — and SHALL be read on whichever is in force.
+
 Binding SHALL NOT alter protection the repository already carries beyond what the gate requires, and SHALL NOT remove an existing human bypass. A merge policy governs a repository jen does not own: tightening it silently is an intrusion, and leaving it unmentioned makes the review stage decorative.
 
 #### Scenario: The gate is already satisfied
 
-- **WHEN** the default branch already requires at least one approving review
+- **WHEN** the default branch already requires at least one approving review, and no pipeline role holds a bypass
 - **THEN** binding reports the gate as satisfied
 - **AND** changes nothing
 
@@ -106,6 +108,17 @@ Binding SHALL NOT alter protection the repository already carries beyond what th
 
 - **WHEN** the default branch requires a pull request but zero approving reviews
 - **THEN** binding reports the gate as insufficient rather than present
+
+#### Scenario: A pipeline role can bypass the requirement
+
+- **WHEN** the default branch requires an approving review and one of the pipeline's roles holds a bypass
+- **THEN** binding reports the gate as insufficient
+- **AND** does not report the project as ready for the pipeline
+
+#### Scenario: A human bypass is not a role bypass
+
+- **WHEN** the bypass list carries a human and no pipeline role
+- **THEN** binding does not report the gate as insufficient on that account
 
 #### Scenario: Unrelated protection is preserved
 
