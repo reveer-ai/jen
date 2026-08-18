@@ -37,11 +37,11 @@ Deliberately unmodified: `stage-conventions` and `agent-instructions` — but **
 - `AGENTS.md` — the convention that only `review-task` submits an approving review and only `deliver-task` merges, which is the half of the merge gate no branch configuration can express. This is the one file `jen update` replaces wholesale, so the rule reaches every adopting project on the next update rather than only this one.
 - `.claude/skills/setup-jen/SKILL.md` — registration of the three applications and the agent, verification on re-run, and the merge gate check.
 - `scaffold/registry.yaml` — the documented resource shape gains identity entries.
-- jen's own repository configuration — the existing `primary` ruleset requires a pull request but with an approving-review count of `0`, which has to rise for the gate to bite.
 
 **Not changed here**
 
 - The CLI. `jen run` carries the Linear client and reads these credentials, and that is ENG-163's; this task establishes *what* the credentials are and how a role's token is minted, not the plumbing that consumes them during a tick. Stated explicitly because without the line drawn, both tasks build a credential path.
+- jen's own repository configuration. The `primary` ruleset requires a pull request but with an approving-review count of `0`, and it stays there. Raising it is **ENG-173**, lifted out of this change and blocked by ENG-163 and ENG-164: tightening the gate before a stage can submit a verdict the host accepts blocks delivery on an approval nothing can give. This change ships the capability to check and apply the gate — the requirement in `pipeline-identity`, and `setup-jen` verifying it on a bound project — not the configuration on jen's own repository.
 - Any stage skill's behaviour. The workflow document is not a stage skill — the convention above lands in `AGENTS.md`, and no skill's own instructions change, which is what keeps it stated once rather than six times.
 
 **Depended on**

@@ -12,4 +12,4 @@ One approval from anyone with write access is the whole of what a branch can be 
 
 No credential is written to `registry.yaml` or to any other file. The registry names identities; your environment supplies what authenticates them.
 
-Projects already on jen pick this up with `jen update`, and then a re-run of `setup-jen`.
+Projects already on jen pick this up with `jen update`, and then a re-run of `setup-jen`. If you registered the applications under an earlier version, that re-run reports what the granted permissions are missing against the current table rather than assuming they are still right — worth doing, because a missing permission is silent until the first task that needs it.

@@ -68,7 +68,9 @@ Each application carries the permissions its role's stages actually use, and not
 |---|---|
 | `design` | Contents: write, Pull requests: write |
 | `dev` | Contents: write, Pull requests: write, Workflows: write |
-| `deliver` | Contents: write, Pull requests: write, Checks: read, Workflows: write |
+| `deliver` | Contents: write, Pull requests: write, Checks: read, Statuses: read, Workflows: write |
+
+`Checks: read` and `Statuses: read` are both there because the host reports a pull request's result two independent ways — check runs under one permission, commit statuses under the other — and a ruleset's required checks accept either. Grant both. With only one, `deliver` reads a pull request as having nothing failing while something is, tries the merge, and the host refuses it; the run ends with delivery believing the merge should have worked and nothing in the output naming why. Whether a project's CI produces check runs or commit statuses is not something to determine per project — grant both and the question never arises.
 
 `Workflows: write` is the one on that list that looks like more than the role needs, and the one most likely to be dropped as excessive. It is not. An application cannot create or update any file under `.github/workflows/` without it, and the host refuses the push naming the permission rather than the cause — so the error arrives at the wrong layer, on a task that did everything else right. Grant it even to a project that has no workflows today: `dev` needs it the first time a task's implementation touches CI, and `deliver` needs it because updating a pull request's branch from a base that has moved pushes those files too, which is exactly what delivery does before merging. `design` does not get it — it pushes OpenSpec artifacts and nothing else. The cost is worth naming to the user rather than glossing: `dev` can edit the very check its own pull request must pass, and what catches that is `deliver` reading the diff, the same as any other self-serving change.
 
