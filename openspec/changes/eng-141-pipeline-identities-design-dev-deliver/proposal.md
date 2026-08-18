@@ -28,12 +28,13 @@ This is additive for an existing install: binding a project again reports identi
 
 - `project-binding`: binding grows identity registration alongside tracker binding, and the registry records the identities' non-secret coordinates. Today the capability covers the tracker only — the team, the project, the statuses, and the labels — and says the registry holds "the shape the stages read when they need to know what they are acting on." Identities are part of that shape, and binding is where they are established.
 
-Deliberately unmodified: `stage-conventions` and `agent-instructions`. A stage never chooses its own identity — it inherits credentials the dispatcher put in its environment — so no convention shared by every stage changes, and the root workflow document gains no new rule. The identity mapping is operator-facing, which places it in `pipeline-identity` and in what binding reports.
+Deliberately unmodified: `stage-conventions` and `agent-instructions` — but **not** because nothing shared by every stage changes. The root workflow document does gain a rule: only `review-task` approves and only `deliver-task` merges, added by task 5.1 under `AGENTS.md`'s *Conventions* heading, which is to say under "shared by every stage". It carries no delta here because the requirement behind it belongs to `pipeline-identity`, which states it as *Approving is the reviewing stage's alone, by convention* — the rule exists to cover the half of the merge gate the host cannot express, not to describe how a stage behaves, and that is what places it there rather than in `stage-conventions`. `agent-instructions` is generic about this by design: its requirement is that `AGENTS.md` state "the conventions every stage obeys", which one more convention satisfies rather than amends. A stage still never chooses its own identity — it inherits credentials the dispatcher put in its environment — and the identity mapping itself is operator-facing, which places it in `pipeline-identity` and in what binding reports.
 
 ## Impact
 
 **Changed here**
 
+- `AGENTS.md` — the convention that only `review-task` submits an approving review and only `deliver-task` merges, which is the half of the merge gate no branch configuration can express. This is the one file `jen update` replaces wholesale, so the rule reaches every adopting project on the next update rather than only this one.
 - `.claude/skills/setup-jen/SKILL.md` — registration of the three applications and the agent, verification on re-run, and the merge gate check.
 - `scaffold/registry.yaml` — the documented resource shape gains identity entries.
 - jen's own repository configuration — the existing `primary` ruleset requires a pull request but with an approving-review count of `0`, which has to rise for the gate to bite.
@@ -41,7 +42,7 @@ Deliberately unmodified: `stage-conventions` and `agent-instructions`. A stage n
 **Not changed here**
 
 - The CLI. `jen run` carries the Linear client and reads these credentials, and that is ENG-163's; this task establishes *what* the credentials are and how a role's token is minted, not the plumbing that consumes them during a tick. Stated explicitly because without the line drawn, both tasks build a credential path.
-- Any stage skill's behaviour.
+- Any stage skill's behaviour. The workflow document is not a stage skill — the convention above lands in `AGENTS.md`, and no skill's own instructions change, which is what keeps it stated once rather than six times.
 
 **Depended on**
 

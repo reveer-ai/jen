@@ -18,8 +18,15 @@ describe('the approval convention', () => {
   it('is stated nowhere else', () => {
     // Scoped to the skills, because they are what would restate it: a stage skill telling
     // its own reader not to approve is the obvious place to put this and the wrong one.
+    //
+    // Both halves, because the rule has two and either can be restated alone. The approval
+    // half is the one at risk today, but a guard that covers one half of a two-half rule is
+    // a guard that reports clean while the rule forks.
+    const halves = ['only review-task', 'only deliver-task merges'];
     const restated = trackedFiles().filter(
-      (path) => path.startsWith('.claude/skills/') && readRepoFile(path).includes('only review-task'),
+      (path) =>
+        path.startsWith('.claude/skills/') &&
+        halves.some((half) => readRepoFile(path).includes(half)),
     );
     expect(restated, 'the convention is stated in more than one place').toEqual([]);
   });
