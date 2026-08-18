@@ -98,7 +98,7 @@ The distinction only matters once, and it matters exactly when a project is bein
 
 This is not belt-and-braces. An application created with *no* repository permissions at all exists, reads as configured, installs cleanly, and mints tokens that can do nothing — and the permissions section on the creation page is a long collapsed list that is easy to save straight past. Nothing downstream reports it either: the first symptom is a stage failing on an authorization error, on a host, hours later. An existence check passes on that application. A permissions check is what catches it.
 
-Verify the tracker agent the same way — read the workspace back and confirm the agent is there and is an agent, rather than trusting that the authorization the user reported completing did what they thought.
+Verify the tracker agent the same way — read the workspace back and confirm that **the project's** agent is there, by name and by the `agent_id` the registry records, and that it is an agent rather than a human account. Confirming only that *an* agent exists answers a different question on a workspace carrying agents from other products, which is the same gap as registering none because the workspace already had one.
 
 If a read shows something you did not expect — a permission missing, an installation scoped to the whole organization, an agent that is really a human account — say exactly what you found and what it should be. Do not repair it yourself.
 
