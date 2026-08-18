@@ -18,8 +18,11 @@ and it is the cause anyone will suspect first — it was in fact broken here onc
 it was real. Check which identity the token belongs to before checking the integration.
 
 The consequence for these skills: pull-request work goes to GitHub through `gh`; the
-tracker carries issue work only. Several skills here still call the diff tools directly,
-which works today only because a human's token drives them. ENG-166 owns moving them.
+tracker carries issue work only. Several skills here used to call the diff tools directly,
+and worked only because a human's token drove them; `e43bc91` moved those calls. That is
+why this note is here rather than nowhere — the calls read as correct for as long as a
+human ran them, and the day a stage ran as its own identity they would have returned
+nothing instead of failing.
 
 No workflow is involved in any of this — it bites a stage running on a laptop exactly as
 hard — which is why the note lives beside the skills and not under `.github/`.
