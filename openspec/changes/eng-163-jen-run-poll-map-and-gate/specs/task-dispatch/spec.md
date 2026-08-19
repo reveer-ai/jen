@@ -1,0 +1,218 @@
+## Purpose
+
+Defines how the pipeline decides what to run: a single poll-map-gate pass over the tracker that turns tasks sitting in a stage's status into run requests, and the boundaries that keep that decision cheap, repeatable, and identical under every runner.
+
+## ADDED Requirements
+
+### Requirement: `jen run` is one tick
+
+`jen run` SHALL perform a single pass — poll the tracker, map each issue to a stage, gate each candidate, emit a run request for each that passes, and exit. It SHALL NOT loop, sleep, schedule, or wait for the runs it emits.
+
+Driving the tick on an interval SHALL belong to the runner invoking it, and every runner SHALL invoke this same entry point rather than carrying its own poll or its own gate. A runner SHALL NOT hold pipeline state that another runner cannot see.
+
+#### Scenario: A tick runs
+
+- **WHEN** `jen run` is invoked
+- **THEN** it polls once, decides, emits, and exits
+- **AND** it does not wait for any run it emitted to finish
+
+#### Scenario: A second runner is added
+
+- **WHEN** a runner other than the ones jen ships drives the pipeline
+- **THEN** it drives it by invoking this same tick
+- **AND** no decision about what to run is reimplemented in the runner
+
+### Requirement: The tick writes nothing
+
+A tick SHALL be free of side effects on the tracker, the git host, and the filesystem. It SHALL read, decide, and report, and SHALL NOT comment, move a status, set a field, create a branch, or write a file.
+
+Every tracker write in the pipeline SHALL belong to a stage session. This SHALL include the comment that marks a task as taken, which the session SHALL write on its own behalf once it is running rather than the tick writing it in advance.
+
+A consequence SHALL be accepted rather than compensated for: a session that dies between being emitted and announcing itself leaves no evidence it was started, and the next tick emits that task again.
+
+#### Scenario: A tick decides not to dispatch
+
+- **WHEN** a tick examines a task and gates it out
+- **THEN** nothing about that task changes on the tracker
+
+#### Scenario: A tick dispatches
+
+- **WHEN** a tick emits a run request for a task
+- **THEN** the task is unchanged on the tracker at the moment the tick exits
+- **AND** what marks it as taken is written later by the session itself
+
+#### Scenario: A tick is run twice in succession
+
+- **WHEN** two ticks run back to back with no session having started in between
+- **THEN** the second sees exactly what the first saw
+- **AND** neither has altered the state the other reads
+
+### Requirement: Candidacy is the task's status, and two statuses are never candidates
+
+A task SHALL be a candidate when its status is one that maps to a stage. The tick SHALL NOT consult a queue, a run record, a pipeline-position field, or the task's transition history to decide candidacy.
+
+`Todo` and `Pending` SHALL never be candidates. Moving a task out of either is the user's decision, and no stage and no dispatcher makes it. Statuses outside the pipeline SHALL likewise never be candidates.
+
+#### Scenario: A task sits in a stage's status
+
+- **WHEN** a task's status is `In Progress`
+- **THEN** it is a candidate for the stage that status maps to
+
+#### Scenario: A task awaits a human
+
+- **WHEN** a task's status is `Pending`
+- **THEN** it is not a candidate
+- **AND** nothing about it is dispatched however long it stays there
+
+#### Scenario: A task is refined but not started
+
+- **WHEN** a task's status is `Todo`
+- **THEN** it is not a candidate
+
+### Requirement: Status maps to a skill and a role by a fixed table, without judgment
+
+The tick SHALL map a candidate's status to the skill that stage runs and to the identity role that stage acts under, from a table compiled into the dispatcher. The mapping SHALL match the stage table the workflow document states.
+
+The dispatch path SHALL make no model call and SHALL exercise no judgment. Every decision it makes SHALL be a lookup or a comparison, so that two ticks over identical tracker state reach identical conclusions.
+
+The role SHALL be resolved by the tick rather than by the session, because a session that could choose its own role could choose the one that lets it approve its own work.
+
+#### Scenario: A candidate is mapped
+
+- **WHEN** a task in `In Review` is mapped
+- **THEN** the run request names the reviewing stage's skill
+- **AND** it names the role that stage acts under
+
+#### Scenario: The mapping is exercised
+
+- **WHEN** the tick maps any candidate
+- **THEN** no model is consulted
+- **AND** the same status always produces the same skill and the same role
+
+### Requirement: A task a session is already working is not a candidate
+
+The tick SHALL treat a task as in flight when a session has announced itself against the task's current stage, and SHALL NOT emit a run request for it. A task's status alone SHALL NOT be taken as evidence that nothing is working it, because the status stays actionable until the stage moves it.
+
+The announcement SHALL be read from the task's own record so that every runner reaches the same conclusion from the same evidence. A runner's memory of what it launched SHALL NOT be the state consulted, and SHALL be at most a cache of it.
+
+An announcement SHALL NOT expire. A task in a stage's status whose session announced itself and never reported an outcome SHALL remain undispatched until a human moves it, which is what makes a stage that fails deterministically fail once rather than on every tick.
+
+#### Scenario: A session is running
+
+- **WHEN** a tick examines a task whose session has announced itself and not yet reported
+- **THEN** no run request is emitted for it
+
+#### Scenario: Two runners tick at once
+
+- **WHEN** two runners examine the same task
+- **THEN** both read the same announcement from the task
+- **AND** at most one run is emitted for it
+
+#### Scenario: A session died without reporting
+
+- **WHEN** a task carries an announcement whose session ended without moving the status or reporting an outcome
+- **THEN** later ticks continue to treat it as in flight
+- **AND** it is dispatched again only after a human moves its status
+
+#### Scenario: A task re-enters a stage it was in before
+
+- **WHEN** a task is moved back into a status a session previously announced itself against
+- **THEN** the earlier announcement does not make it in flight
+- **AND** it is a candidate again
+
+### Requirement: Simultaneous runs are capped
+
+The tick SHALL enforce a ceiling on how many runs may be in flight at once, and SHALL emit no run request that would exceed it. It SHALL never emit two run requests for the same task in one tick.
+
+The count SHALL be derived from the same announcements that establish in-flight state, so that the ceiling holds across runners rather than per runner.
+
+#### Scenario: The ceiling is reached
+
+- **WHEN** the number of tasks in flight equals the cap
+- **THEN** the tick emits no further run requests
+- **AND** the candidates it declined are unchanged and will be seen again next tick
+
+#### Scenario: Two runners share a ceiling
+
+- **WHEN** two runners tick against one project
+- **THEN** the total in flight across both respects the one cap
+
+### Requirement: The tick reports what it decided, in a form a person can read
+
+A tick SHALL report every candidate it considered and what it decided about each — dispatched, or declined with the reason. A run request SHALL be emitted in a form both a person and a consuming executor can read.
+
+Running the tick SHALL therefore answer what the pipeline would do at that moment, and SHALL do so whether or not anything is consuming its output.
+
+#### Scenario: A tick with nothing to do
+
+- **WHEN** no candidate passes the gate
+- **THEN** the tick reports each candidate and why it was declined
+- **AND** exits successfully
+
+#### Scenario: A tick is run by hand
+
+- **WHEN** a person invokes the tick with no executor consuming its output
+- **THEN** its report is readable on its own
+- **AND** nothing has been changed by having run it
+
+### Requirement: A run request names everything the executor needs and nothing it must decide
+
+A run request SHALL carry the task it is for, the stage's skill, the role that stage acts under, and the task's branch name as the tracker supplies it.
+
+It SHALL NOT carry a credential. Resolving the role's credential SHALL belong to whatever launches the session, so that a run request may be logged, printed, or passed between processes without carrying a secret.
+
+#### Scenario: A run request is emitted
+
+- **WHEN** the tick emits a run request
+- **THEN** it names the task, the skill, the role, and the branch
+
+#### Scenario: A run request is recorded
+
+- **WHEN** a run request is written to a log or printed
+- **THEN** it contains no credential
+
+### Requirement: Credentials resolve from the environment, and a missing one refuses the tick
+
+The tick SHALL read every credential it needs from its environment at the point of use. It SHALL NOT read one from a file, SHALL NOT write one to disk, and SHALL NOT keep one after the process exits.
+
+When a credential the tick requires is absent, it SHALL refuse to run and SHALL name which one is missing, rather than polling far enough to fail partway through.
+
+#### Scenario: The tick runs with its credentials present
+
+- **WHEN** a tick begins with the tracker credential in its environment
+- **THEN** it reads it from there
+- **AND** consults no file for it
+
+#### Scenario: A credential is absent
+
+- **WHEN** a tick begins without the tracker credential
+- **THEN** it refuses to run
+- **AND** names the missing credential
+
+#### Scenario: The host is inspected after a tick
+
+- **WHEN** a tick has finished
+- **THEN** no credential it used remains anywhere on the host
+
+### Requirement: The tick receives its project identity and discovers nothing
+
+The tracker team and project the tick acts on SHALL be supplied to it as explicit input. The tick SHALL NOT read the registry or any other file to find them, and SHALL NOT call an API to infer them.
+
+Resolving them SHALL belong to the runner, which SHALL be free to do it however suits it. This keeps a difference between runners inside the wrapper, where it is harmless, rather than inside the tick, where it would be the divergence a single shared entry point exists to prevent.
+
+#### Scenario: A tick is invoked
+
+- **WHEN** `jen run` runs
+- **THEN** the team and project reached it as input
+- **AND** it read no file to obtain them
+
+#### Scenario: A runner resolves the project
+
+- **WHEN** a runner running inside a checkout determines which project to act on
+- **THEN** it may read the registry to do so
+- **AND** it passes the values into the tick rather than letting the tick read them
+
+#### Scenario: The project identity is absent
+
+- **WHEN** a tick is invoked without being told which team and project to act on
+- **THEN** it refuses to run rather than guessing
