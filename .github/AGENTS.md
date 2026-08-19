@@ -117,3 +117,27 @@ There are three kill switches outside this repository, none needing a commit: re
 trusted publisher entry, uninstall the App, or remove `main` from the `release`
 environment's deployment branches. They sever different links — publishing, Version PRs,
 and the credential itself.
+
+## Running a stage from a workflow
+
+Nothing here does this yet — ENG-165 is where a stage first runs on Actions. Both of these
+fail silently when they are got wrong, which is why they are written down before the code
+that can trip on them exists.
+
+**The review verdict must never be submitted under `GITHUB_TOKEN`.** A review submitted
+with the default workflow credential is recorded and rendered exactly like any other, and
+satisfies no approval requirement — so the pull request shows a review, the gate stays
+unsatisfied, and delivery blocks on an approval that appears to already be there. It is the
+worst shape a failure can take: not an error, a lie. The verdict goes out under the
+`deliver` role's own installation token, minted from its App's private key.
+
+**`GH_TOKEN`, not `GITHUB_TOKEN`, is the name a stage's credential is supplied under.** This
+is not a style preference. `gh` prefers `GH_TOKEN` when both are set, and on an Actions
+runner `GITHUB_TOKEN` is present whether or not anyone put it there — it is the very
+credential above, sitting in the variable a stage would otherwise read. Naming the good
+credential so that it *wins* is what keeps the default from silently taking over. If you
+find a stage reading `GITHUB_TOKEN`, that is the bug, not the fallback.
+
+Which surface a stage reaches for its pull-request work is not a workflow question — see
+`.claude/skills/AGENTS.md` for why the tracker's diff tools are inert under the pipeline's
+own identity, and why that is invisible from their output.

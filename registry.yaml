@@ -53,4 +53,54 @@
 # agent serves every role — which is why it is recorded once, belonging to the project rather
 # than to any one of them.
 
-resources: []
+resources:
+  # jen is its own project: the workflow lives at the root and jen's sources sit beside it
+  # at `cli/` rather than `src/`, because jen is the tool, not an installation of it.
+  - name: jen
+    kind: repository
+    url: git@github.com:reveer-ai/jen.git
+    path: cli/
+
+  - name: jen-tracker
+    kind: project-management
+    provider: linear
+    team: eng
+    project: jen
+    tracks: jen
+
+  - name: jen-design
+    kind: identity
+    surface: git-host
+    provider: github
+    role: design
+    app: reveer-jen-design
+    app_id: 4588648
+    installation: 153578675
+    installed_on: jen
+
+  - name: jen-dev
+    kind: identity
+    surface: git-host
+    provider: github
+    role: dev
+    app: reveer-jen-dev
+    app_id: 4588651
+    installation: 153578694
+    installed_on: jen
+
+  - name: jen-deliver
+    kind: identity
+    surface: git-host
+    provider: github
+    role: deliver
+    app: reveer-jen-deliver
+    app_id: 4588653
+    installation: 153578706
+    installed_on: jen
+
+  - name: jen-agent
+    kind: identity
+    surface: tracker
+    provider: linear
+    agent: jen
+    agent_id: 1d1170fc-5684-42c3-9214-1d20b1f2b3ff
