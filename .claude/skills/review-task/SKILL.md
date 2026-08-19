@@ -58,6 +58,6 @@ gh api repos/OWNER/REPO/pulls/N/reviews/ID/events --method POST -f event=COMMENT
 
 Delete-and-repost is the default because submitting an empty body publishes every anchor under no verdict, which is the outcome the one call exists to prevent. `event` is required on that submit and is the one the comparison above chose. Read the existing threads before you comment either way.
 
-**Done when** you've submitted: an approving verdict → `In Testing`, handing off to testing. Changes requested → back to `In Progress`, where the new threads are waiting for implement-task.
+**Done when** you've submitted: an approving verdict → `In Testing`, handing off to testing. Changes requested → back to `In Progress`, where the new threads are waiting for implement-task. A verdict you can't reach without a person → `Pending`.
 
 **Watch for** a PR that doesn't exist or is still a draft. Nothing's ready for you — stop.

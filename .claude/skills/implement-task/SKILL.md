@@ -17,6 +17,6 @@ You are the dev agent for a task. Its design is settled; you turn it into workin
 
 **Before handing off**, run the project's checks: typecheck, lint, build. Write unit tests for what this change added or altered, then run the full suite as a regression net. Re-read the diff against the spec. Anything that needs a live system to verify is test-task's job, not yours.
 
-**Done when** it's committed, pushed, and the PR is marked ready for review → `In Review`. Blocked instead → `In Design`.
+**Done when** it's committed, pushed, and the PR is marked ready for review → `In Review`. No usable design instead → `In Design`. Anything else that needs a person before this can go on → `Pending`.
 
 **Watch for**: markers that outran the work. A checked box in `tasks.md` with no commit behind it is work to redo, not work to skip — and `openspec status` reporting `isComplete: true` is the same rule, not a separate curiosity: it means the artifact files exist, so read them and confirm there's a design there.

@@ -35,7 +35,9 @@ Never create a team or a project. If the one the user names does not exist, that
 
 ## The statuses
 
-The team must carry every status the pipeline names: the status that triggers each stage, from the stage table in the workflow document (`AGENTS.md`), together with `Backlog` and `Todo`. Today that is `Backlog`, `Todo`, `In Design`, `In Progress`, `In Review`, `In Testing`, `In Delivery`, and `Done` — enumerated here so you can read this without a second file open, but the table is the authority. If the two ever disagree, the table wins and this line is the bug.
+The team must carry every status the pipeline names: the status that triggers each stage, from the stage table in the workflow document (`AGENTS.md`), together with `Backlog`, `Todo`, and `Pending`. Today that is `Backlog`, `Todo`, `In Design`, `In Progress`, `In Review`, `In Testing`, `In Delivery`, `Pending`, and `Done` — enumerated here so you can read this without a second file open, but the table is the authority. If the two ever disagree, the table wins and this line is the bug.
+
+`Pending` is where every stage parks a task that needs a person, and a project bound before it joined the pipeline will not have it. Report it absent like any other missing status rather than treating an already-bound project as settled — until it exists, a stage that needs a human has nowhere to put the task, and `jen run` refuses the project outright.
 
 Compare by name, folding case and trimming surrounding whitespace, and nothing else. `in design` is `In Design`. `In-Design`, `Design`, and `Designing` are not, and neither is anything else a person would call obviously equivalent — every step past case folding is synonym matching, and synonym matching is the status map arriving through the back door.
 

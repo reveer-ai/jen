@@ -1,12 +1,12 @@
 ## 1. The workflow gains `Pending`
 
-- [ ] 1.1 Add `Pending` to the stage table in `AGENTS.md`: `design-task` hands off to `Pending`, and every other stage names `Pending` alongside its normal handoff. State the two-move rule under *Stages* — a stage hands off or it parks the task at `Pending`, and never finishes leaving the task in its own status.
-- [ ] 1.2 Add the announcement to `AGENTS.md`'s *Conventions*, beside the existing end-of-session comment rule: a stage comments before it produces anything, carrying the `<!-- jen:run stage=<skill> event=start -->` marker, and its closing comment carries `event=end`. State the marker's exact form once, here, since six skills depend on it byte-for-byte.
-- [ ] 1.3 Replace the "no stage waits on a human" convention's ending — a stage that needs a human now moves the task to `Pending` and comments, rather than stopping and leaving the status alone.
-- [ ] 1.4 Add the circling rule to *Conventions*: a stage about to route a task backward for something the record shows already sent it back moves it to `Pending` instead, naming the objection and each round.
-- [ ] 1.5 Update `.claude/skills/design-task/SKILL.md` — design ends by moving the task to `Pending`, not by leaving it at `In Design`. This is the one skill whose *own* completion semantics change; the rest inherit from `AGENTS.md`.
-- [ ] 1.6 Check the other five skills for text that assumes a stage may finish without moving the status, or that names `In Design` → `In Progress` as the promotion, and correct it. Do not restate the shared conventions in any of them.
-- [ ] 1.7 Add `Pending` to the statuses `setup-jen` verifies, and to the documented status list in `scaffold/registry.yaml` if it names them.
+- [x] 1.1 Add `Pending` to the stage table in `AGENTS.md`: `design-task` hands off to `Pending`, and every other stage names `Pending` alongside its normal handoff. State the two-move rule under *Stages* — a stage hands off or it parks the task at `Pending`, and never finishes leaving the task in its own status.
+- [x] 1.2 Add the announcement to `AGENTS.md`'s *Conventions*, beside the existing end-of-session comment rule: a stage comments before it produces anything, carrying the `<!-- jen:run stage=<skill> event=start -->` marker, and its closing comment carries `event=end`. State the marker's exact form once, here, since six skills depend on it byte-for-byte.
+- [x] 1.3 Replace the "no stage waits on a human" convention's ending — a stage that needs a human now moves the task to `Pending` and comments, rather than stopping and leaving the status alone.
+- [x] 1.4 Add the circling rule to *Conventions*: a stage about to route a task backward for something the record shows already sent it back moves it to `Pending` instead, naming the objection and each round.
+- [x] 1.5 Update `.claude/skills/design-task/SKILL.md` — design ends by moving the task to `Pending`, not by leaving it at `In Design`. This is the one skill whose *own* completion semantics change; the rest inherit from `AGENTS.md`.
+- [x] 1.6 Check the other five skills for text that assumes a stage may finish without moving the status, or that names `In Design` → `In Progress` as the promotion, and correct it. Do not restate the shared conventions in any of them.
+- [x] 1.7 Add `Pending` to the statuses `setup-jen` verifies, and to the documented status list in `scaffold/registry.yaml` if it names them.
 - [ ] 1.8 Create the `Pending` status on jen's own Linear team. Operator action, not code — the pipeline cannot park a task on this project until it exists.
 
 ## 2. The tracker client
