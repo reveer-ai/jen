@@ -12,8 +12,10 @@
 ## 2. The tracker client
 
 - [ ] 2.1 Add `cli/linear.ts`: a thin GraphQL client over global `fetch`, reading its token from the environment at the point of use. No dependency added, no token written anywhere, no retry.
-- [ ] 2.2 Implement the three reads — issues for a team and project with status, identifier, and suggested branch name; a team's statuses; an issue's comments with author and creation time. Request named fields so a schema change fails loudly rather than returning an empty set.
-- [ ] 2.3 Unit-test the client against recorded responses, including the case that matters most: a query error must surface as a failure, never as zero candidates.
+- [ ] 2.2 Implement the two reads: the team's statuses, and the project's issues with status, identifier, suggested branch name, and their most recent comments nested in the same query. Bound both page sizes explicitly rather than relying on the default 50 — nested defaults are what would approach the 10,000-point per-query cap. Request named fields so a schema change fails loudly rather than returning an empty set.
+- [ ] 2.3 Add the per-issue comment fallback: where the nested page holds no `jen:run` marker, page that one issue's comments until a marker is found or they are exhausted.
+- [ ] 2.4 Surface a `RATELIMITED` response as a failure with its own message. It arrives as HTTP 400 with the code in the body, not as a 429, so a generic error check will report it as an unexplained bad request.
+- [ ] 2.5 Unit-test the client against recorded responses, including the case that matters most: a query error must surface as a failure, never as zero candidates.
 
 ## 3. The table
 
@@ -24,7 +26,7 @@
 
 - [ ] 4.1 Add `cli/run.ts`: startup checks first — every required credential present, the team and project supplied as input, and `Pending` resolving on the team — each refusing the run by name before anything is polled.
 - [ ] 4.2 Poll for issues in the team and project, and reduce to candidates by the table. Statuses absent from the table are not candidates, including ones jen has never heard of.
-- [ ] 4.3 Implement the in-flight test: read each candidate's comments, find the most recent carrying a `jen:run` marker, and treat the task as in flight when that marker is `event=start`. Ignore comments without a marker entirely.
+- [ ] 4.3 Implement the in-flight test over the comments the poll already returned: find the most recent carrying a `jen:run` marker, and treat the task as in flight when that marker is `event=start`. Ignore comments without a marker entirely.
 - [ ] 4.4 Apply the concurrency cap over the candidate set, defaulting to 3 and settable by flag. Never emit two run requests for one task in a tick.
 - [ ] 4.5 Emit a run request per dispatch as one JSON object per line on stdout — task identifier, skill, role, branch — carrying no credential.
 - [ ] 4.6 Write the report to stderr: every candidate considered, and for each, dispatched or the reason it was declined.
@@ -36,7 +38,7 @@
 - [ ] 5.2 Unit-test candidacy and mapping: `Todo` and `Pending` are never candidates, an unknown status is not a candidate, and each stage status maps to its skill and role.
 - [ ] 5.3 Unit-test the refusals — missing credential, missing project identity, absent `Pending` — each naming what is missing and dispatching nothing.
 - [ ] 5.4 Assert the tick writes nothing: no tracker mutation is reachable from the run path, and no file is written.
-- [ ] 5.5 Run the tick against jen's own Linear project by hand and check the report describes reality. This is the first real exercise of the client, and it is read-only, so it is safe to run against live data.
+- [ ] 5.5 Run the tick against jen's own Linear project by hand and check the report describes reality. This is the first real exercise of the client — no raw query was run during design — and it is read-only, so it is safe against live data. Read `X-RateLimit-Complexity-Remaining` off the response and check the poll's actual cost against the design's estimate of roughly 1,050 points; bring the page sizes down if it is materially higher.
 
 ## 6. Notes
 

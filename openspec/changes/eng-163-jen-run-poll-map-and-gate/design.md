@@ -5,6 +5,7 @@ See [proposal.md](./proposal.md) — Why. The constraints that shape the approac
 - **The CLI has never made a network call.** `init` and `update` are filesystem-only by rule (ENG-160), and the package carries exactly one runtime dependency. `jen run` is the first command that talks to anything.
 - **A hidden marker survives a Linear comment round trip verbatim.** Probed live during design: a comment body containing `<!-- jen:picked-up stage=design-task -->` comes back through `list_comments` byte-identical, HTML comment intact. Whether Linear's *editor* renders it invisibly was **not** verified and this design does not depend on it.
 - **The tracker's diff surface is invisible to an application identity** (ENG-141, probed there). Nothing in the tick reads a diff, so this does not constrain it — but it is why the tick's only tracker reads are the issue surface.
+- **The tracker's rate limits are not a constraint at this scale, but its per-query complexity cap is.** Read from Linear's documentation during design: an OAuth application identity — which is what the tracker agent is — gets 5,000 requests and 2,000,000 complexity points per hour, and **no single query may exceed 10,000 points**. Complexity is 0.1 per property, 1 per object, and a connection multiplies its children by its page size. At a ten-minute interval the tick runs six times an hour, so the hourly budgets are irrelevant; the per-query cap is what actually bounds the poll's shape. Exceeding either returns HTTP 400 with a `RATELIMITED` code, not a 429.
 - **Two runners will drive this** (ENG-165) and neither exists yet. The tick is therefore designed against the contract, not against a caller.
 - **`Pending` does not exist on jen's own Linear team.** The statuses today are `backlog`, `todo`, `in design`, `in progress`, `in review`, `in testing`, `in delivery`, `done`, `canceled`, `Duplicate`. Binding verifies statuses and never creates them, so this is an operator action before any tick can park a task.
 - **Status names on the team are lowercase** (`in design`, not `In Design`), while the workflow document writes them capitalized. `project-binding` already requires case-insensitive comparison; the tick inherits that rather than inventing its own rule.
@@ -27,11 +28,13 @@ See [proposal.md](./proposal.md) — Why. The constraints that shape the approac
 
 ### The tracker client is `fetch` against the GraphQL API, not the vendor SDK
 
-The tick needs three reads — issues by team and project with their statuses, each candidate's comments, and the issue's suggested branch name — and no writes. `@linear/sdk` brings a GraphQL client, a schema, and a generated document set to serve that, against a package whose entire dependency list today is one entry and whose tarball is asserted by test.
+The tick needs two reads — the team's statuses, and the project's issues with their status, identifier, suggested branch name, and recent comments — and no writes. `@linear/sdk` brings a GraphQL client, a schema, and a generated document set to serve that, against a package whose entire dependency list today is one entry and whose tarball is asserted by test.
 
 Node 20.19 is already the engine floor and has global `fetch`. Three hand-written queries against a documented, stable API is less code than the wiring the SDK would need, and it keeps the install cost of `jen run` at zero for adopters who never use it.
 
 *Alternative rejected:* `@linear/sdk`. It earns its weight where an application makes many varied calls; this one makes three, forever, and the tick is deliberately the part that never grows.
+
+*Not verified:* no raw query was run during design, because no tracker credential is available in a design session — the MCP server holds its own. The queries are written against the documented schema and are proved for the first time by task 5.5, which runs the tick against jen's own project by hand.
 
 *Consequence accepted:* schema drift is ours to notice. The queries request named fields, so a removed field fails loudly at the tick rather than silently producing an empty candidate set — which is the failure mode that matters, since an empty set is indistinguishable from "no work" and would look like a healthy quiet pipeline.
 
@@ -85,6 +88,16 @@ The tick treats a status as a candidate only if it is in the table. `Todo`, `Pen
 
 A team will add statuses jen has never heard of, and the failure mode of a deny list there is dispatching a stage against a task in a status nobody intended — expensive, and confusing to diagnose.
 
+### The poll is one query, with comments nested under the issues
+
+Comments come back inside the issues query rather than through a request per candidate. The tick is therefore two requests total — the statuses check at startup and the poll — regardless of how many tasks are in the pipeline.
+
+The budget, against the 10,000-point single-query cap: fifty issues, each with a handful of scalar fields and a ten-comment connection whose nodes carry an author object, comes to roughly 1,050 points. Both page sizes are bounded explicitly rather than left to the default 50, because the default applied at two levels is what would put this near the cap.
+
+Comments are requested newest-first, since the in-flight test only ever looks at the most recent marked one. Where a bounded page contains no `jen:run` marker at all — a task with a long human discussion since its last session — the tick pages that one issue's comments until it finds a marker or exhausts them. That fallback is per-issue and rare; making the common case one request is what it buys.
+
+*Alternative rejected:* a request per candidate for comments. It is simpler to write and it makes the tick's cost scale with the pipeline's width, which is the opposite of what a poll that runs unattended forever should do.
+
 ### The concurrency cap counts what the poll already returned
 
 In-flight is established per candidate from its own comments, so the count of runs in flight is a count over the candidate set the tick already fetched. No extra query, and the ceiling holds across runners because every runner derives it from the same tracker state.
@@ -99,7 +112,9 @@ The cap is a flag with a default of 3. It is a spend control more than a correct
 
 **A stage that forgets its announcement is dispatched repeatedly** → The announcement is what makes a task in flight, so a stage that never writes one is re-dispatched every tick, each time doing real work. This is the one failure the design has no backstop for, having removed the failure counter. Mitigation is that the announcement is the *first* thing a session does, before any work, and that all six skills are edited in this change rather than left to adopt it independently.
 
-**The tick reads every candidate's comments** → One query per candidate per tick, against a pipeline that will rarely have more than a handful of tasks in flight. If the candidate set grows large this becomes the tick's cost, and the fix is to fetch comments only for candidates that survive the status filter — which is already the case — and then only until the first marker is found. Not optimized further now; ENG-165 is where the poll's cost is actually measured.
+**A task with a long discussion since its last session costs an extra request** → The nested comment page is bounded, so a task carrying more recent comments than the page holds needs a follow-up read to find its marker. Bounded to that one issue and rare in practice. The alternative — a larger nested page — costs complexity on every tick against every issue to serve a case that affects one.
+
+**The complexity budget is calculated, not measured** → The 10,000-point cap and the cost model come from the documentation; the actual points charged for these queries have not been observed, because no credential was available in a design session. The response carries `X-RateLimit-Complexity-Remaining`, so task 5.5 reads it against a real tick and the page sizes come down if the estimate is off.
 
 **A hidden marker may render visibly in Linear's editor** → Unverified, deliberately not depended upon. The comment reads correctly either way. If it does render, the fallback is a visible one-line footer, which changes the marker's format and nothing about the design.
 
