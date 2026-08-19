@@ -15,12 +15,12 @@
 - [x] 2.2 Implement the two reads: the team's statuses, and the project's issues with status, identifier, suggested branch name, and their most recent comments nested in the same query. Bound both page sizes explicitly rather than relying on the default 50 — nested defaults are what would approach the 10,000-point per-query cap. Request named fields so a schema change fails loudly rather than returning an empty set.
 - [x] 2.3 Add the per-issue comment fallback: where the nested page holds no `jen:run` marker, page that one issue's comments until a marker is found or they are exhausted.
 - [x] 2.4 Surface a `RATELIMITED` response as a failure with its own message. It arrives as HTTP 400 with the code in the body, not as a 429, so a generic error check will report it as an unexplained bad request.
-- [ ] 2.5 Unit-test the client against recorded responses, including the case that matters most: a query error must surface as a failure, never as zero candidates.
+- [x] 2.5 Unit-test the client against recorded responses, including the case that matters most: a query error must surface as a failure, never as zero candidates.
 
 ## 3. The table
 
 - [x] 3.1 Add `cli/stages.ts`: the status→skill→role table, matching `AGENTS.md`'s stage table, with case-insensitive status lookup. Roles per `pipeline-identity` — `design-task`→`design`, `implement-task`→`dev`, the other three→`deliver`.
-- [ ] 3.2 Add a test that parses the stage table out of `AGENTS.md` and asserts the compiled table matches it, in the idiom `test/payload.test.ts` uses for scaffold references. This is the only thing standing between the two statements and drift.
+- [x] 3.2 Add a test that parses the stage table out of `AGENTS.md` and asserts the compiled table matches it, in the idiom `test/payload.test.ts` uses for scaffold references. This is the only thing standing between the two statements and drift.
 
 ## 4. The tick
 
@@ -34,12 +34,12 @@
 
 ## 5. Proving it
 
-- [ ] 5.1 Unit-test the gate against the cases that carry the design: a start with no end is in flight; a start followed by an end is not; a task re-entering a status it was in before is a candidate again; unmarked comments change nothing.
-- [ ] 5.2 Unit-test candidacy and mapping: `Todo` and `Pending` are never candidates, an unknown status is not a candidate, and each stage status maps to its skill and role.
-- [ ] 5.3 Unit-test the refusals — missing credential, missing project identity, absent `Pending` — each naming what is missing and dispatching nothing.
-- [ ] 5.4 Assert the tick writes nothing: no tracker mutation is reachable from the run path, and no file is written.
+- [x] 5.1 Unit-test the gate against the cases that carry the design: a start with no end is in flight; a start followed by an end is not; a task re-entering a status it was in before is a candidate again; unmarked comments change nothing.
+- [x] 5.2 Unit-test candidacy and mapping: `Todo` and `Pending` are never candidates, an unknown status is not a candidate, and each stage status maps to its skill and role.
+- [x] 5.3 Unit-test the refusals — missing credential, missing project identity, absent `Pending` — each naming what is missing and dispatching nothing.
+- [x] 5.4 Assert the tick writes nothing: no tracker mutation is reachable from the run path, and no file is written.
 - [ ] 5.5 Run the tick against jen's own Linear project by hand and check the report describes reality. This is the first real exercise of the client — no raw query was run during design — and it is read-only, so it is safe against live data. Read `X-RateLimit-Complexity-Remaining` off the response and check the poll's actual cost against the design's estimate of roughly 1,050 points; bring the page sizes down if it is materially higher.
 
 ## 6. Notes
 
-- [ ] 6.1 Write what this establishes into `cli/AGENTS.md`: that the tick writes nothing and why the announcement is therefore the session's rather than the dispatcher's, that the status table is a second statement of `AGENTS.md`'s and which test holds it, and that the client's queries name their fields so a schema change fails loudly.
+- [x] 6.1 Write what this establishes into `cli/AGENTS.md`: that the tick writes nothing and why the announcement is therefore the session's rather than the dispatcher's, that the status table is a second statement of `AGENTS.md`'s and which test holds it, and that the client's queries name their fields so a schema change fails loudly.

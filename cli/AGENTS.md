@@ -102,3 +102,79 @@ cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-*.tgz && npx
 `npm pack` runs `prepack`, so the tarball is built and staged by construction — running the CLI out of the working tree skips staging and proves nothing about what ships.
 
 **`openspec init` writes into `.claude/skills/` too.** Its nine `openspec-*` skills land beside jen's, at exactly the depth reconciliation searches, and survive `jen update` only because they carry no stamp. Deletion must stay the stamp intersected with the payload: rewrite it as "whatever is in the target directory that the payload does not ship" and every one of them disappears on the next update. `messyProject` carries one by hand for that reason — the fixtures never run the delegation that would put them there for real, so without it the widened rule passes every unit test.
+
+## The tick writes nothing, and that is why the announcement is the session's
+
+`run.ts` reads, decides, prints, and exits. No tracker mutation, no git-host call, no file
+— which is what makes it safe to run at any time, twice, and before `ENG-164` exists to
+consume anything it emits. `test/dispatch.test.ts` holds it both ways: every document the
+tick sends must parse as a `query`, and the modules on its path must import nothing from
+`node:fs`. Adding a write here is not a small change; it is the property being protected.
+
+The cost of that is worth stating, because it looks like an oversight. The comment marking
+a task as taken is written by the **session**, once it is up, rather than by the dispatcher
+at dispatch time. So a session that dies between being emitted and announcing itself leaves
+no evidence it was started, and the next tick emits it again. The window is process start to
+first tracker write — seconds against a session that runs for minutes — and the concurrency
+cap bounds how many can sit in it at once. Closing it would mean the tick writes, and a
+writing tick is permanent where this hole is bounded and self-correcting.
+
+The exposed failure with no backstop at all is a stage that *forgets* its announcement: it
+is re-dispatched every tick and does real work each time. There is no failure counter to
+catch it, deliberately. The announcement being the first thing a session does is the whole
+mitigation.
+
+## The in-flight test ignores the marker's stage, on purpose
+
+`inFlight` takes the most recent comment carrying a `jen:run` marker and answers on its
+`event` alone. It does **not** check that the marker's `stage=` matches the stage the task's
+current status maps to, and it must not start: a session that has already moved the status
+and is still writing its closing comment is a session still working the task, and matching
+on stage would dispatch the next stage on top of it.
+
+It also does not filter by comment author. `design.md` describes the test as reading the
+tracker agent's own comments, and the tick has no agent identity to compare against — it
+receives a team and a project and nothing else, by requirement. Establishing one would cost
+a third query for a `viewer` id, to defend against a human hand-pasting an HTML comment.
+
+## Comment ordering is assumed newest-first and sorted anyway
+
+The poll asks for `orderBy: createdAt` and the client sorts the page descending regardless.
+The sort cannot rescue a page that came back oldest-first — the bound would already have
+cut off every recent comment — so it is a stable contract for consumers, not a guard. What
+would catch a wrong assumption is a real tick against real data, which is task 5.5 and has
+not run: no tracker credential exists in this repository or in a design session.
+
+## The status table is a second statement of the workflow's, held by a test
+
+`stages.ts` restates the stage table in the root `AGENTS.md`, and cannot do otherwise — the
+tick reads no files, and the scheduled runner never checks the repository out. So the
+mitigation is `test/stages.test.ts`, which parses the table out of `AGENTS.md` and asserts
+the compiled one matches, in the idiom `payload.test.ts` uses for the scaffold's skill
+references. Same for the announcement marker, which has seven statements: six skills and
+`MARKER`. Edit either statement and CI fails here, which is where both of them live.
+
+Candidacy is an allow list for the same reason it is everywhere else in this file: a team
+will add statuses jen has never heard of, and the failure mode of a deny list is dispatching
+a stage against a task in a status nobody intended.
+
+## The client names every field, so drift fails loudly
+
+`linear.ts` writes out each field it wants rather than reaching for a fragment or the SDK's
+generated documents. A removed field then fails at the tick with the tracker's own message.
+The failure this avoids is the quiet one: an empty candidate set is indistinguishable from a
+healthy quiet pipeline, so a client that swallowed a query error would report a working
+dispatcher for exactly as long as nobody went looking. Every error path raises; none returns
+an empty result.
+
+`RATELIMITED` arrives as HTTP 400 with the code in the body rather than as a 429, so it is
+matched by code and not by status. There is no retry anywhere in the client: the pipeline's
+answer to a failed tick is the next tick.
+
+## `run()` hands back a number or a promise
+
+`jen run` is the first asynchronous command. `cli.run` returns `number | Promise<number>`
+rather than widening `init` and `update`, which are synchronous and whose callers depend on
+it — `test/install.test.ts` narrows the union at its one call site rather than casting, so an
+installer that quietly became asynchronous fails loudly instead of comparing a pending
+promise against an exit code.
