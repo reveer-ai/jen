@@ -47,16 +47,33 @@ A consequence SHALL be accepted rather than compensated for: a session that dies
 - **THEN** the second sees exactly what the first saw
 - **AND** neither has altered the state the other reads
 
-### Requirement: Candidacy is the task's status, and two statuses are never candidates
+### Requirement: A candidate is a task, and it is in a status that maps to a stage
 
-A task SHALL be a candidate when its status is one that maps to a stage. The tick SHALL NOT consult a queue, a run record, a pipeline-position field, or the task's transition history to decide candidacy.
+An issue SHALL be a candidate when it carries the `task` label **and** its status is one that maps to a stage. Both SHALL be required. The tick SHALL NOT consult a queue, a run record, a pipeline-position field, or the task's transition history to decide either.
+
+The label SHALL be an allow list, on the same principle as the statuses: an issue that does not carry it SHALL never be dispatched, whatever else it carries. An epic sits in a stage's status as a matter of course — it is the parent of tasks that are themselves moving through the pipeline — and it has no design, no change, and no PR, so a stage dispatched against one spends a whole session establishing there is nothing to do. An issue nobody has refined is in the same position for the same reason.
+
+The label SHALL be tested by the tick rather than expressed in the poll's filter, so that an issue sitting in a stage's status without it is fetched, declined, and named in the report. Filtering it away server-side would be cheaper and would make the decline invisible: a person who moved an issue into a stage's status and saw nothing happen would have nowhere to find out why, and silence about it is indistinguishable from a pipeline with nothing to do.
 
 `Todo` and `Pending` SHALL never be candidates. Moving a task out of either is the user's decision, and no stage and no dispatcher makes it. Statuses outside the pipeline SHALL likewise never be candidates.
 
 #### Scenario: A task sits in a stage's status
 
-- **WHEN** a task's status is `In Progress`
+- **WHEN** an issue labelled `task` has status `In Progress`
 - **THEN** it is a candidate for the stage that status maps to
+
+#### Scenario: An epic sits in a stage's status
+
+- **WHEN** an issue labelled `epic` has status `In Progress`
+- **THEN** it is not a candidate
+- **AND** no run request is emitted for it
+- **AND** the report names it and why it was declined
+
+#### Scenario: An unrefined issue is moved into the pipeline
+
+- **WHEN** an issue carrying neither the `task` nor the `epic` label is moved into `In Design`
+- **THEN** it is not a candidate
+- **AND** the report names it and why it was declined
 
 #### Scenario: A task awaits a human
 
@@ -95,6 +112,8 @@ The tick SHALL treat a task as in flight when a session has announced itself aga
 
 The announcement SHALL be read from the task's own record so that every runner reaches the same conclusion from the same evidence. A runner's memory of what it launched SHALL NOT be the state consulted, and SHALL be at most a cache of it.
 
+Which announcement is the most recent SHALL be established from the timestamps the tick reads, and SHALL NOT rest on the order the tracker happens to return them in. Where the tick reads a bounded page of a task's record, it SHALL establish from that page whether the page holds the most recent entries, and SHALL read further where it cannot. A bounded page taken on trust is the failure that matters here: if it holds the oldest entries rather than the newest, every announcement is behind the bound, the task reads as never announced, and it is dispatched on every tick forever.
+
 An announcement SHALL NOT expire. A task in a stage's status whose session announced itself and never reported an outcome SHALL remain undispatched until a human moves it, which is what makes a stage that fails deterministically fail once rather than on every tick.
 
 #### Scenario: A session is running
@@ -113,6 +132,12 @@ An announcement SHALL NOT expire. A task in a stage's status whose session annou
 - **WHEN** a task carries an announcement whose session ended without moving the status or reporting an outcome
 - **THEN** later ticks continue to treat it as in flight
 - **AND** it is dispatched again only after a human moves its status
+
+#### Scenario: The record is longer than one page
+
+- **WHEN** a task has accumulated more entries since its last session than one page holds
+- **THEN** the tick still establishes the most recent announcement
+- **AND** it does so whichever order the tracker returned the page in
 
 #### Scenario: A task re-enters a stage it was in before
 
@@ -139,7 +164,7 @@ The count SHALL be derived from the same announcements that establish in-flight 
 
 ### Requirement: The tick reports what it decided, in a form a person can read
 
-A tick SHALL report every candidate it considered and what it decided about each — dispatched, or declined with the reason. A run request SHALL be emitted in a form both a person and a consuming executor can read.
+A tick SHALL report every candidate it considered and what it decided about each — dispatched, or declined with the reason. It SHALL also report every issue it declined for not being a task, so that the report accounts for everything sitting in a stage's status rather than only for what was eligible. A run request SHALL be emitted in a form both a person and a consuming executor can read.
 
 Running the tick SHALL therefore answer what the pipeline would do at that moment, and SHALL do so whether or not anything is consuming its output.
 
@@ -148,6 +173,12 @@ Running the tick SHALL therefore answer what the pipeline would do at that momen
 - **WHEN** no candidate passes the gate
 - **THEN** the tick reports each candidate and why it was declined
 - **AND** exits successfully
+
+#### Scenario: An issue in a stage's status is not a task
+
+- **WHEN** a tick sees an issue in a stage's status that carries no `task` label
+- **THEN** the report names it and says it was declined for not being a task
+- **AND** nothing about it is dispatched
 
 #### Scenario: A tick is run by hand
 

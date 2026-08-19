@@ -101,13 +101,21 @@ No stage SHALL require any trigger beyond that status, and the pipeline SHALL NO
 
 `refine-epic` SHALL turn an idea into an epic and its sub-issue tasks, and SHALL leave everything it produces in `Todo`. `Backlog` SHALL hold unrefined placeholders and `Todo` SHALL hold refined tasks ready to design.
 
+Refinement SHALL label what it produces: an epic SHALL carry the `epic` label and a task SHALL carry the `task` label. The labels SHALL be what identifies which of the two an issue is, so that a reader of the tracker alone — a person or the dispatcher — can tell a task from its parent without inferring it from the issue's shape. Only an issue labelled `task` travels the pipeline; an epic sits in whatever status reflects its children and no stage runs against it.
+
 Promoting a task from `Todo` to `In Design` SHALL be the user's decision. No stage SHALL make that transition.
 
 #### Scenario: An idea is refined
 
 - **WHEN** `refine-epic` finishes breaking an epic down
 - **THEN** the epic and its tasks are in `Todo`
+- **AND** the epic carries the `epic` label and each task carries the `task` label
 - **AND** none of them has been moved into `In Design`
+
+#### Scenario: An epic's status reflects its children
+
+- **WHEN** an epic sits in a stage's status because tasks beneath it are being worked
+- **THEN** no stage runs against the epic itself
 
 #### Scenario: An idea is logged without being refined
 

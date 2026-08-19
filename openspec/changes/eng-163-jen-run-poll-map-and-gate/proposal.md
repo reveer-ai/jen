@@ -28,15 +28,17 @@ Every stage of the pipeline runs today because a human moved a status and invoke
 
 - **`Todo` is never a candidate**, and neither is `Pending`. Both transitions out of them are the user's.
 
+- **Only an issue labelled `task` is a candidate.** Status alone was the whole of candidacy until the first live tick dispatched two epics alongside one task — an epic sits in a stage's status as a matter of course, because its children are moving, and a stage dispatched against one burns a session finding no design, no change, and no PR. Requiring the label rather than excluding `epic` keeps candidacy the allow list it already is at the status level. An issue carrying neither label never dispatches, which is a real behaviour change for a hand-created issue moved straight into `In Design`: it now waits to be refined instead of being worked. The check is a gate in the tick rather than a filter in the poll, so a declined issue is fetched and named in the report — otherwise a person who moved an issue in and saw nothing happen would have nowhere to learn why. `task-pipeline` gains the requirement that refinement labels what it produces, since the dispatcher was otherwise depending on a convention stated only in `refine-epic`'s prose.
+
 ## Capabilities
 
 ### New Capabilities
 
-- `task-dispatch`: `jen run` as one tick; which statuses are candidates and which are never; the status→skill and status→role mapping; the pickup comment it reads to tell a task in flight from one waiting, and the concurrency cap; the run request it prints for the executor; the rule that it writes nothing; credentials resolved from the environment; and the rule that the tick receives its project identity rather than discovering it.
+- `task-dispatch`: `jen run` as one tick; what makes an issue a candidate — the `task` label and a status that maps to a stage — and which statuses are never candidates; the status→skill and status→role mapping; the pickup comment it reads to tell a task in flight from one waiting, and the concurrency cap; the run request it prints for the executor; the rule that it writes nothing; credentials resolved from the environment; and the rule that the tick receives its project identity rather than discovering it.
 
 ### Modified Capabilities
 
-- `task-pipeline`: gains `Pending` and the two-move rule — a stage hands off or it moves the task to `Pending`. `design-task` ends at `Pending` rather than at `In Design`, which removes the only case of a task resting in a stage status and therefore reverts the trigger from the transition into a status to the task's presence in one with no run yet taken against it.
+- `task-pipeline`: gains the rule that refinement labels what it produces — `epic` on an epic, `task` on a task — which is what lets the dispatcher tell one from the other. Gains `Pending` and the two-move rule — a stage hands off or it moves the task to `Pending`. `design-task` ends at `Pending` rather than at `In Design`, which removes the only case of a task resting in a stage status and therefore reverts the trigger from the transition into a status to the task's presence in one with no run yet taken against it.
 - `stage-conventions`: a stage announces itself on the task before it does anything, which is what marks the task in flight for the dispatcher. A stage that needs a human moves the task to `Pending` and comments, rather than stopping and leaving the status where it found it. And a stage about to route a task backward for the same reason it already routed it back moves it to `Pending` instead — the circling judgment, which the record requirement today lets a stage merely note.
 - `project-binding`: `Pending` joins the statuses `setup-jen` verifies, and the registry gains nothing — the dispatcher reads no file.
 
@@ -60,6 +62,7 @@ Deliberately unmodified: `agent-instructions`. `AGENTS.md` changes substantially
 
 - ENG-141 for the roles the run request names. Registered and correct.
 - `Pending` existing on the tracker. `setup-jen` verifies statuses and does not create them, so this is an operator action on every project including jen's own, and a tick against a project without it has no place to put a blocked task.
+- The `task` label being applied to tasks. `setup-jen` already creates the label and `refine-epic` already applies it; what this change adds is a capability requiring it, so that candidacy may rest on it. Existing tasks refined before this lands carry it already — jen's own project was checked — but a project whose tasks were created by hand needs them labelled before the tick will pick any of them up.
 
 **Depended on by**
 
