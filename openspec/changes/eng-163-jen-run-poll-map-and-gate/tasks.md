@@ -7,7 +7,7 @@
 - [x] 1.5 Update `.claude/skills/design-task/SKILL.md` — design ends by moving the task to `Pending`, not by leaving it at `In Design`. This is the one skill whose *own* completion semantics change; the rest inherit from `AGENTS.md`.
 - [x] 1.6 Check the other five skills for text that assumes a stage may finish without moving the status, or that names `In Design` → `In Progress` as the promotion, and correct it. Do not restate the shared conventions in any of them.
 - [x] 1.7 Add `Pending` to the statuses `setup-jen` verifies, and to the documented status list in `scaffold/registry.yaml` if it names them.
-- [ ] 1.8 Create the `Pending` status on jen's own Linear team. Operator action, not code — the pipeline cannot park a task on this project until it exists.
+- [x] 1.8 Create the `Pending` status on jen's own Linear team. Operator action, not code — the pipeline cannot park a task on this project until it exists.
 
 ## 2. The tracker client
 
@@ -38,7 +38,7 @@
 - [x] 5.2 Unit-test candidacy and mapping: `Todo` and `Pending` are never candidates, an unknown status is not a candidate, and each stage status maps to its skill and role.
 - [x] 5.3 Unit-test the refusals — missing credential, missing project identity, absent `Pending` — each naming what is missing and dispatching nothing.
 - [x] 5.4 Assert the tick writes nothing: no tracker mutation is reachable from the run path, and no file is written.
-- [ ] 5.5 Run the tick against jen's own Linear project by hand and check the report describes reality. This is the first real exercise of the client — no raw query was run during design — and it is read-only, so it is safe against live data. Read `X-RateLimit-Complexity-Remaining` off the response and check the poll's actual cost against the design's estimate of roughly 1,050 points; bring the page sizes down if it is materially higher.
+- [x] 5.5 Run the tick against jen's own Linear project by hand and check the report describes reality. This is the first real exercise of the client — no raw query was run during design — and it is read-only, so it is safe against live data. Read `X-RateLimit-Complexity-Remaining` off the response and check the poll's actual cost against the design's estimate of roughly 1,050 points; bring the page sizes down if it is materially higher.
 
 ## 6. Notes
 
