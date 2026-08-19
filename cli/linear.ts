@@ -100,7 +100,7 @@ query JenTeamStatuses($team: String!, $states: Int!) {
 }`;
 
 const PIPELINE_ISSUES = `
-query JenPipelineIssues($team: String!, $project: String!, $states: [String!]!, $issues: Int!, $comments: Int!) {
+query JenPipelineIssues($team: ID!, $project: String!, $states: [String!]!, $issues: Int!, $comments: Int!) {
   issues(
     first: $issues
     filter: {
