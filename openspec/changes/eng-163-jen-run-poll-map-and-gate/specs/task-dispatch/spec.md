@@ -194,6 +194,24 @@ When a credential the tick requires is absent, it SHALL refuse to run and SHALL 
 - **WHEN** a tick has finished
 - **THEN** no credential it used remains anywhere on the host
 
+### Requirement: A tick refuses a project the pipeline cannot park a task in
+
+The tick SHALL verify at startup that the tracker team carries the `Pending` status, and SHALL refuse to run when it does not, naming what is missing.
+
+A project without it has stages that can pick a task up and then have nowhere to put it when they need a human — the task would be left in a stage status, which the pipeline reads as a session still working it. Refusing the tick is the cheaper failure, and it fails before any session is started rather than partway through one.
+
+#### Scenario: The tracker lacks `Pending`
+
+- **WHEN** a tick begins against a team carrying no `Pending` status
+- **THEN** it refuses to run
+- **AND** names `Pending` as missing
+- **AND** dispatches nothing
+
+#### Scenario: The tracker carries `Pending`
+
+- **WHEN** a tick begins against a team carrying the status
+- **THEN** the check passes and the tick proceeds to poll
+
 ### Requirement: The tick receives its project identity and discovers nothing
 
 The tracker team and project the tick acts on SHALL be supplied to it as explicit input. The tick SHALL NOT read the registry or any other file to find them, and SHALL NOT call an API to infer them.
