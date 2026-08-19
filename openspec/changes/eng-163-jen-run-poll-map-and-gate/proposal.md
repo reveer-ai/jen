@@ -12,13 +12,17 @@ Every stage of the pipeline runs today because a human moved a status and invoke
 
 - **Everything that machinery was holding up goes with it. BREAKING** for the pipeline's semantics, though nothing shipped consumes them yet:
   - **No transition-edge detection.** Nothing parks in a stage status, so residence is a sound trigger again.
-  - **No lease with a TTL.** In-flight is a pickup comment the dispatcher writes before it dispatches. It does not expire, because nothing retries.
+  - **No lease with a TTL.** In-flight is the pickup comment the stage session writes when it starts. It does not expire, because nothing retries.
   - **No retry, and so no repeat-failure budget.** A run succeeds and advances, or says what is wrong and moves to `Pending`. A session killed hard leaves a pickup comment and no outcome, and the task sits in its stage status until a human moves it. That is legible from the outside and it is the reason a broken stage can never loop or bill — it fails once and stops.
   - **No churn budget in the dispatcher.** Recognising that a task is going back and forth *for the same reason* is a judgment, and the dispatch path takes no judgment. It belongs to the stage that is about to route the task backward for the second time, and that stage moves it to `Pending` instead.
 
 - **The Linear API client and credential resolution land in the CLI.** ENG-160 keeps the CLI free of an API client, a stored token, and a prompt loop; that still holds for `init` and `update`, which stay filesystem-only. `jen run` is a different command with a different job.
 
 - **A resolver, never a store.** Credentials come from the environment at the point of use — `LINEAR_API_KEY` and the git-host application keys of ENG-141. jen writes no credential to disk, and a missing one refuses the tick by name rather than failing partway through it.
+
+- **The tick writes nothing.** It polls, reads, decides, and prints. Every tracker write in the pipeline belongs to a stage session — including the pickup comment that marks a task taken, which the session writes once it is actually up rather than the dispatcher writing it on that session's behalf. So a tick is safe to run at any time, safe to run twice, and safe to run before anything consumes what it emits. The cost is accepted and named: a session that dies between dispatch and its first comment leaves no marker, and the next tick dispatches it again.
+
+- **The run request is printed, not just passed.** It is emitted in a form a person can read, which makes `jen run` answer "what would the pipeline do right now" on its own — useful before ENG-164 exists to consume it, and a concrete contract for ENG-164 rather than an interface invented in the abstract.
 
 - **The tick receives its context and discovers nothing.** The Linear team and project arrive as flags or environment. `jen run` never reads `registry.yaml` and never calls an API to find them. Resolution is the runner's (ENG-165): `jen watch` runs inside a checkout and reads the registry; the scheduled workflow carries the values as env generated from that same file. The filesystem read lives in the wrapper, where a difference between runners is harmless, rather than in the tick, where it is the divergence the shared-tick rule exists to prevent — and it is what keeps a third runner a wrapper rather than a port.
 
@@ -28,12 +32,12 @@ Every stage of the pipeline runs today because a human moved a status and invoke
 
 ### New Capabilities
 
-- `task-dispatch`: `jen run` as one tick; which statuses are candidates and which are never; the status→skill and status→role mapping; the pickup comment that marks a task as taken and the concurrency cap; the run request emitted for the executor; credentials resolved from the environment; and the rule that the tick receives its project identity rather than discovering it.
+- `task-dispatch`: `jen run` as one tick; which statuses are candidates and which are never; the status→skill and status→role mapping; the pickup comment it reads to tell a task in flight from one waiting, and the concurrency cap; the run request it prints for the executor; the rule that it writes nothing; credentials resolved from the environment; and the rule that the tick receives its project identity rather than discovering it.
 
 ### Modified Capabilities
 
 - `task-pipeline`: gains `Pending` and the two-move rule — a stage hands off or it moves the task to `Pending`. `design-task` ends at `Pending` rather than at `In Design`, which removes the only case of a task resting in a stage status and therefore reverts the trigger from the transition into a status to the task's presence in one with no run yet taken against it.
-- `stage-conventions`: a stage that needs a human moves the task to `Pending` and comments, rather than stopping and leaving the status where it found it. And a stage about to route a task backward for the same reason it already routed it back moves it to `Pending` instead — the circling judgment, which the record requirement today lets a stage merely note.
+- `stage-conventions`: a stage announces itself on the task before it does anything, which is what marks the task in flight for the dispatcher. A stage that needs a human moves the task to `Pending` and comments, rather than stopping and leaving the status where it found it. And a stage about to route a task backward for the same reason it already routed it back moves it to `Pending` instead — the circling judgment, which the record requirement today lets a stage merely note.
 - `project-binding`: `Pending` joins the statuses `setup-jen` verifies, and the registry gains nothing — the dispatcher reads no file.
 
 Deliberately unmodified: `agent-instructions`. `AGENTS.md` changes substantially — a new status in the stage table, the two-move rule, the `Pending` convention — but its requirement is that the document *state* the stages and the shared conventions, which an amended table and one more convention satisfy rather than amend. `pipeline-identity` likewise: it already says a run holds its stage's identity and never selects one, and names the dispatcher as what selects it. This change is that dispatcher doing so; the requirement is unchanged.
