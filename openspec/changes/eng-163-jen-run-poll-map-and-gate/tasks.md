@@ -11,26 +11,26 @@
 
 ## 2. The tracker client
 
-- [ ] 2.1 Add `cli/linear.ts`: a thin GraphQL client over global `fetch`, reading its token from the environment at the point of use. No dependency added, no token written anywhere, no retry.
-- [ ] 2.2 Implement the two reads: the team's statuses, and the project's issues with status, identifier, suggested branch name, and their most recent comments nested in the same query. Bound both page sizes explicitly rather than relying on the default 50 — nested defaults are what would approach the 10,000-point per-query cap. Request named fields so a schema change fails loudly rather than returning an empty set.
-- [ ] 2.3 Add the per-issue comment fallback: where the nested page holds no `jen:run` marker, page that one issue's comments until a marker is found or they are exhausted.
-- [ ] 2.4 Surface a `RATELIMITED` response as a failure with its own message. It arrives as HTTP 400 with the code in the body, not as a 429, so a generic error check will report it as an unexplained bad request.
+- [x] 2.1 Add `cli/linear.ts`: a thin GraphQL client over global `fetch`, reading its token from the environment at the point of use. No dependency added, no token written anywhere, no retry.
+- [x] 2.2 Implement the two reads: the team's statuses, and the project's issues with status, identifier, suggested branch name, and their most recent comments nested in the same query. Bound both page sizes explicitly rather than relying on the default 50 — nested defaults are what would approach the 10,000-point per-query cap. Request named fields so a schema change fails loudly rather than returning an empty set.
+- [x] 2.3 Add the per-issue comment fallback: where the nested page holds no `jen:run` marker, page that one issue's comments until a marker is found or they are exhausted.
+- [x] 2.4 Surface a `RATELIMITED` response as a failure with its own message. It arrives as HTTP 400 with the code in the body, not as a 429, so a generic error check will report it as an unexplained bad request.
 - [ ] 2.5 Unit-test the client against recorded responses, including the case that matters most: a query error must surface as a failure, never as zero candidates.
 
 ## 3. The table
 
-- [ ] 3.1 Add `cli/stages.ts`: the status→skill→role table, matching `AGENTS.md`'s stage table, with case-insensitive status lookup. Roles per `pipeline-identity` — `design-task`→`design`, `implement-task`→`dev`, the other three→`deliver`.
+- [x] 3.1 Add `cli/stages.ts`: the status→skill→role table, matching `AGENTS.md`'s stage table, with case-insensitive status lookup. Roles per `pipeline-identity` — `design-task`→`design`, `implement-task`→`dev`, the other three→`deliver`.
 - [ ] 3.2 Add a test that parses the stage table out of `AGENTS.md` and asserts the compiled table matches it, in the idiom `test/payload.test.ts` uses for scaffold references. This is the only thing standing between the two statements and drift.
 
 ## 4. The tick
 
-- [ ] 4.1 Add `cli/run.ts`: startup checks first — every required credential present, the team and project supplied as input, and `Pending` resolving on the team — each refusing the run by name before anything is polled.
-- [ ] 4.2 Poll for issues in the team and project, and reduce to candidates by the table. Statuses absent from the table are not candidates, including ones jen has never heard of.
-- [ ] 4.3 Implement the in-flight test over the comments the poll already returned: find the most recent carrying a `jen:run` marker, and treat the task as in flight when that marker is `event=start`. Ignore comments without a marker entirely.
-- [ ] 4.4 Apply the concurrency cap over the candidate set, defaulting to 3 and settable by flag. Never emit two run requests for one task in a tick.
-- [ ] 4.5 Emit a run request per dispatch as one JSON object per line on stdout — task identifier, skill, role, branch — carrying no credential.
-- [ ] 4.6 Write the report to stderr: every candidate considered, and for each, dispatched or the reason it was declined.
-- [ ] 4.7 Wire `run` into `cli.ts` and the usage text, parsing its flags and environment. Keep `init` and `update` untouched — they stay filesystem-only.
+- [x] 4.1 Add `cli/run.ts`: startup checks first — every required credential present, the team and project supplied as input, and `Pending` resolving on the team — each refusing the run by name before anything is polled.
+- [x] 4.2 Poll for issues in the team and project, and reduce to candidates by the table. Statuses absent from the table are not candidates, including ones jen has never heard of.
+- [x] 4.3 Implement the in-flight test over the comments the poll already returned: find the most recent carrying a `jen:run` marker, and treat the task as in flight when that marker is `event=start`. Ignore comments without a marker entirely.
+- [x] 4.4 Apply the concurrency cap over the candidate set, defaulting to 3 and settable by flag. Never emit two run requests for one task in a tick.
+- [x] 4.5 Emit a run request per dispatch as one JSON object per line on stdout — task identifier, skill, role, branch — carrying no credential.
+- [x] 4.6 Write the report to stderr: every candidate considered, and for each, dispatched or the reason it was declined.
+- [x] 4.7 Wire `run` into `cli.ts` and the usage text, parsing its flags and environment. Keep `init` and `update` untouched — they stay filesystem-only.
 
 ## 5. Proving it
 

@@ -30,6 +30,10 @@ function capture(): Capture {
 function jen(argv: string[], projectRoot: string): Capture & { code: number } {
   const captured = capture();
   const code = run([...argv, projectRoot], captured.io, { templates: staged });
+  // `run` answers a promise for `jen run` and a number for these two. Narrowed here rather
+  // than cast, so an `init` that quietly became asynchronous fails loudly instead of every
+  // assertion below comparing a pending promise against an exit code.
+  if (typeof code !== 'number') throw new Error('init and update are synchronous');
   return { ...captured, code };
 }
 

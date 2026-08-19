@@ -6,6 +6,11 @@
  * once-only scaffold, refuses a fixed path it cannot claim, and initializes OpenSpec.
  * Expressing that as options rather than as two implementations is what keeps "never
  * delete an unstamped file" true in one place instead of two.
+ *
+ * `run` is not one of those. It is the pipeline's dispatcher rather than an installer: it
+ * takes no project path, reads no file, writes nothing, and is the only command that talks
+ * to anything over the network. It is also the only asynchronous one, which is why {@link
+ * run} may hand back a promise.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,6 +20,8 @@ import { ignoredPaths } from './ignore.js';
 import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
 import { payloadFiles, SCAFFOLD, SKILLS } from './payload.js';
+import { TOKEN_VARIABLE } from './linear.js';
+import { DEFAULTS, tick, type Environment, type TickInput } from './run.js';
 
 const USAGE = `jen — the workflow layer for automated, agentic software development
 
@@ -24,15 +31,24 @@ Usage:
 Commands:
   init      install the workflow into a project and initialize OpenSpec
   update    refresh the managed files and remove the ones jen no longer ships
+  run       one dispatch pass over the tracker: poll, map, gate, emit, exit
 
 Options:
       --force      on init, overwrite a file jen owns wholesale that the project already has
+      --team       on run, the tracker team to act on (or JEN_TEAM)
+      --project    on run, the tracker project to act on (or JEN_PROJECT)
+      --concurrency   on run, simultaneous runs to allow (default ${DEFAULTS.concurrency})
   -h, --help       show this message
   -v, --version    show the installed version
 
 \`project\` defaults to the working directory. jen writes the workflow document, the
 ${SKILLS.length} skills it ships, and a scaffold the project then owns; it touches nothing else. Neither
-command prompts, and both are safe to re-run and safe in CI.`;
+command prompts, and both are safe to re-run and safe in CI.
+
+\`run\` takes no project path and reads no file — it is told which team and project to act
+on, reads its tracker credential from ${TOKEN_VARIABLE}, and writes nothing anywhere. Run
+requests go to stdout as one JSON object per line and the report goes to stderr, so
+\`jen run | executor\` works with no flag.`;
 
 export interface Io {
   out(line: string): void;
@@ -44,9 +60,14 @@ export interface RunOptions {
   templates?: string;
   /** What a bare invocation targets. Defaults to the working directory. */
   cwd?: string;
+  /** Where `run` reads its credential and project identity. Defaults to the process environment. */
+  env?: Environment;
+  /** The tracker transport, injected by tests. Defaults to global `fetch`. */
+  transport?: typeof fetch;
 }
 
-type Command = 'init' | 'update';
+type Command = 'init' | 'update' | 'run';
+type InstallCommand = 'init' | 'update';
 
 interface Invocation {
   projectRoot: string;
@@ -62,7 +83,48 @@ function version(): string {
   return manifest.version;
 }
 
-function parse(command: Command, args: string[], cwd: string): Invocation {
+/** `jen run`'s flags, each falling back to the environment the runner supplies. */
+function parseTick(args: string[], env: Environment): TickInput {
+  const input: TickInput = {
+    team: env.JEN_TEAM,
+    project: env.JEN_PROJECT,
+    concurrency: DEFAULTS.concurrency,
+    issuePageSize: DEFAULTS.issuePageSize,
+    commentPageSize: DEFAULTS.commentPageSize,
+  };
+
+  const numbers: Record<string, keyof Pick<TickInput, 'concurrency' | 'issuePageSize' | 'commentPageSize'>> = {
+    '--concurrency': 'concurrency',
+    '--issue-page': 'issuePageSize',
+    '--comment-page': 'commentPageSize',
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    const value = args[index + 1];
+
+    if (arg === '--team' || arg === '--project') {
+      if (value === undefined || value.startsWith('-')) throw new UsageError(`${arg} takes a value`);
+      if (arg === '--team') input.team = value;
+      else input.project = value;
+      index += 1;
+    } else if (arg in numbers) {
+      if (value === undefined) throw new UsageError(`${arg} takes a value`);
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1) throw new UsageError(`${arg} takes a positive whole number`);
+      input[numbers[arg]!] = parsed;
+      index += 1;
+    } else if (arg.startsWith('-')) {
+      throw new UsageError(`unknown option: ${arg}`);
+    } else {
+      throw new UsageError(`jen run takes no project path, and was given ${arg}. It reads no files.`);
+    }
+  }
+
+  return input;
+}
+
+function parse(command: InstallCommand, args: string[], cwd: string): Invocation {
   let path: string | undefined;
   let force = false;
 
@@ -87,7 +149,7 @@ function line(label: string, detail: string): string {
 }
 
 /** The plan, rendered as what the run did. */
-function report(io: Io, command: Command, plan: Plan, applied: Applied, notes: string[]): void {
+function report(io: Io, command: InstallCommand, plan: Plan, applied: Applied, notes: string[]): void {
   io.out(`jen ${command} — ${plan.projectRoot}`);
   io.out('');
 
@@ -135,7 +197,7 @@ function refuse(io: Io, plan: Plan): number {
  * right answer. Both commands refuse it, and neither writes the paths it *could* reach —
  * a half-installed workflow is worse than an uninstalled one.
  */
-function obstructed(io: Io, command: Command, plan: Plan): number {
+function obstructed(io: Io, command: InstallCommand, plan: Plan): number {
   io.err(`jen ${command}: ${plan.projectRoot} reaches managed paths through a symlink, and jen will not write through one.`);
   for (const { target, ancestor } of plan.obstructions) {
     io.err(`  ${target} — ${ancestor} is a symlink`);
@@ -145,7 +207,7 @@ function obstructed(io: Io, command: Command, plan: Plan): number {
   return 1;
 }
 
-function reportFailure(io: Io, command: Command, failure: ApplyFailure): number {
+function reportFailure(io: Io, command: InstallCommand, failure: ApplyFailure): number {
   for (const target of failure.completed.written) io.out(line('written', target));
   for (const target of failure.completed.removed) io.out(line('removed', target));
   io.err(`jen ${command}: ${failure.message}`);
@@ -153,7 +215,7 @@ function reportFailure(io: Io, command: Command, failure: ApplyFailure): number 
   return 1;
 }
 
-function install(command: Command, invocation: Invocation, io: Io, options: RunOptions): number {
+function install(command: InstallCommand, invocation: Invocation, io: Io, options: RunOptions): number {
   const plan = planInstall(invocation.projectRoot, {
     scaffold: command === 'init',
     templates: options.templates,
@@ -210,7 +272,15 @@ function install(command: Command, invocation: Invocation, io: Io, options: RunO
   return 0;
 }
 
-export function run(argv: string[], io: Io, options: RunOptions = {}): number {
+/**
+ * Every command, dispatched.
+ *
+ * The return type is a union rather than a promise throughout: `init` and `update` are
+ * synchronous and their callers — the tests among them — depend on that, while the tick is
+ * inherently not. Widening the two to match the one would buy nothing and cost every
+ * existing caller an `await`.
+ */
+export function run(argv: string[], io: Io, options: RunOptions = {}): number | Promise<number> {
   const [command, ...rest] = argv;
 
   try {
@@ -234,6 +304,15 @@ export function run(argv: string[], io: Io, options: RunOptions = {}): number {
           return 0;
         }
         return install(command, parse(command, rest, options.cwd ?? process.cwd()), io, options);
+
+      case 'run': {
+        if (rest.includes('--help') || rest.includes('-h')) {
+          io.out(USAGE);
+          return 0;
+        }
+        const env = options.env ?? process.env;
+        return tick(parseTick(rest, env), io, env, options.transport);
+      }
 
       default:
         io.err(`Unknown command: ${command}\n`);
