@@ -26,3 +26,26 @@ nothing instead of failing.
 
 No workflow is involved in any of this — it bites a stage running on a laptop exactly as
 hard — which is why the note lives beside the skills and not under `.github/`.
+
+## Reading an installation's granted permissions needs the org listing, not the installation
+
+`setup-jen` tells a run to read a role's permissions back from the **installation** rather
+than from the application, which is right — but the two endpoints whose names say
+"installation" both refuse a run that is not the application itself:
+`/app/installations/{id}` and `/repos/{owner}/{repo}/installation` each answer `401 A JSON
+web token could not be decoded`, because both want a JWT signed with the application's
+private key. A run does not hold that key; the operator does, and the whole point of the
+design is that it never reaches a session.
+
+What works under an ordinary token with organization access is
+`/orgs/{org}/installations`, which returns every installation with its `permissions` and
+`repository_selection` — the two fields the verification step compares against the table.
+Select the one whose `app_id` matches the registry rather than the one whose name looks
+right.
+
+The 401 is worth naming because of how it reads: it arrives as an authentication failure,
+so the first guess is a bad token or a missing scope, and the actual answer is that the
+endpoint was never reachable this way at all. It also matters that the org listing returns
+*everything* installed — `reveer-ai` carries five, of which two are not pipeline roles —
+so matching by `app_id` is the difference between verifying a role and verifying whatever
+was installed next to it.
