@@ -121,11 +121,17 @@ An announcement SHALL NOT expire. A task in a stage's status whose session annou
 - **WHEN** a tick examines a task whose session has announced itself and not yet reported
 - **THEN** no run request is emitted for it
 
-#### Scenario: Two runners tick at once
+#### Scenario: A later tick sees a run emitted by an earlier tick
 
-- **WHEN** two runners examine the same task
-- **THEN** both read the same announcement from the task
-- **AND** at most one run is emitted for it
+- **WHEN** one tick emits a run and that session announces itself before another tick examines the same task
+- **THEN** the later tick reads the announcement from the task
+- **AND** it emits no second run for it
+
+#### Scenario: Two runners examine the same unannounced snapshot
+
+- **WHEN** two runners examine the same task before either emitted session has announced itself
+- **THEN** each tick may emit a run for the task from that same marker-free snapshot
+- **AND** this dispatch-to-announcement overlap is accepted rather than serialized by shared state
 
 #### Scenario: A session died without reporting
 
@@ -153,9 +159,9 @@ An announcement SHALL NOT expire. A task in a stage's status whose session annou
 
 ### Requirement: Simultaneous runs are capped
 
-The tick SHALL enforce a ceiling on how many runs may be in flight at once, and SHALL emit no run request that would exceed it. It SHALL never emit two run requests for the same task in one tick.
+The tick SHALL enforce a ceiling on how many runs are in flight in the tracker snapshot it observes plus the run requests it emits, and SHALL emit no run request that would exceed that ceiling within one tick. It SHALL never emit two run requests for the same task in one tick.
 
-The count SHALL be derived from the same announcements that establish in-flight state, so that the ceiling holds across runners rather than per runner.
+The count SHALL be derived from the same announcements that establish in-flight state, so later ticks driven by any runner share the ceiling represented in the tracker rather than relying on runner-local memory. The tick SHALL NOT claim to serialize overlapping runners: two ticks that observe the same snapshot before either emitted session announces may each spend up to the cap.
 
 #### Scenario: The ceiling is reached
 
@@ -163,10 +169,16 @@ The count SHALL be derived from the same announcements that establish in-flight 
 - **THEN** the tick emits no further run requests
 - **AND** the candidates it declined are unchanged and will be seen again next tick
 
-#### Scenario: Two runners share a ceiling
+#### Scenario: A later runner shares the observed ceiling
 
-- **WHEN** two runners tick against one project
-- **THEN** the total in flight across both respects the one cap
+- **WHEN** a runner ticks after sessions emitted by another runner have announced themselves
+- **THEN** it counts those announcements against the same cap
+
+#### Scenario: Two runners overlap before announcements
+
+- **WHEN** two runners tick against one project before either emitted session has announced itself
+- **THEN** each enforces the cap against its own identical observed snapshot and emitted requests
+- **AND** their combined emissions may temporarily exceed the cap
 
 ### Requirement: The tick reports what it decided, in a form a person can read
 

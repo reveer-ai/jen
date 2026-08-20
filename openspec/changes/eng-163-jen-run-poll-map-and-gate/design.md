@@ -124,7 +124,7 @@ So the page is made to carry its own evidence: the client compares the first and
 
 ### The concurrency cap counts what the poll already returned
 
-In-flight is established per candidate from its own comments, so the count of runs in flight is a count over the candidate set the tick already fetched. No extra query, and the ceiling holds across runners because every runner derives it from the same tracker state.
+In-flight is established per candidate from its own comments, so the count of runs in flight is a count over the candidate set the tick already fetched. No extra query, and later ticks share the ceiling because every runner derives it from the same tracker state. This is snapshot coordination, not serialization: two overlapping ticks can read the same marker-free state and each emit up to the cap before either emitted session announces.
 
 This misses a run in flight against a task whose status has since left the pipeline — a session that moved the task to `Done` and is still finishing up. That is a session on its way out, not one about to start work, so counting it would only make the cap more conservative than intended.
 
@@ -132,7 +132,7 @@ The cap is a flag with a default of 3. It is a spend control more than a correct
 
 ## Risks / Trade-offs
 
-**A session that dies between dispatch and its first comment is dispatched again** → Accepted, and named in the spec rather than mitigated. The window is the time from process start to the first tracker write — seconds against a session that runs for minutes. Each repeat costs one session start, and the concurrency cap bounds how many can be in that window at once. Closing it would require the tick to write, which is the property being protected.
+**Dispatch is not serialized before the first session comment** → Accepted, and named in the spec rather than mitigated. The window is the time from process start to the first tracker write — seconds against a session that runs for minutes. A session that dies inside it is dispatched again on a later tick; two ticks that overlap inside it may both emit the same task or each emit up to the cap from the same snapshot. The cap bounds one tick's emissions, not the combined emissions of overlapping ticks. Closing either hole would require an atomic shared write or lock, which is the property the read-only tick deliberately gives up.
 
 **A stage that forgets its announcement is dispatched repeatedly** → The announcement is what makes a task in flight, so a stage that never writes one is re-dispatched every tick, each time doing real work. This is the one failure the design has no backstop for, having removed the failure counter. Mitigation is that the announcement is the *first* thing a session does, before any work, and that all six skills are edited in this change rather than left to adopt it independently.
 
