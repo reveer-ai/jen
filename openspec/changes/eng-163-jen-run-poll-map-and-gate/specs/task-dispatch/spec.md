@@ -108,7 +108,7 @@ The role SHALL be resolved by the tick rather than by the session, because a ses
 
 ### Requirement: A task a session is already working is not a candidate
 
-The tick SHALL treat a task as in flight when a session has announced itself against the task's current stage, and SHALL NOT emit a run request for it. A task's status alone SHALL NOT be taken as evidence that nothing is working it, because the status stays actionable until the stage moves it.
+The tick SHALL treat a task as in flight when the most recent marked comment on the task is a session announcement with no later marked outcome, and SHALL NOT emit a run request for it. It SHALL NOT compare the announcement's stage with the task's current stage: a session may move the status before writing its closing outcome, and the still-open announcement from the prior stage SHALL keep the next stage from starting during that handoff. A task's status alone SHALL NOT be taken as evidence that nothing is working it, because the status stays actionable until the stage moves it.
 
 The announcement SHALL be read from the task's own record so that every runner reaches the same conclusion from the same evidence. A runner's memory of what it launched SHALL NOT be the state consulted, and SHALL be at most a cache of it.
 
