@@ -32,6 +32,28 @@ export interface Stage {
 export const PENDING = 'Pending';
 
 /**
+ * The label refinement puts on a task, and the whole of what makes an issue dispatchable
+ * beyond its status.
+ *
+ * An allow list one level up from the statuses, and for the same reason: what is not a task
+ * is open-ended and a deny list would have to enumerate it, while what is one is exactly
+ * this label. `task-pipeline` requires refinement to apply it and `project-binding`
+ * requires the team to carry it, which is what makes depending on it here sound.
+ */
+export const TASK_LABEL = 'task';
+
+/**
+ * The label refinement puts on an epic.
+ *
+ * Never consulted to decide candidacy — {@link TASK_LABEL} alone decides that — and read
+ * only to tell one decline from the other in the report. An epic in a stage's status is
+ * routine and expected, because its children are the ones moving; an issue carrying neither
+ * label is one nobody has refined. A person reading the report needs those to look
+ * different, since only the second is something to act on.
+ */
+export const EPIC_LABEL = 'epic';
+
+/**
  * Every dispatchable stage, in pipeline order.
  *
  * `refine-epic` is absent because no status triggers it — it runs before the pipeline and

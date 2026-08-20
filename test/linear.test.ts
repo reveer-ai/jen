@@ -58,17 +58,31 @@ const team = {
   },
 };
 
-function issue(overrides: Partial<{ identifier: string; state: string; comments: { id: string; createdAt: string; body: string }[]; hasNextPage: boolean }> = {}) {
+function issue(
+  overrides: Partial<{
+    identifier: string;
+    state: string;
+    labels: string[];
+    comments: { id: string; createdAt: string; body: string }[];
+    hasNextPage: boolean;
+  }> = {},
+) {
   return {
     id: 'issue-1',
     identifier: overrides.identifier ?? 'ENG-1',
     branchName: 'eng-1-a-task',
     state: { name: overrides.state ?? 'in progress' },
+    labels: { nodes: (overrides.labels ?? ['task']).map((name) => ({ name })) },
     comments: {
       pageInfo: { hasNextPage: overrides.hasNextPage ?? false, endCursor: 'cursor-1' },
       nodes: overrides.comments ?? [],
     },
   };
+}
+
+/** Comments a page apart, so a page's ends can be compared. */
+function dated(day: number, body: string) {
+  return { id: `c${day}`, createdAt: `2026-08-${String(day).padStart(2, '0')}T00:00:00.000Z`, body };
 }
 
 describe('reading the team', () => {
@@ -104,7 +118,9 @@ describe('polling the project', () => {
         identifier: 'ENG-1',
         branchName: 'eng-1-a-task',
         status: 'in progress',
+        labels: ['task'],
         comments: [],
+        commentsAreNewest: true,
         moreComments: false,
         commentCursor: 'cursor-1',
       },
@@ -115,6 +131,7 @@ describe('polling the project', () => {
       states: ['in progress'],
       issues: 50,
       comments: 10,
+      labels: 10,
     });
   });
 
@@ -130,6 +147,12 @@ describe('polling the project', () => {
     const scripted = script({ body: { data: { issues: { nodes: [issue({ comments })] } } } });
     const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
     expect(only!.comments.map((comment) => comment.body)).toEqual(['newest', 'middle', 'oldest']);
+  });
+
+  it('carries every label the issue holds, since candidacy rests on one of them', async () => {
+    const scripted = script({ body: { data: { issues: { nodes: [issue({ labels: ['epic', 'urgent'] })] } } } });
+    const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    expect(only!.labels).toEqual(['epic', 'urgent']);
   });
 
   it('asks nothing when no status resolved on the team', async () => {
@@ -158,6 +181,62 @@ describe('polling the project', () => {
       endCursor: 'cursor-2',
     });
     expect(scripted.sent[0]!.variables).toEqual({ issue: 'issue-1', comments: 10, after: 'cursor-1' });
+  });
+});
+
+// A sort orders what came back and says nothing about what stayed behind the bound, so the
+// page is made to carry its own evidence rather than the documented descending default being
+// taken on trust. Being wrong is not a degraded answer: every marker sits behind the bound,
+// the task reads as never announced, and it is dispatched forever with no error anywhere.
+describe('whether a comment page can be shown to hold the newest', () => {
+  async function polled(nodes: { id: string; createdAt: string; body: string }[], hasNextPage: boolean) {
+    const scripted = script({
+      body: {
+        data: {
+          issues: {
+            nodes: [
+              {
+                ...issue(),
+                comments: { pageInfo: { hasNextPage, endCursor: 'cursor-1' }, nodes },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    return only!;
+  }
+
+  it('takes a descending page with more behind it as the newest', async () => {
+    const page = await polled([dated(9, 'newest'), dated(5, 'middle'), dated(1, 'oldest')], true);
+    expect(page.commentsAreNewest).toBe(true);
+    expect(page.moreComments).toBe(true);
+  });
+
+  it('refuses an ascending page as the newest, however it sorts afterwards', async () => {
+    const page = await polled([dated(1, 'oldest'), dated(5, 'middle'), dated(9, 'newest')], true);
+    expect(page.commentsAreNewest, 'oldest-first means every recent comment is behind the bound').toBe(false);
+    expect(page.comments.map((comment) => comment.body), 'still handed over newest first').toEqual([
+      'newest',
+      'middle',
+      'oldest',
+    ]);
+  });
+
+  it('takes a page with nothing behind it as the whole record, in either order', async () => {
+    expect((await polled([dated(1, 'oldest'), dated(9, 'newest')], false)).commentsAreNewest).toBe(true);
+    expect((await polled([dated(9, 'newest'), dated(1, 'oldest')], false)).commentsAreNewest).toBe(true);
+    expect((await polled([dated(3, 'the only one')], false)).commentsAreNewest, 'one comment is the record').toBe(true);
+    expect((await polled([], false)).commentsAreNewest, 'no comments at all is the record too').toBe(true);
+  });
+
+  // One comment with more behind it is trivially both orders, and two sharing a timestamp
+  // are no better. Unreadable is treated as unproven rather than resolved in either
+  // direction — the cost is a request, and the cost of guessing wrong is permanent.
+  it('treats an unreadable page as unproven rather than guessing', async () => {
+    expect((await polled([dated(3, 'the only one')], true)).commentsAreNewest).toBe(false);
+    expect((await polled([dated(3, 'a'), dated(3, 'b')], true)).commentsAreNewest).toBe(false);
   });
 });
 

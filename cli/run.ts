@@ -10,8 +10,16 @@
  * consume what it emits. The comment marking a task as taken is the session's own, written
  * once the session is actually running; see `cli/AGENTS.md` for what that costs.
  */
-import { fold, PENDING, stageFor, type Stage } from './stages.js';
-import { RateLimited, Tracker, TrackerError, TOKEN_VARIABLE, type TrackerComment, type TrackerIssue } from './linear.js';
+import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './stages.js';
+import {
+  newestFirst,
+  RateLimited,
+  Tracker,
+  TrackerError,
+  TOKEN_VARIABLE,
+  type TrackerComment,
+  type TrackerIssue,
+} from './linear.js';
 
 import type { Io } from './cli.js';
 
@@ -150,29 +158,64 @@ function line(label: string, detail: string): string {
 
 /**
  * The most recent announcement on an issue, paging that one issue's comments where the
- * nested page held no marker at all.
+ * nested page cannot answer it.
  *
- * A task with a long human discussion since its last session is the case this exists for.
- * Bounded to the issue that needs it, because the alternative — a larger nested page — pays
- * complexity on every tick against every issue to serve the one.
+ * Two different reasons to page, and they need different loops, which is the whole of why
+ * this reads as two branches rather than one:
+ *
+ * - **The page is the newest and holds no marker.** A task with a long human discussion
+ *   since its last session. Every further page is strictly older, so the first marker found
+ *   walking backward is still the most recent one and the walk stops there.
+ * - **The page cannot be shown to be the newest.** It came back oldest-first, or it was too
+ *   short to tell. Paging forward from here walks toward *newer* comments, so stopping at
+ *   the first marker would settle on a stale one — the walk has to reach the end before
+ *   anything is read out of it.
+ *
+ * Both are bounded to the one issue that needs them. The alternative, a larger nested page,
+ * pays complexity on every tick against every issue to serve the rare one.
  */
 async function established(tracker: Tracker, issue: TrackerIssue, pageSize: number): Promise<boolean> {
-  const nested = inFlight(issue.comments);
-  if (nested !== undefined) return nested;
-
   let hasNextPage = issue.moreComments;
   let cursor = issue.commentCursor;
 
+  if (issue.commentsAreNewest) {
+    const nested = inFlight(issue.comments);
+    if (nested !== undefined) return nested;
+
+    while (hasNextPage) {
+      const page = await tracker.comments(issue.id, pageSize, cursor);
+      const older = inFlight(page.comments);
+      if (older !== undefined) return older;
+      hasNextPage = page.hasNextPage;
+      cursor = page.endCursor;
+    }
+
+    // No session has ever announced itself against this task.
+    return false;
+  }
+
+  const all = [...issue.comments];
   while (hasNextPage) {
     const page = await tracker.comments(issue.id, pageSize, cursor);
-    const found = inFlight(page.comments);
-    if (found !== undefined) return found;
+    all.push(...page.comments);
     hasNextPage = page.hasNextPage;
     cursor = page.endCursor;
   }
 
-  // No session has ever announced itself against this task.
-  return false;
+  return inFlight(newestFirst(all)) ?? false;
+}
+
+/**
+ * Why an issue sitting in a stage's status is not a candidate for one, or nothing where it
+ * is. Read before the comments are, so an epic costs no page of a discussion it will never
+ * be dispatched against.
+ */
+function notATask(issue: TrackerIssue): string | undefined {
+  const carried = new Set(issue.labels.map(fold));
+  if (carried.has(fold(TASK_LABEL))) return undefined;
+  return carried.has(fold(EPIC_LABEL))
+    ? 'an epic, not a task; its children are what the pipeline runs, and it has no change of its own'
+    : `not a task; it carries neither the \`${TASK_LABEL}\` nor the \`${EPIC_LABEL}\` label, so nothing has refined it`;
 }
 
 /**
@@ -237,12 +280,25 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
     );
 
     const examined: Examined[] = [];
+    // Everything in a stage's status that is not a task. Declined here rather than filtered
+    // out of the poll, so that a person who moved an issue into the pipeline and saw nothing
+    // happen has somewhere to find out why. Silence would be indistinguishable from a
+    // pipeline with nothing to do.
+    const notTasks: Outcome[] = [];
+
     for (const issue of issues) {
       // Mapped again from the issue's own status rather than trusted from the filter: the
       // table is the authority on candidacy, and a status it does not name is not a
       // candidate however it came back.
       const stage = stageFor(issue.status);
       if (!stage) continue;
+
+      const declined = notATask(issue);
+      if (declined !== undefined) {
+        notTasks.push({ identifier: issue.identifier, status: issue.status, verdict: { declined } });
+        continue;
+      }
+
       examined.push({
         identifier: issue.identifier,
         status: issue.status,
@@ -252,7 +308,9 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
       });
     }
 
-    const outcomes = decide(examined, input.concurrency);
+    // Candidates first and the non-tasks after, because the second group is the standing
+    // background of any project with epics in it and the first is what changed this tick.
+    const outcomes = [...decide(examined, input.concurrency), ...notTasks];
 
     for (const outcome of outcomes) {
       if ('dispatch' in outcome.verdict) {

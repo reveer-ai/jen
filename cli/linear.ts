@@ -20,6 +20,17 @@ export const LINEAR_ENDPOINT = 'https://api.linear.app/graphql';
 /** The environment variable the tracker credential is read from, at the point of use. */
 export const TOKEN_VARIABLE = 'LINEAR_API_KEY';
 
+/**
+ * How many of an issue's labels the poll asks for.
+ *
+ * Bounded like every other page here, and not a caller's choice because nothing has reason
+ * to tune it: the tick reads labels to answer one yes-or-no question. Ten is well past what
+ * a refined task carries, and the cost is paid per issue on every tick. An issue carrying
+ * more labels than this could in principle hide its `task` label behind the bound and be
+ * declined in the report as though it had none — visible, not silent, which is the trade.
+ */
+export const LABEL_PAGE_SIZE = 10;
+
 /** Anything the tracker refused or answered unusably. Never swallowed into an empty result. */
 export class TrackerError extends Error {}
 
@@ -52,9 +63,19 @@ export interface TrackerIssue {
   branchName: string;
   /** The status name as the team writes it, which need not match the workflow's capitalization. */
   status: string;
+  /** Every label the issue carries, as the team names them. Candidacy rests on one of these. */
+  labels: string[];
   /** Newest first. Bounded by the page size the poll was given. */
   comments: TrackerComment[];
-  /** Whether the tracker holds comments older than the ones above. */
+  /**
+   * Whether {@link comments} can be *shown* to hold the newest the issue carries.
+   *
+   * False where the page came back oldest-first, or where it is too short to tell and the
+   * tracker holds more behind it. A caller reading the newest of anything must page first;
+   * see {@link holdsNewest} for why this is established rather than assumed.
+   */
+  commentsAreNewest: boolean;
+  /** Whether the tracker holds comments beyond the page above, in whichever direction. */
   moreComments: boolean;
   /** Where a follow-up read of this issue's comments resumes, when {@link moreComments}. */
   commentCursor: string | null;
@@ -100,7 +121,7 @@ query JenTeamStatuses($team: String!, $states: Int!) {
 }`;
 
 const PIPELINE_ISSUES = `
-query JenPipelineIssues($team: ID!, $project: String!, $states: [String!]!, $issues: Int!, $comments: Int!) {
+query JenPipelineIssues($team: ID!, $project: String!, $states: [String!]!, $issues: Int!, $comments: Int!, $labels: Int!) {
   issues(
     first: $issues
     filter: {
@@ -114,6 +135,7 @@ query JenPipelineIssues($team: ID!, $project: String!, $states: [String!]!, $iss
       identifier
       branchName
       state { name }
+      labels(first: $labels) { nodes { name } }
       comments(first: $comments, orderBy: createdAt) {
         pageInfo { hasNextPage endCursor }
         nodes { id createdAt body }
@@ -140,13 +162,40 @@ function header(headers: Headers, name: string): number | undefined {
 }
 
 /** Newest first, which is the only order the in-flight test ever reads. */
-function newestFirst(comments: TrackerComment[]): TrackerComment[] {
+export function newestFirst(comments: TrackerComment[]): TrackerComment[] {
   return [...comments].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 interface CommentConnection {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
   nodes: TrackerComment[];
+}
+
+/**
+ * Whether a bounded page of comments can be shown to hold the newest ones.
+ *
+ * Sorting a page cannot rescue it: a sort orders what came back and says nothing about
+ * what stayed behind the bound. Linear documents `orderBy: createdAt` as descending and
+ * the documents above request it explicitly, but a documented default is not evidence, and
+ * being wrong here is not a degraded answer — it is every marker on a long-running task
+ * sitting behind the bound, the task reading as never announced, and a session dispatched
+ * against it on every tick forever, with no error anywhere. So the page is made to carry
+ * its own evidence and the assumption is not made at all.
+ *
+ * Three cases, and only the first costs nothing:
+ *
+ * - Nothing behind the bound — the page is the whole record, in either order.
+ * - Two or more comments with more behind them — the first against the last says which way
+ *   the connection runs. Newest first means this page is the newest.
+ * - Anything else — a single comment with more behind it, or a page whose ends share a
+ *   timestamp. The direction is unreadable, and unreadable is treated as unproven.
+ */
+function holdsNewest(connection: CommentConnection): boolean {
+  if (!connection.pageInfo.hasNextPage) return true;
+
+  const nodes = connection.nodes;
+  if (nodes.length < 2) return false;
+  return nodes[0]!.createdAt.localeCompare(nodes[nodes.length - 1]!.createdAt) > 0;
 }
 
 export class Tracker {
@@ -259,6 +308,7 @@ export class Tracker {
     statuses: string[],
     issuePageSize: number,
     commentPageSize: number,
+    labelPageSize = LABEL_PAGE_SIZE,
   ): Promise<TrackerIssue[]> {
     if (statuses.length === 0) return [];
 
@@ -269,6 +319,7 @@ export class Tracker {
           identifier: string;
           branchName: string;
           state: { name: string };
+          labels: { nodes: { name: string }[] };
           comments: CommentConnection;
         }[];
       };
@@ -278,6 +329,7 @@ export class Tracker {
       states: statuses,
       issues: issuePageSize,
       comments: commentPageSize,
+      labels: labelPageSize,
     });
 
     return data.issues.nodes.map((node) => ({
@@ -285,7 +337,9 @@ export class Tracker {
       identifier: node.identifier,
       branchName: node.branchName,
       status: node.state.name,
+      labels: node.labels.nodes.map((label) => label.name),
       comments: newestFirst(node.comments.nodes),
+      commentsAreNewest: holdsNewest(node.comments),
       moreComments: node.comments.pageInfo.hasNextPage,
       commentCursor: node.comments.pageInfo.endCursor,
     }));

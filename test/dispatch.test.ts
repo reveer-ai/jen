@@ -243,14 +243,30 @@ function polled(...nodes: unknown[]) {
   return { data: { issues: { nodes } } };
 }
 
-function issueNode(identifier: string, state: string, comments: ReturnType<typeof comment>[] = []) {
+function issueNode(
+  identifier: string,
+  state: string,
+  comments: ReturnType<typeof comment>[] = [],
+  labels: string[] = ['task'],
+) {
   return {
     id: `id-${identifier}`,
     identifier,
     branchName: `${identifier.toLowerCase()}-a-task`,
     state: { name: state },
+    labels: { nodes: labels.map((name) => ({ name })) },
     comments: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: comments },
   };
+}
+
+/** An issue whose nested comment page is bounded, in the order the tracker sent it. */
+function withCommentPage(node: ReturnType<typeof issueNode>, nodes: ReturnType<typeof comment>[]) {
+  return { ...node, comments: { pageInfo: { hasNextPage: true, endCursor: 'cursor-1' }, nodes } };
+}
+
+/** One further page of a single issue's comments, as the follow-up read returns it. */
+function commentPage(nodes: ReturnType<typeof comment>[], hasNextPage = false, endCursor: string | null = null) {
+  return { body: { data: { issue: { comments: { pageInfo: { hasNextPage, endCursor }, nodes } } } } };
 }
 
 const ENV = { LINEAR_API_KEY: 'lin_api_recorded', JEN_TEAM: 'eng', JEN_PROJECT: 'jen' };
@@ -351,38 +367,6 @@ describe('a tick that runs', () => {
     expect(result.err.join('\n')).toContain('the cap is 1');
   });
 
-  it('pages one issue\'s comments only where the nested page held no marker', async () => {
-    const buried = {
-      ...issueNode('ENG-1', 'in progress', [comment('a long human discussion')]),
-      comments: {
-        pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
-        nodes: [comment('a long human discussion')],
-      },
-    };
-
-    const session = script(
-      { body: TEAM },
-      { body: polled(buried) },
-      {
-        body: {
-          data: {
-            issue: {
-              comments: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [announcement('implement-task', 'start')],
-              },
-            },
-          },
-        },
-      },
-    );
-    const result = await jenRun([], ENV, session);
-
-    expect(session.requests, 'the fallback is one extra request, for the one issue').toHaveLength(3);
-    expect(session.requests[2]!.variables).toEqual({ issue: 'id-ENG-1', comments: 10, after: 'cursor-1' });
-    expect(result.out, 'the marker found by paging still gates the task').toEqual([]);
-  });
-
   it('reports a tick with nothing to do, and exits successfully', async () => {
     const session = script({ body: TEAM }, { body: polled() });
     const result = await jenRun([], ENV, session);
@@ -399,6 +383,155 @@ describe('a tick that runs', () => {
     const first = await jenRun([], ENV, script(...state));
     const second = await jenRun([], ENV, script(...state));
     expect(second.out).toEqual(first.out);
+  });
+});
+
+// The design deliberately stopped assuming the tracker returns comments newest-first, so
+// what stands in for that assumption is here: the tick reads the direction off each page and
+// pages where it cannot be shown to hold the newest.
+describe('establishing the most recent announcement from a bounded page', () => {
+  it('treats a page with nothing behind it as the whole record, and reads no further', async () => {
+    const session = script(
+      { body: TEAM },
+      { body: polled(issueNode('ENG-1', 'in progress', [announcement('implement-task', 'start')])) },
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests, 'one comment, nothing behind it — there is nothing to page for').toHaveLength(2);
+    expect(result.out).toEqual([]);
+  });
+
+  // Newest-first and markerless: every further page is strictly older, so the first marker
+  // found walking backward is still the most recent one and the walk stops there.
+  it('pages backward from a newest-first page that held no marker, stopping at the first', async () => {
+    const started = announcement('implement-task', 'start');
+    const discussion = [comment('a question'), comment('an answer'), comment('a follow-up')];
+
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(...discussion))) },
+      commentPage([started], true, 'cursor-2'),
+      commentPage([comment('older still')]),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests, 'the walk stops at the marker rather than draining the record').toHaveLength(3);
+    expect(session.requests[2]!.variables).toEqual({ issue: 'id-ENG-1', comments: 10, after: 'cursor-1' });
+    expect(result.out, 'the marker found by paging still gates the task').toEqual([]);
+  });
+
+  // The failure the evidence exists for. The bounded page holds the *oldest* comments, so
+  // the `start` is in it and the `end` that closed that session is behind the bound. Trusting
+  // the page reads the task as in flight and never dispatches it again — no error, forever.
+  it('pages forward through an oldest-first page before reading a marker out of it', async () => {
+    const started = announcement('review-task', 'start');
+    const note = comment('a note to a human, mid-session');
+    const ended = announcement('review-task', 'end');
+
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in review'), [started, note])) },
+      commentPage([ended]),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests).toHaveLength(3);
+    expect(
+      result.out.map((line) => JSON.parse(line)),
+      'the newest marker is the `end` behind the bound, so the task is a candidate again',
+    ).toEqual([{ task: 'ENG-1', skill: 'review-task', role: 'deliver', branch: 'eng-1-a-task' }]);
+  });
+
+  it('reaches the end before deciding, rather than stopping at the first marker it passes', async () => {
+    const first = comment('the first thing said');
+    const started = announcement('test-task', 'start');
+    const ended = announcement('test-task', 'end');
+    const since = comment('a person replying afterwards');
+    const latest = comment('the latest word');
+
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in testing'), [first, started])) },
+      commentPage([ended, since], true, 'cursor-2'),
+      commentPage([latest]),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests, 'every remaining page is read, because each one is newer').toHaveLength(4);
+    expect(result.out.map((line) => JSON.parse(line))).toEqual([
+      { task: 'ENG-1', skill: 'test-task', role: 'deliver', branch: 'eng-1-a-task' },
+    ]);
+  });
+});
+
+// Candidacy is the status *and* the label. The label is tested here rather than expressed in
+// the poll's filter, so an issue that fails it is fetched, declined, and named — the only
+// place a person learns why an issue they moved into the pipeline did nothing.
+describe('an issue in a stage status that is not a task', () => {
+  it('declines an epic, names it, and does not read its comments to do so', async () => {
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-136', 'in progress', [], ['epic']), [comment('epic chatter')])) },
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(result.out, 'an epic has no change and no PR — a stage against one finds nothing to do').toEqual([]);
+    expect(session.requests, 'the gate runs before the comment read, so the fallback never fires').toHaveLength(2);
+    expect(result.err.join('\n')).toContain('ENG-136');
+    expect(result.err.join('\n')).toContain('an epic, not a task');
+  });
+
+  it('declines an issue carrying neither label, and says something different about it', async () => {
+    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-9', 'in design', [], [])) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(result.out).toEqual([]);
+    expect(result.err.join('\n')).toContain('ENG-9');
+    expect(result.err.join('\n'), 'unrefined is a different thing from an epic, and only one is actionable').toContain(
+      'it carries neither the `task` nor the `epic` label',
+    );
+  });
+
+  it('accounts for the non-tasks alongside the candidates in one report', async () => {
+    const session = script(
+      { body: TEAM },
+      {
+        body: polled(
+          issueNode('ENG-163', 'in progress'),
+          issueNode('ENG-136', 'in progress', [], ['epic']),
+          issueNode('ENG-133', 'in progress', [], ['epic']),
+        ),
+      },
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(result.out.map((line) => JSON.parse(line)), 'only the task runs').toEqual([
+      { task: 'ENG-163', skill: 'implement-task', role: 'dev', branch: 'eng-163-a-task' },
+    ]);
+    const report = result.err.join('\n');
+    for (const identifier of ['ENG-163', 'ENG-136', 'ENG-133']) expect(report, identifier).toContain(identifier);
+  });
+
+  // A project made entirely of epics is not a pipeline with work in it, and the cap exists
+  // to ration sessions rather than to ration reading.
+  it('spends no concurrency on an issue it declined for not being a task', async () => {
+    const session = script(
+      { body: TEAM },
+      {
+        body: polled(
+          issueNode('ENG-136', 'in progress', [], ['epic']),
+          issueNode('ENG-133', 'in review', [], ['epic']),
+          issueNode('ENG-163', 'in testing'),
+        ),
+      },
+    );
+    const result = await jenRun(['--concurrency', '1'], ENV, session);
+
+    expect(result.out.map((line) => JSON.parse(line))).toEqual([
+      { task: 'ENG-163', skill: 'test-task', role: 'deliver', branch: 'eng-163-a-task' },
+    ]);
   });
 });
 

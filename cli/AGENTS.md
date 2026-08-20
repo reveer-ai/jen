@@ -137,13 +137,56 @@ tracker agent's own comments, and the tick has no agent identity to compare agai
 receives a team and a project and nothing else, by requirement. Establishing one would cost
 a third query for a `viewer` id, to defend against a human hand-pasting an HTML comment.
 
-## Comment ordering is assumed newest-first and sorted anyway
+## The comment page proves its own order rather than trusting the documented one
 
-The poll asks for `orderBy: createdAt` and the client sorts the page descending regardless.
-The sort cannot rescue a page that came back oldest-first — the bound would already have
-cut off every recent comment — so it is a stable contract for consumers, not a guard. What
-would catch a wrong assumption is a real tick against real data, which is task 5.5 and has
-not run: no tracker credential exists in this repository or in a design session.
+This is the section that reads like defensive noise until you know what it is defending
+against, so the failure comes first. The in-flight test looks at the most recent marked
+comment and nothing else. If a bounded page of ten comments came back *oldest*-first, every
+announcement a long-running task has ever carried sits behind the bound, the task reads as
+never announced, and a session is dispatched against it on every tick — forever, with no
+error anywhere, and doing real work each time. Nothing degrades. It just never stops.
+
+Linear documents `orderBy: createdAt` as descending and `linear.ts` requests it explicitly.
+That is not evidence, and sorting the page afterwards is not a guard: a sort orders what came
+back and says nothing about what stayed behind the bound. So `holdsNewest` makes the page
+carry its own — the first `createdAt` against the last says which way the connection runs.
+Descending with more behind it means this page is the newest and costs nothing; ascending
+means it is the oldest; too short or tied to tell means unproven, which is treated as
+oldest. A page with nothing behind it is the whole record either way.
+
+`established` in `run.ts` is two loops because the two cases need different ones, and this
+is the part worth reading before editing it. From a page known to be the newest, every
+further page is strictly older, so the first marker found walking backward is the most recent
+one and the walk stops there. From a page that is *not* known to be the newest, paging
+forward walks toward newer comments — stopping at the first marker would settle on a stale
+one, so the walk has to reach the end before anything is read out of it. Collapsing these
+into one loop reintroduces exactly the bug the evidence exists to prevent.
+
+The check is a comparison, not a judgment, so the dispatch path keeps its property that two
+ticks over identical state reach identical conclusions. It costs a request only where the
+assumption is actually violated. **Do not replace it with a one-off verification against the
+live API**: that settles the question for one identity at one moment and re-opens it
+silently, which is the worst shape a check can have when the failure it guards is invisible.
+
+## A candidate is a task, and the label is a gate rather than a filter
+
+Candidacy is the status *and* the `task` label. The first live tick against jen's own
+project dispatched three issues and two were epics — ENG-136 and ENG-133 sit in stage
+statuses as a matter of course, because their children are what is moving. A stage dispatched
+against an epic spends a whole session establishing there is nothing to implement, and marks
+the epic in flight while it does.
+
+The label is tested in the tick, in `notATask`, and deliberately **not** put in the poll's
+server-side filter even though that would be free. Filtering means the issue is never
+fetched, so it can never appear in the report — and a person who moved an issue into a stage
+status and saw nothing happen would have nowhere at all to find out why. Silence there is
+indistinguishable from a pipeline with nothing to do. Fetching a handful of epics costs
+nothing against a poll measured at 7 points.
+
+`EPIC_LABEL` is read only to tell one decline from the other in the report. Candidacy rests
+on `TASK_LABEL` alone, so an issue carrying neither label never dispatches — which is a real
+behaviour change for a human-created issue moved straight into `In Design`, and the intended
+one. The gate runs before the comment read, so a non-task never triggers the paging fallback.
 
 ## The status table is a second statement of the workflow's, held by a test
 
