@@ -102,3 +102,165 @@ cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-*.tgz && npx
 `npm pack` runs `prepack`, so the tarball is built and staged by construction — running the CLI out of the working tree skips staging and proves nothing about what ships.
 
 **`openspec init` writes into `.claude/skills/` too.** Its nine `openspec-*` skills land beside jen's, at exactly the depth reconciliation searches, and survive `jen update` only because they carry no stamp. Deletion must stay the stamp intersected with the payload: rewrite it as "whatever is in the target directory that the payload does not ship" and every one of them disappears on the next update. `messyProject` carries one by hand for that reason — the fixtures never run the delegation that would put them there for real, so without it the widened rule passes every unit test.
+
+## The tick writes nothing, and that is why the announcement is the session's
+
+`run.ts` reads, decides, prints, and exits. No tracker mutation, no git-host call, no file
+— which is what makes it safe to run at any time, twice, and before `ENG-164` exists to
+consume anything it emits. `test/dispatch.test.ts` holds it both ways: every document the
+tick sends must parse as a `query`, and the modules on its path must import nothing from
+`node:fs`. Adding a write here is not a small change; it is the property being protected.
+
+The cost of that is worth stating, because it looks like an oversight. The comment marking
+a task as taken is written by the **session**, once it is up, rather than by the dispatcher
+at dispatch time. So a session that dies between being emitted and announcing itself leaves
+no evidence it was started, and the next tick emits it again. The window is process start to
+first tracker write — seconds against a session that runs for minutes — and the concurrency
+cap bounds how many can sit in it at once. Closing it would mean the tick writes, and a
+writing tick is permanent where this hole is bounded and self-correcting.
+
+The exposed failure with no backstop at all is a stage that *forgets* its announcement: it
+is re-dispatched every tick and does real work each time. There is no failure counter to
+catch it, deliberately. The announcement being the first thing a session does is the whole
+mitigation.
+
+## The in-flight test ignores the marker's stage, on purpose
+
+`inFlight` takes the most recent comment carrying a `jen:run` marker and answers on its
+`event` alone. It does **not** check that the marker's `stage=` matches the stage the task's
+current status maps to, and it must not start: a session that has already moved the status
+and is still writing its closing comment is a session still working the task, and matching
+on stage would dispatch the next stage on top of it.
+
+It also does not filter by comment author. `design.md` describes the test as reading the
+tracker agent's own comments, and the tick has no agent identity to compare against — it
+receives a team and a project and nothing else, by requirement. Establishing one would cost
+a third query for a `viewer` id, to defend against a human hand-pasting an HTML comment.
+
+## The comment page proves its own order rather than trusting the documented one
+
+This is the section that reads like defensive noise until you know what it is defending
+against, so the failure comes first. The in-flight test looks at the most recent marked
+comment and nothing else. If a bounded page of ten comments came back *oldest*-first, every
+announcement a long-running task has ever carried sits behind the bound, the task reads as
+never announced, and a session is dispatched against it on every tick — forever, with no
+error anywhere, and doing real work each time. Nothing degrades. It just never stops.
+
+Linear documents `orderBy: createdAt` as descending and `linear.ts` requests it explicitly.
+That is not evidence, and sorting the page afterwards is not a guard: a sort orders what came
+back and says nothing about what stayed behind the bound. So `holdsNewest` makes the page
+carry its own — the first `createdAt` against the last says which way the connection runs.
+Descending with more behind it means this page is the newest and costs nothing; ascending
+means it is the oldest; too short or tied to tell means unproven, which is treated as
+oldest. A page with nothing behind it is the whole record either way.
+
+`established` in `run.ts` is two loops because the two cases need different ones, and this
+is the part worth reading before editing it. From a page known to be the newest, every
+further page is strictly older, so the first marker found walking backward is the most recent
+one and the walk stops there. From a page that is *not* known to be the newest, paging
+forward walks toward newer comments — stopping at the first marker would settle on a stale
+one, so the walk has to reach the end before anything is read out of it. Collapsing these
+into one loop reintroduces exactly the bug the evidence exists to prevent.
+
+The check is a comparison, not a judgment, so the dispatch path keeps its property that two
+ticks over identical state reach identical conclusions. **Do not replace it with a one-off
+verification against the live API**: that settles the question for one identity at one moment
+and re-opens it silently, which is the worst shape a check can have when the failure it guards
+is invisible.
+
+**What the fallback costs is `COMMENT_PAGE_BUDGET` requests for that issue, not one.** Neither
+walk ends on its own in the case that matters. The backward one stops at the first marker, so a
+task that has been through a session once is cheap forever after — but a task nothing has ever
+announced against has no marker anywhere, and the walk drains its whole record. The forward one
+has no early exit *at all*, by construction: stopping early is the bug it was split out to
+avoid. So if the connection ever does come back ascending, every issue past one page would
+re-read its entire history on every tick, forever, growing with the discussion rather than
+settling. The budget is what makes that a bounded cost instead of an unbounded one.
+
+Exhausting the budget **declines the candidate**; it never falls through to `inFlight(…) ??
+false`. "Not in flight" is what dispatches, so reading an unfinished record as idle would start
+a session on top of a live one — the same failure the ordering evidence exists to prevent,
+reached from the other side. The decline says `unproven` and names `--comment-page`, which is
+the operator's lever: raising it moves how far the same number of requests reaches, which is
+why the budget itself is not a second flag.
+
+## A candidate is a task, and the label is a gate rather than a filter
+
+Candidacy is the status *and* the `task` label. The first live tick against jen's own
+project dispatched three issues and two were epics — ENG-136 and ENG-133 sit in stage
+statuses as a matter of course, because their children are what is moving. A stage dispatched
+against an epic spends a whole session establishing there is nothing to implement, and marks
+the epic in flight while it does.
+
+The label is tested in the tick, in `notATask`, and deliberately **not** put in the poll's
+server-side filter even though that would be free. Filtering means the issue is never
+fetched, so it can never appear in the report — and a person who moved an issue into a stage
+status and saw nothing happen would have nowhere at all to find out why. Silence there is
+indistinguishable from a pipeline with nothing to do. Fetching a handful of epics costs
+nothing against a poll measured at 7 points.
+
+`EPIC_LABEL` is read only to tell one decline from the other in the report. Candidacy rests
+on `TASK_LABEL` alone, so an issue carrying neither label never dispatches — which is a real
+behaviour change for a human-created issue moved straight into `In Design`, and the intended
+one. The gate runs before the comment read, so a non-task never triggers the paging fallback.
+
+## The status table is a second statement of the workflow's, held by a test
+
+`stages.ts` restates the stage table in the root `AGENTS.md`, and cannot do otherwise — the
+tick reads no files, and the scheduled runner never checks the repository out. So the
+mitigation is `test/stages.test.ts`, which parses the table out of `AGENTS.md` and asserts
+the compiled one matches, in the idiom `payload.test.ts` uses for the scaffold's skill
+references. Same for the announcement marker, which has seven statements: six skills and
+`MARKER`. Edit either statement and CI fails here, which is where both of them live.
+
+Candidacy is an allow list for the same reason it is everywhere else in this file: a team
+will add statuses jen has never heard of, and the failure mode of a deny list is dispatching
+a stage against a task in a status nobody intended.
+
+## The client names every field, so drift fails loudly
+
+`linear.ts` writes out each field it wants rather than reaching for a fragment or the SDK's
+generated documents. A removed field then fails at the tick with the tracker's own message.
+The failure this avoids is the quiet one: an empty candidate set is indistinguishable from a
+healthy quiet pipeline, so a client that swallowed a query error would report a working
+dispatcher for exactly as long as nobody went looking. Every error path raises; none returns
+an empty result.
+
+`RATELIMITED` arrives as HTTP 400 with the code in the body rather than as a 429, so it is
+matched by code and not by status. There is no retry anywhere in the client: the pipeline's
+answer to a failed tick is the next tick.
+
+## Every bounded connection asks for `pageInfo`, and something reports the truncation
+
+Four connections in `linear.ts` are bounded — the team's statuses, the project's issues, an
+issue's labels, an issue's comments — and each one asks for `pageInfo { hasNextPage }` beside
+its nodes. Add a fifth and it carries the flag too.
+
+This is the same failure as the swallowed query error, one level down. A bound with no flag
+cannot tell a short answer from a truncated one, so a project with more issues in stage
+statuses than the page holds loses the overflow entirely: not dispatched, not declined, not
+named anywhere, nothing errors, exit 0. That is indistinguishable from a healthy quiet
+pipeline, which is precisely the shape this client exists to refuse.
+
+The tick does not *page* any of them, and does not need to. What it owes a person is that the
+report account for everything sitting in a stage's status, and a `note` line naming the bound
+satisfies that where paging would make every tick's cost scale with a project's backlog. What
+each truncation changes is a claim:
+
+| Connection | What silence would have asserted |
+|---|---|
+| statuses | that the team has no `Pending`, or none of a stage status — when neither was read |
+| issues | that the pipeline is quiet |
+| labels | that nothing has refined the issue |
+| comments | that no session is working the task — the one that dispatches |
+
+Only the last can start a session on wrong evidence, which is why only the last declines
+rather than annotates. The other three report and carry on.
+
+## `run()` hands back a number or a promise
+
+`jen run` is the first asynchronous command. `cli.run` returns `number | Promise<number>`
+rather than widening `init` and `update`, which are synchronous and whose callers depend on
+it — `test/install.test.ts` narrows the union at its one call site rather than casting, so an
+installer that quietly became asynchronous fails loudly instead of comparing a pending
+promise against an exit code.

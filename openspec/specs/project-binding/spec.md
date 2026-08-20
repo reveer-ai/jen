@@ -52,11 +52,13 @@ Binding SHALL establish which team and which project the repository's work is tr
 
 ### Requirement: The pipeline's statuses are verified, never created or mapped
 
-Binding SHALL verify that the tracker's team carries every status the `task-pipeline` capability names — the status that triggers each stage, together with `Backlog` and `Todo`. Comparison SHALL be case-insensitive, so a team whose statuses differ from the workflow document only in capitalization is already correct.
+Binding SHALL verify that the tracker's team carries every status the `task-pipeline` capability names — the status that triggers each stage, together with `Backlog`, `Todo`, and `Pending`. Comparison SHALL be case-insensitive, so a team whose statuses differ from the workflow document only in capitalization is already correct.
 
 Binding SHALL NOT create a status, rename one, delete one, or record any mapping from a status the workflow names onto a differently-named status the team already has. A bound project's tracker carries the statuses the workflow names; the workflow does not adapt to the tracker's.
 
 When a status is absent, binding SHALL report exactly which ones are missing and SHALL NOT report the project as ready for the pipeline. Reporting a missing status SHALL NOT prevent the rest of the binding from completing, so that a re-run resumes rather than restarts.
+
+A project already bound before `Pending` joined the pipeline SHALL report it as missing on the next binding run, in the same way as any other absent status, rather than being reported as ready.
 
 #### Scenario: Every status is present
 
@@ -74,6 +76,13 @@ When a status is absent, binding SHALL report exactly which ones are missing and
 
 - **WHEN** the team carries no status corresponding to `In Testing`
 - **THEN** binding names `In Testing` as missing
+- **AND** does not report the project as ready for the pipeline
+- **AND** creates no status
+
+#### Scenario: A previously bound project lacks `Pending`
+
+- **WHEN** binding runs against a project bound before `Pending` was part of the pipeline
+- **THEN** it names `Pending` as missing
 - **AND** does not report the project as ready for the pipeline
 - **AND** creates no status
 

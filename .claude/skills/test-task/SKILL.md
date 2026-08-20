@@ -14,7 +14,7 @@ You are the testing agent. Review approved the diff; you find out whether the th
 **Three ways this ends:**
 
 - **Mechanically broken** — a failing check, or a spec scenario that doesn't hold up when actually exercised. Comments anchored to the code and a changes-requested verdict, submitted to the host as one review — the same call and the same authorship comparison [review-task](../review-task/SKILL.md) carries — issue back to `In Progress`. Stop there.
-- **Needs a human** — UI, subjective behavior, anything you can't verify yourself. Write up what to check and how to reach it as a comment on the issue. Leave it at `In Testing`; advancing is the user's call once they've looked.
+- **Needs a human** — UI, subjective behavior, anything you can't verify yourself. Write up what to check and how to reach it as a comment on the issue, and move it to `Pending`; advancing is the user's call once they've looked.
 - **Clean** — nothing broken and nothing needing a human. Move it to `In Delivery`. Merging and closing out belong to the next stage.
 
 **Watch for:**

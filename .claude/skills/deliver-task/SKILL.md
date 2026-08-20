@@ -22,10 +22,10 @@ Everything you write rides in the task's existing PR — not a separate review c
 
 **Archiving is `openspec-archive-change`'s job, not yours to hand-roll.** It already verifies artifact completion, counts `tasks.md` checkboxes, works out which delta specs are genuinely unapplied before syncing, and refuses to overwrite an existing archive target — against the real resolved paths, not assumed ones. What it doesn't have is a user to answer its prompts, so decide them yourself:
 
-- **Incomplete artifacts or unchecked tasks** — don't confirm through. Something is wrong this late in the pipeline: comment on the issue explaining what's incomplete, and stop.
+- **Incomplete artifacts or unchecked tasks** — don't confirm through. Something is wrong this late in the pipeline: comment on the issue explaining what's incomplete, move it to `Pending`, and stop.
 - **The sync prompt** — take its recommendation. It has already compared the deltas against the main specs and knows what's applied; syncing applied deltas is prose editing over itself and corrupts them.
-- **An archive target that already exists** — a collision, not something to retry around. Comment on the issue and stop.
+- **An archive target that already exists** — a collision, not something to retry around. Comment on the issue, move it to `Pending`, and stop.
 
 **Merging**: resolve mechanical conflicts yourself by pulling `main` into the branch. If a conflict needs a real implementation decision, or checks still fail after resolving, that's a blocker — comment on the issue, move it back to `In Progress`, and stop.
 
-**Done when** the PR is merged, the branch is deleted, the issue is `Done`, and its epic is rolled up if this closed the last of them.
+**Done when** the PR is merged, the branch is deleted, the issue is `Done`, and its epic is rolled up if this closed the last of them. Anything that stops you short of that goes to `Pending` unless it's work for a stage behind you.

@@ -16,24 +16,28 @@ Linear projects and repositories aren't 1:1 — multiple Linear projects can, an
 
 # Artifact progression
 
-OpenSpec drives spec-driven development through an ordered set of artifact stages, defined by whatever schema the project uses. A task's status mirrors its current stage, and moving a task to its next status is the trigger for an agent to do that stage's work.
+OpenSpec drives spec-driven development through an ordered set of artifact stages, defined by whatever schema the project uses. A task's status mirrors its current stage, and a task sitting in a stage's status is the trigger for an agent to do that stage's work.
 
 Each task carries one branch and one PR from end to end. The PR opens during design, holding nothing but the OpenSpec artifacts; implementation, review fixes, and test fixes all land on that same PR; merging it is the pipeline's last act and what closes the task out. Specs and code are reviewed together, in one place.
 
 # Stages
 
-One skill per stage, each triggered by the task moving into that stage's status.
+One skill per stage, each triggered by the task sitting in that stage's status.
 
 | Status | Skill | Work | Hands off |
 |---|---|---|---|
 | — | `refine-epic` | Turn an idea into an epic and its sub-issue tasks | tasks land in `Todo` |
-| `In Design` | `design-task` | Create the OpenSpec artifacts, open the draft PR, sync each artifact to the issue | stays at `In Design` — the user promotes |
-| `In Progress` | `implement-task` | Implement `tasks.md`, write unit tests, mark the PR ready for review | → `In Review` |
-| `In Review` | `review-task` | Review the diff against its own design — correctness, security, quality | → `In Testing`, or back to `In Progress` |
-| `In Testing` | `test-task` | Exercise the change for real beyond unit scope; route anything only a human can judge | → `In Delivery`, or back to `In Progress` |
-| `In Delivery` | `deliver-task` | Sync specs, archive the change, merge the PR | → `Done` |
+| `In Design` | `design-task` | Create the OpenSpec artifacts, open the draft PR, sync each artifact to the issue | → `Pending` — the user promotes |
+| `In Progress` | `implement-task` | Implement `tasks.md`, write unit tests, mark the PR ready for review | → `In Review`, or `Pending` |
+| `In Review` | `review-task` | Review the diff against its own design — correctness, security, quality | → `In Testing`, back to `In Progress`, or `Pending` |
+| `In Testing` | `test-task` | Exercise the change for real beyond unit scope; route anything only a human can judge | → `In Delivery`, back to `In Progress`, or `Pending` |
+| `In Delivery` | `deliver-task` | Sync specs, archive the change, merge the PR | → `Done`, or `Pending` |
 
-`Backlog` holds unrefined placeholders; `Todo` holds refined tasks, ready to design. Two transitions are the user's, and no stage makes either: `Todo` → `In Design`, which starts design, and `In Design` → `In Progress`, which starts implementation. Design leaves the task where it found it. The pipeline drives itself from `In Progress` onward.
+Every session ends in one of exactly two ways: it moves the task to the next stage's status, or it moves the task to `Pending`. No stage ever finishes leaving the task in its own status. So a task found in a stage's status is one a session is working or one a session died working — never one at rest — and that is what makes presence a sound trigger.
+
+`Pending` means the task is a human's. It's where a stage puts anything only a person can settle: a decision the stage can't make, a blocker it can't clear, work that's finished and needs a person before it goes on, or a task it judges should stop circling. The status carries only that a human is needed, so the comment that accompanies the move is what says which.
+
+`Backlog` holds unrefined placeholders; `Todo` holds refined tasks, ready to design. Two transitions are the user's, and no stage makes either: `Todo` → `In Design`, which starts design, and `Pending` → `In Progress`, which starts implementation. The pipeline drives itself from `In Progress` onward.
 
 Design confirms with the user before each artifact when confirmation is available to it. When it isn't, design writes the set without confirming and the draft PR carries the confirmation afterward. Which one applies is discovered from whether asking works, never read from a flag or an environment variable.
 
@@ -85,8 +89,16 @@ Shared by every stage, so no stage restates them.
   `gh pr comment` is not this: it takes no path or line and posts to the conversation, which is the unanchored comment the anchor was for. It's the wrong answer where an anchor is possible, which is what makes the issue the right one where an anchor isn't. Anchoring costs one empty-bodied `COMMENTED` review in the PR's reviews listing — the host wraps every standalone comment in one. It is an artifact of the endpoint, never a verdict, and a stage reading that listing for a verdict reads the body.
 - **Verdicts and merges.** Of the six stages, only review-task submits an approving review, and only deliver-task merges. This is the one rule here the host does not enforce for us: the branch can ask for an approval and cannot ask *which* identity gives it. design-task is excluded whatever it does, since the host refuses a review from a pull request's own author and design opened it — but implement-task holds the same pull-request write access the reviewer does, and nothing on the branch stands between it and approving what it just pushed. Its restraint is the rule. A breach isn't silent, though: each stage acts under its role's own identity, so an approval from the implementing role reads as the wrong actor in the PR timeline. That timeline is where this gets audited, not the branch protection.
 - **Notes as you work.** A convention this change establishes, or a gotcha a future session would otherwise rediscover the hard way, goes in the AGENTS.md nearest the code it applies to — written by the stage that learned it, at the point it learned it, so it rides in the diff and gets reviewed and tested like everything else. Never the root AGENTS.md: that's the workflow, and the next `jen update` replaces it wholesale — a note written there isn't impolite, it's lost. They live at or below `src/`, as deep as the thing they describe. Skip it when nothing clears the bar — a note nobody needed is worse than no note.
-- **Comment at the end of every session.** Whatever the outcome — finished, stopped early, or blocked — comment on the issue before you exit. Never finish silently, including when nothing went wrong. Carry what the stage did, what it decided, where it stopped and why, and what the next stage picks up; a bare "done" satisfies the letter of this and is worth nothing. This is what makes a finished run distinguishable from a crashed one, since both leave the status untouched. Its absence is how the next stage knows a run died mid-work and every marker on the task is unverified.
-- **No stage waits on a human.** A run may have nobody watching it, and a denied question is not a prompt you can wait out. What needs a human goes on the Linear issue or the PR, anchored to what it concerns, and the run stops cleanly — leaving the status truthful about where the work actually stands.
+- **Announce yourself before you act.** Comment on the issue before you produce anything — which stage is running, and that you've picked the task up. Carry this marker in that comment, exactly as written, with `<skill>` replaced by your own skill name:
+
+  ```
+  <!-- jen:run stage=<skill> event=start -->
+  ```
+
+  and its counterpart, `event=end`, in the comment you finish with. That pairing is the whole of it: the dispatcher reads the most recent marked comment on a task and dispatches nothing while it says `start`. Nothing writes the announcement on your behalf — the dispatcher writes nothing at all — so a stage that skips it is dispatched again on the next tick, and again after that, doing real work each time. An announcement you find already on a task is a claim like any other completion marker, not proof; establish from the evidence what that run actually did.
+- **Comment at the end of every session.** Whatever the outcome — finished, stopped early, or blocked — comment on the issue before you exit. Never finish silently, including when nothing went wrong. Carry what the stage did, what it decided, where it stopped and why, and what the next stage picks up; a bare "done" satisfies the letter of this and is worth nothing. Where you parked the task at `Pending`, this comment is the only thing carrying *why* — the status can't express it. An announcement with no closing comment after it is a session that died, and the task still sitting in that stage's own status says the same thing: a stage re-entering it reads that pairing as an interrupted run whose markers are all unverified.
+- **Don't route a task back for something that already sent it back.** Before routing backward, read what the record says sent the task back before. Where the objection you're about to raise is one that has already returned it once, move it to `Pending` instead and name in your comment what sent it back each round. Judging whether two objections are the same one is yours — you're reading the record anyway, and no dispatcher can make that comparison by counting transitions.
+- **No stage waits on a human.** A run may have nobody watching it, and a denied question is not a prompt you can wait out. What needs a human goes on the Linear issue or the PR, anchored to what it concerns; then move the task to `Pending` and stop. Leaving it in your own status would tell the pipeline a session is still working it.
 
 # Resources
 
