@@ -1,5 +1,45 @@
 # @reveer/jen
 
+## 0.2.0
+
+### Minor Changes
+
+- [#11](https://github.com/reveer-ai/jen/pull/11) [`1280f80`](https://github.com/reveer-ai/jen/commit/1280f80eb8c22d81166bbbeed4d431cf03c2a280) Thanks [@joshtgi](https://github.com/joshtgi)! - Harden the stages for unattended runs.
+
+  Every stage is now re-enterable: each one states what a killed run can leave behind, and treats a completion marker as a claim to check against the commits, the PR, and the threads rather than as proof. Every session ends with a comment on the task, which is what makes a finished run distinguishable from a crashed one.
+
+  `design-task` no longer requires a user. It confirms before each artifact when confirmation is available and otherwise writes the set and lets the draft PR carry the confirmation, discovering which applies rather than reading a flag. It also stops advancing the task: design ends at `In Design`, and promoting to `In Progress` is the user's call, alongside `Todo` → `In Design`.
+
+  `test-task` no longer blocks on a missing staging routine. Staging leaves the stage entirely and gets its own task; what remains is the full suite, the integration and e2e checks the project defines beyond unit scope, and the spec's scenarios worth confirming end to end.
+
+  The churn ceiling leaves the skills for the dispatcher to enforce, replaced by reading the task's record on entry as context.
+
+  The scaffold's `.claude/settings.json` now permits the standard check-script names alongside `git`, `gh`, and `openspec`, and the README states which permissions an adopter has to add themselves — an existing install has to be edited by hand, since jen never rewrites that file.
+
+- [#14](https://github.com/reveer-ai/jen/pull/14) [`784ff5e`](https://github.com/reveer-ai/jen/commit/784ff5e9433f7e76021a9b351eb800869550b0de) Thanks [@joshtgi](https://github.com/joshtgi)! - `jen run` — one dispatch pass over the tracker, and the `Pending` status that makes it possible.
+
+  The pipeline gains a status. Every stage now ends in one of exactly two ways: it hands the task to the next stage, or it parks it at `Pending` and says why. No stage finishes leaving a task in its own status, so a task found in a stage status is one a session is working or one a session died working — never one at rest. `design-task` ends at `Pending` rather than resting at `In Design`, and promotion to `In Progress` is still the user's. `Pending` has to exist on the tracker team before any of this works; binding reports it missing rather than creating it, and `jen run` refuses a team without it.
+
+  Every session now announces itself on the task before it produces anything, carrying a `jen:run` marker that its closing comment counterparts. That pairing is what tells a dispatcher a task is being worked, since the status alone stays actionable right up until the stage moves it.
+
+  `jen run` performs a single poll-map-gate-dispatch pass and exits. The loop belongs to whatever runner drives it, so a scheduled job and a long-running local process are both thin wrappers over the same entry point. It polls the tracker for issues sitting in a stage status, maps each to a skill and an identity role from a compiled table, declines anything a session has announced itself against or that would exceed the concurrency cap, prints a run request per dispatch to stdout as JSON, and writes its report to stderr — so `jen run | executor` works with no flag.
+
+  The tick writes nothing: not to the tracker, not to the git host, not to the filesystem. It is safe to run at any time, twice, and before anything exists to consume what it emits. Its credential and its project identity both arrive from the environment or as flags and are never read from a file, and a run leaves nothing behind on the host.
+
+  `init` and `update` are unchanged and stay filesystem-only.
+
+- [#9](https://github.com/reveer-ai/jen/pull/9) [`44d99ef`](https://github.com/reveer-ai/jen/commit/44d99efc3791463b12a2634ec119a8f7504df3ed) Thanks [@joshtgi](https://github.com/joshtgi)! - Teach `setup-jen` to establish the identities the pipeline acts under, and document them in the `registry.yaml` stub. A pipeline that authenticates as the person who launched it cannot review its own work — GitHub refuses a review from a pull request's own author — so the review stage records advisory prose where a merge gate belongs.
+
+  Binding now covers four identities: a GitHub App per role in your own organization — `design` for `design-task`, `dev` for `implement-task`, `deliver` for `review-task`, `test-task`, and `deliver-task` — and one Linear agent shared by all six stages. Each is registered by you, on the host, with the skill pre-filling what it can and then verifying what was actually granted rather than that something exists: an App created with no repository permissions installs cleanly and mints tokens that can do nothing, and nothing downstream reports it. Registration spanning two hosts and four browser visits is expected to take more than one sitting, so a half-registered project is a supported state — the run names exactly what is outstanding, leaves what exists alone, and completes the rest of the binding.
+
+  `setup-jen` also checks that your default branch requires **at least one approving review** before a pull request may merge, which is what makes a review verdict load-bearing rather than advisory. Two settings that look like the obvious next tightening must stay off: requiring the approval to postdate the most recent push, and dismissing stale reviews on push. Either one makes the gate unsatisfiable by any pipeline role — delivery syncs the specs and archives the change before it merges, so the delivering role is the last pusher on every pull request it completes, and every task would park waiting on an approval nothing can give. The skill reads both, reports a branch carrying either as _not_ satisfying the gate, and never turns one on. It presents the exact change and applies it only if you agree; declining leaves the gate reported as outstanding.
+
+  One approval from anyone with write access is the whole of what a branch can be asked for. The host's protections subtract actors from the eligible set — the author, and optionally the last pusher — and cannot name an approver, so **which** role approves and which merges is workflow convention rather than branch configuration: it is stated once in `AGENTS.md` and honoured by the stages, and nothing rejects a breach. This is the one place the change accepts less than it set out to. It is visible rather than silent — the roles are distinct identities, so the approving identity is on the pull request timeline — but the timeline is where you would have to look, and a reader who assumes the branch enforces it never would.
+
+  No credential is written to `registry.yaml` or to any other file. The registry names identities; your environment supplies what authenticates them.
+
+  Projects already on jen pick this up with `jen update`, and then a re-run of `setup-jen`. If you registered the applications under an earlier version, that re-run reports what the granted permissions are missing against the current table rather than assuming they are still right — worth doing, because a missing permission is silent until the first task that needs it.
+
 ## 0.1.0
 
 ### Minor Changes
