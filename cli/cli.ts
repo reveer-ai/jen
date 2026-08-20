@@ -34,12 +34,14 @@ Commands:
   run       one dispatch pass over the tracker: poll, map, gate, emit, exit
 
 Options:
-      --force      on init, overwrite a file jen owns wholesale that the project already has
-      --team       on run, the tracker team to act on (or JEN_TEAM)
-      --project    on run, the tracker project to act on (or JEN_PROJECT)
-      --concurrency   on run, simultaneous runs to allow (default ${DEFAULTS.concurrency})
-  -h, --help       show this message
-  -v, --version    show the installed version
+      --force          on init, overwrite a file jen owns wholesale that the project already has
+      --team           on run, the tracker team to act on (or JEN_TEAM)
+      --project        on run, the tracker project to act on (or JEN_PROJECT)
+      --concurrency    on run, simultaneous runs to allow (default ${DEFAULTS.concurrency})
+      --issue-page     on run, issues to read in one poll (default ${DEFAULTS.issuePageSize})
+      --comment-page   on run, comments to read per issue at a time (default ${DEFAULTS.commentPageSize})
+  -h, --help           show this message
+  -v, --version        show the installed version
 
 \`project\` defaults to the working directory. jen writes the workflow document, the
 ${SKILLS.length} skills it ships, and a scaffold the project then owns; it touches nothing else. Neither
@@ -48,7 +50,10 @@ command prompts, and both are safe to re-run and safe in CI.
 \`run\` takes no project path and reads no file — it is told which team and project to act
 on, reads its tracker credential from ${TOKEN_VARIABLE}, and writes nothing anywhere. Run
 requests go to stdout as one JSON object per line and the report goes to stderr, so
-\`jen run | executor\` works with no flag.`;
+\`jen run | executor\` works with no flag.
+
+Every page \`run\` reads is bounded, and the report says so wherever a bound cut the answer
+short — \`--issue-page\` and \`--comment-page\` are what you raise when it does.`;
 
 export interface Io {
   out(line: string): void;

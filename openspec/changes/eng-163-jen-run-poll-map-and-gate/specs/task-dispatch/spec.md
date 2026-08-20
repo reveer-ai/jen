@@ -139,6 +139,12 @@ An announcement SHALL NOT expire. A task in a stage's status whose session annou
 - **THEN** the tick still establishes the most recent announcement
 - **AND** it does so whichever order the tracker returned the page in
 
+#### Scenario: The record is longer than the tick will read
+
+- **WHEN** a task's record runs past the pages one tick reads for a single task
+- **THEN** the tick declines it and reports that whether a session is working it is unproven
+- **AND** it does not dispatch, because a record it could not finish reading is not evidence that nothing is working the task
+
 #### Scenario: A task re-enters a stage it was in before
 
 - **WHEN** a task is moved back into a status a session previously announced itself against
@@ -179,6 +185,12 @@ Running the tick SHALL therefore answer what the pipeline would do at that momen
 - **WHEN** a tick sees an issue in a stage's status that carries no `task` label
 - **THEN** the report names it and says it was declined for not being a task
 - **AND** nothing about it is dispatched
+
+#### Scenario: A bounded read did not reach everything
+
+- **WHEN** more issues sit in a stage's status than the tick's page bound reads
+- **THEN** the report says the remainder was not examined
+- **AND** it does not pass over them in silence, which would be indistinguishable from a pipeline with nothing to do
 
 #### Scenario: A tick is run by hand
 

@@ -163,10 +163,26 @@ one, so the walk has to reach the end before anything is read out of it. Collaps
 into one loop reintroduces exactly the bug the evidence exists to prevent.
 
 The check is a comparison, not a judgment, so the dispatch path keeps its property that two
-ticks over identical state reach identical conclusions. It costs a request only where the
-assumption is actually violated. **Do not replace it with a one-off verification against the
-live API**: that settles the question for one identity at one moment and re-opens it
-silently, which is the worst shape a check can have when the failure it guards is invisible.
+ticks over identical state reach identical conclusions. **Do not replace it with a one-off
+verification against the live API**: that settles the question for one identity at one moment
+and re-opens it silently, which is the worst shape a check can have when the failure it guards
+is invisible.
+
+**What the fallback costs is `COMMENT_PAGE_BUDGET` requests for that issue, not one.** Neither
+walk ends on its own in the case that matters. The backward one stops at the first marker, so a
+task that has been through a session once is cheap forever after — but a task nothing has ever
+announced against has no marker anywhere, and the walk drains its whole record. The forward one
+has no early exit *at all*, by construction: stopping early is the bug it was split out to
+avoid. So if the connection ever does come back ascending, every issue past one page would
+re-read its entire history on every tick, forever, growing with the discussion rather than
+settling. The budget is what makes that a bounded cost instead of an unbounded one.
+
+Exhausting the budget **declines the candidate**; it never falls through to `inFlight(…) ??
+false`. "Not in flight" is what dispatches, so reading an unfinished record as idle would start
+a session on top of a live one — the same failure the ordering evidence exists to prevent,
+reached from the other side. The decline says `unproven` and names `--comment-page`, which is
+the operator's lever: raising it moves how far the same number of requests reaches, which is
+why the budget itself is not a second flag.
 
 ## A candidate is a task, and the label is a gate rather than a filter
 
@@ -213,6 +229,33 @@ an empty result.
 `RATELIMITED` arrives as HTTP 400 with the code in the body rather than as a 429, so it is
 matched by code and not by status. There is no retry anywhere in the client: the pipeline's
 answer to a failed tick is the next tick.
+
+## Every bounded connection asks for `pageInfo`, and something reports the truncation
+
+Four connections in `linear.ts` are bounded — the team's statuses, the project's issues, an
+issue's labels, an issue's comments — and each one asks for `pageInfo { hasNextPage }` beside
+its nodes. Add a fifth and it carries the flag too.
+
+This is the same failure as the swallowed query error, one level down. A bound with no flag
+cannot tell a short answer from a truncated one, so a project with more issues in stage
+statuses than the page holds loses the overflow entirely: not dispatched, not declined, not
+named anywhere, nothing errors, exit 0. That is indistinguishable from a healthy quiet
+pipeline, which is precisely the shape this client exists to refuse.
+
+The tick does not *page* any of them, and does not need to. What it owes a person is that the
+report account for everything sitting in a stage's status, and a `note` line naming the bound
+satisfies that where paging would make every tick's cost scale with a project's backlog. What
+each truncation changes is a claim:
+
+| Connection | What silence would have asserted |
+|---|---|
+| statuses | that the team has no `Pending`, or none of a stage status — when neither was read |
+| issues | that the pipeline is quiet |
+| labels | that nothing has refined the issue |
+| comments | that no session is working the task — the one that dispatches |
+
+Only the last can start a session on wrong evidence, which is why only the last declines
+rather than annotates. The other three report and carry on.
 
 ## `run()` hands back a number or a promise
 

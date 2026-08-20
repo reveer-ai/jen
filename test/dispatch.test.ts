@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
 import type { Transport } from '../cli/linear.js';
-import { decide, inFlight, type Examined } from '../cli/run.js';
+import { COMMENT_PAGE_BUDGET, decide, inFlight, type Examined } from '../cli/run.js';
 import { stageFor } from '../cli/stages.js';
 import { repoRoot } from './helpers.js';
 
@@ -32,13 +32,13 @@ function newestFirst(...comments: ReturnType<typeof comment>[]) {
   return [...comments].reverse();
 }
 
-function candidate(identifier: string, status: string, running: boolean): Examined {
+function candidate(identifier: string, status: string, running: boolean | { unreadable: string }): Examined {
   return {
     identifier,
     status,
     branch: `${identifier.toLowerCase()}-a-task`,
     stage: stageFor(status)!,
-    inFlight: running,
+    presence: typeof running === 'boolean' ? { inFlight: running } : running,
   };
 }
 
@@ -140,6 +140,23 @@ describe('the gate', () => {
     expect(outcomes[2]!.verdict).toEqual({ declined: '2 runs are in flight and the cap is 2' });
   });
 
+  // The budget's whole point. "Not in flight" is what dispatches, so a record the tick could
+  // not finish reading must not fall through to it — that would start a session on top of a
+  // live one, which is the failure the ordering evidence exists to prevent, from the far side.
+  it('declines a candidate whose record it could not read, rather than treating it as idle', () => {
+    const [only] = decide([candidate('ENG-1', 'In Progress', { unreadable: 'the record ran on' })], 3);
+    expect(only!.verdict).toEqual({ declined: 'the record ran on' });
+  });
+
+  // It may well be a live session. A spend control that errs should err toward fewer of them.
+  it('counts an unreadable record against the cap', () => {
+    const outcomes = decide(
+      [candidate('ENG-1', 'In Progress', { unreadable: 'unproven' }), candidate('ENG-2', 'In Review', false)],
+      1,
+    );
+    expect(outcomes[1]!.verdict).toEqual({ declined: '1 runs are in flight and the cap is 1' });
+  });
+
   it('reports every candidate it considered, dispatched or not', () => {
     const outcomes = decide([candidate('ENG-1', 'In Progress', true), candidate('ENG-2', 'In Review', false)], 3);
     expect(outcomes.map((outcome) => outcome.identifier)).toEqual(['ENG-1', 'ENG-2']);
@@ -221,6 +238,7 @@ const TEAM = {
           key: 'ENG',
           name: 'eng',
           states: {
+            pageInfo: { hasNextPage: false },
             nodes: [
               { name: 'backlog' },
               { name: 'todo' },
@@ -240,7 +258,12 @@ const TEAM = {
 };
 
 function polled(...nodes: unknown[]) {
-  return { data: { issues: { nodes } } };
+  return { data: { issues: { pageInfo: { hasNextPage: false }, nodes } } };
+}
+
+/** A poll the issue page bound cut short, which is a thing the report has to say out loud. */
+function truncated(...nodes: unknown[]) {
+  return { data: { issues: { pageInfo: { hasNextPage: true }, nodes } } };
 }
 
 function issueNode(
@@ -248,13 +271,14 @@ function issueNode(
   state: string,
   comments: ReturnType<typeof comment>[] = [],
   labels: string[] = ['task'],
+  moreLabels = false,
 ) {
   return {
     id: `id-${identifier}`,
     identifier,
     branchName: `${identifier.toLowerCase()}-a-task`,
     state: { name: state },
-    labels: { nodes: labels.map((name) => ({ name })) },
+    labels: { pageInfo: { hasNextPage: moreLabels }, nodes: labels.map((name) => ({ name })) },
     comments: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: comments },
   };
 }
@@ -461,6 +485,129 @@ describe('establishing the most recent announcement from a bounded page', () => 
     expect(result.out.map((line) => JSON.parse(line))).toEqual([
       { task: 'ENG-1', skill: 'test-task', role: 'deliver', branch: 'eng-1-a-task' },
     ]);
+  });
+});
+
+// Neither walk above ends on its own in the case that matters: the backward one drains the
+// whole record of a task nothing has ever announced against, and the forward one drains it by
+// construction. Uncapped, an ascending connection makes every long-running task re-read its
+// entire history on every tick, forever, growing with the discussion rather than settling.
+describe('the ceiling on how far the fallback will read', () => {
+  /** More pages than any budget will spend, so what stops the walk is the budget and not the script. */
+  function endless(count: number) {
+    return Array.from({ length: count }, (_, index) =>
+      commentPage([comment(`page ${index} of a long discussion`)], true, `cursor-${index + 2}`),
+    );
+  }
+
+  it('stops the backward walk at the budget and declines rather than reporting it idle', async () => {
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(comment('b'), comment('a')))) },
+      ...endless(COMMENT_PAGE_BUDGET + 3),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests, 'the team, the poll, and the budget — and not one page more').toHaveLength(
+      2 + COMMENT_PAGE_BUDGET,
+    );
+    expect(result.out, 'an unread record is not evidence that nothing is working the task').toEqual([]);
+    expect(result.err.join('\n')).toContain('unproven');
+    expect(result.err.join('\n'), 'the operator needs the lever named').toContain('--comment-page');
+  });
+
+  // The expensive branch, and the one the mechanism exists to serve: it cannot exit early
+  // without settling on a stale marker, so without a ceiling it never exits early at all.
+  it('stops the forward walk at the budget too, where there is no early exit to rely on', async () => {
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in review'), [comment('oldest'), comment('newer')])) },
+      ...endless(COMMENT_PAGE_BUDGET + 3),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests).toHaveLength(2 + COMMENT_PAGE_BUDGET);
+    expect(result.out).toEqual([]);
+    expect(result.err.join('\n')).toContain('oldest-first');
+  });
+
+  // The budget is the ceiling, not the reach: `--comment-page` is what moves how far the same
+  // number of requests gets, which is why there is no second flag for the budget itself.
+  it('reads a record that fits inside the budget without declining it', async () => {
+    const session = script(
+      { body: TEAM },
+      { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(comment('b'), comment('a')))) },
+      commentPage([comment('still nothing marked')], true, 'cursor-2'),
+      commentPage([announcement('implement-task', 'end')]),
+    );
+    const result = await jenRun([], ENV, session);
+
+    expect(session.requests).toHaveLength(4);
+    expect(result.out.map((line) => JSON.parse(line))).toEqual([
+      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+    ]);
+  });
+});
+
+// A bound with nothing said about it is the failure this change spends the most effort ruling
+// out: a page that came back short is indistinguishable from a pipeline with nothing in it.
+describe('a bound that cut the answer short', () => {
+  it('names the issues it did not examine rather than exiting 0 over them', async () => {
+    const session = script({ body: TEAM }, { body: truncated(issueNode('ENG-1', 'in progress')) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code, 'the tick cannot act on this, and it is not an error').toBe(0);
+    expect(result.out.map((line) => JSON.parse(line)), 'what it did see is still dispatched').toEqual([
+      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+    ]);
+    const report = result.err.join('\n');
+    expect(report).toContain('more issues are sitting in a stage status than the page bound of 50');
+    expect(report).toContain('--issue-page');
+  });
+
+  it('says nothing about a bound that did not truncate', async () => {
+    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress')) });
+    const result = await jenRun([], ENV, session);
+    expect(result.err.join('\n')).not.toContain('--issue-page');
+  });
+
+  // "The team has no `Pending`" and "no `Pending` was in what the tick read" are different
+  // claims, and only the first is a fact. The refusal stands either way; the message may not.
+  it('refuses a team without `Pending` without asserting more than it read', async () => {
+    const bounded = structuredClone(TEAM);
+    bounded.data.teams.nodes[0]!.states.nodes = [{ name: 'in progress' }];
+    bounded.data.teams.nodes[0]!.states.pageInfo.hasNextPage = true;
+
+    const result = await jenRun([], ENV, script({ body: bounded }));
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('may exist behind that bound');
+  });
+
+  it('does not claim a stage status is absent when the status page was cut short', async () => {
+    const bounded = structuredClone(TEAM);
+    bounded.data.teams.nodes[0]!.states.nodes = [{ name: 'in progress' }, { name: 'Pending' }];
+    bounded.data.teams.nodes[0]!.states.pageInfo.hasNextPage = true;
+
+    const result = await jenRun([], ENV, script({ body: bounded }, { body: polled() }));
+    const report = result.err.join('\n');
+
+    expect(result.code).toBe(0);
+    expect(report).toContain('carries more than 50 statuses');
+    expect(report, 'the absence is of the reading, not of the team').not.toContain('the team carries no `In Design`');
+    expect(report).toContain('no `In Design` status was among the ones read');
+  });
+
+  it('declines an issue whose label page was cut short without claiming nothing refined it', async () => {
+    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-9', 'in design', [], ['urgent'], true)) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.out).toEqual([]);
+    const report = result.err.join('\n');
+    expect(report).toContain('no `task` label was among the 10 labels read');
+    expect(report, 'that claim is about the issue, and a truncated page cannot support it').not.toContain(
+      'nothing has refined it',
+    );
   });
 });
 

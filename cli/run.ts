@@ -12,8 +12,10 @@
  */
 import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './stages.js';
 import {
+  LABEL_PAGE_SIZE,
   newestFirst,
   RateLimited,
+  STATE_PAGE_SIZE,
   Tracker,
   TrackerError,
   TOKEN_VARIABLE,
@@ -57,6 +59,27 @@ export const DEFAULTS = {
   commentPageSize: 10,
 } as const;
 
+/**
+ * How many follow-up pages of one issue's comments a tick will read before giving up on it.
+ *
+ * Every other bound in this change exists to keep the poll cheap; this one exists because
+ * the fallback has no natural end. Both walks in {@link established} can run long — the
+ * backward one drains the whole record of a task nothing has ever announced against, and the
+ * forward one drains it *by construction*, since it cannot exit early without settling on a
+ * stale marker. Left uncapped, an ascending connection would make every long-running task
+ * re-read its entire history on every tick, forever, growing with the discussion.
+ *
+ * Not a flag. `--comment-page` already moves what this reaches — five pages of thirty is
+ * five pages of thirty — and it does so in fewer requests for the same comments read, so a
+ * second lever would only offer the worse way to spend the same budget.
+ *
+ * **Exhausting it declines the candidate; it never falls through to dispatching.** "Not in
+ * flight" is what dispatches, so treating an unreadable record as idle would start a session
+ * on top of a live one — the failure the ordering evidence exists to prevent, arrived at from
+ * the other side. Unproven is reported as unproven, every tick, where a person can see it.
+ */
+export const COMMENT_PAGE_BUDGET = 5;
+
 /** What the executor consumes: one of these per dispatch, as a line of JSON on stdout. */
 export interface RunRequest {
   task: string;
@@ -73,13 +96,19 @@ export interface Outcome {
   verdict: Verdict;
 }
 
+/**
+ * What a task's comment record established: a session is working it, none is, or the record
+ * could not be read within the budget and neither can be claimed.
+ */
+export type Presence = { inFlight: boolean } | { unreadable: string };
+
 /** A candidate, with everything the gate needs already established from the tracker. */
 export interface Examined {
   identifier: string;
   status: string;
   branch: string;
   stage: Stage;
-  inFlight: boolean;
+  presence: Presence;
 }
 
 /** The announcement a comment carries, if it carries one. */
@@ -120,14 +149,21 @@ export function inFlight(comments: TrackerComment[]): boolean | undefined {
  * over the candidates already fetched: a run in flight against a task whose status has
  * since left the pipeline is missed, but that is a session on its way out rather than one
  * about to start work, so counting it would only make the cap more conservative.
+ *
+ * A candidate whose record could not be read counts *toward* the cap for the same reason it
+ * is not dispatched: it may well be a live session, and a spend control that errs should err
+ * toward fewer sessions.
  */
 export function decide(examined: Examined[], concurrency: number): Outcome[] {
-  let running = examined.filter((candidate) => candidate.inFlight).length;
+  let running = examined.filter((candidate) => !('inFlight' in candidate.presence) || candidate.presence.inFlight).length;
 
   return examined.map((candidate): Outcome => {
     const common = { identifier: candidate.identifier, status: candidate.status };
 
-    if (candidate.inFlight) {
+    if ('unreadable' in candidate.presence) {
+      return { ...common, verdict: { declined: candidate.presence.unreadable } };
+    }
+    if (candidate.presence.inFlight) {
       return { ...common, verdict: { declined: 'a session has announced itself and not yet reported' } };
     }
     if (running >= concurrency) {
@@ -171,38 +207,64 @@ function line(label: string, detail: string): string {
  *   the first marker would settle on a stale one — the walk has to reach the end before
  *   anything is read out of it.
  *
- * Both are bounded to the one issue that needs them. The alternative, a larger nested page,
- * pays complexity on every tick against every issue to serve the rare one.
+ * Both are bounded to the one issue that needs them, and both are bounded again by {@link
+ * COMMENT_PAGE_BUDGET} — neither walk ends on its own in the case that matters, so the
+ * ceiling is what keeps a long discussion from being re-read in full on every tick forever.
+ * Running out of budget is reported as unproven and declines the candidate; it is never read
+ * as "nothing is working it", which is what would dispatch.
+ *
+ * The alternative to the fallback, a larger nested page, pays complexity on every tick
+ * against every issue to serve the rare one.
  */
-async function established(tracker: Tracker, issue: TrackerIssue, pageSize: number): Promise<boolean> {
+async function established(
+  tracker: Tracker,
+  issue: TrackerIssue,
+  pageSize: number,
+  budget = COMMENT_PAGE_BUDGET,
+): Promise<Presence> {
   let hasNextPage = issue.moreComments;
   let cursor = issue.commentCursor;
+  let left = budget;
+
+  const spent = (): boolean => {
+    if (left === 0) return true;
+    left -= 1;
+    return false;
+  };
+
+  const unreadable = (why: string): Presence => ({
+    unreadable:
+      `${why} after ${budget} further page${budget === 1 ? '' : 's'} of ${pageSize}, so whether a session is ` +
+      'working it is unproven — raise --comment-page to read further rather than dispatching on an unread record',
+  });
 
   if (issue.commentsAreNewest) {
     const nested = inFlight(issue.comments);
-    if (nested !== undefined) return nested;
+    if (nested !== undefined) return { inFlight: nested };
 
     while (hasNextPage) {
+      if (spent()) return unreadable("no announcement was found in this task's newest comments");
       const page = await tracker.comments(issue.id, pageSize, cursor);
       const older = inFlight(page.comments);
-      if (older !== undefined) return older;
+      if (older !== undefined) return { inFlight: older };
       hasNextPage = page.hasNextPage;
       cursor = page.endCursor;
     }
 
     // No session has ever announced itself against this task.
-    return false;
+    return { inFlight: false };
   }
 
   const all = [...issue.comments];
   while (hasNextPage) {
+    if (spent()) return unreadable("the tracker returned this task's comments oldest-first and the record ran on");
     const page = await tracker.comments(issue.id, pageSize, cursor);
     all.push(...page.comments);
     hasNextPage = page.hasNextPage;
     cursor = page.endCursor;
   }
 
-  return inFlight(newestFirst(all)) ?? false;
+  return { inFlight: inFlight(newestFirst(all)) ?? false };
 }
 
 /**
@@ -213,8 +275,13 @@ async function established(tracker: Tracker, issue: TrackerIssue, pageSize: numb
 function notATask(issue: TrackerIssue): string | undefined {
   const carried = new Set(issue.labels.map(fold));
   if (carried.has(fold(TASK_LABEL))) return undefined;
-  return carried.has(fold(EPIC_LABEL))
-    ? 'an epic, not a task; its children are what the pipeline runs, and it has no change of its own'
+  if (carried.has(fold(EPIC_LABEL))) {
+    return 'an epic, not a task; its children are what the pipeline runs, and it has no change of its own';
+  }
+  // Same decline either way, but not the same claim: "nothing has refined it" is a statement
+  // about the issue, and a truncated label page cannot support one.
+  return issue.moreLabels
+    ? `not a task; no \`${TASK_LABEL}\` label was among the ${LABEL_PAGE_SIZE} labels read, and it carries more behind that bound`
     : `not a task; it carries neither the \`${TASK_LABEL}\` nor the \`${EPIC_LABEL}\` label, so nothing has refined it`;
 }
 
@@ -249,7 +316,11 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
     if (!carried.has(fold(PENDING))) {
       throw new Refusal(
         `the team \`${input.team}\` carries no \`${PENDING}\` status, so no stage could park a task that needs ` +
-          'a person. Add it in the tracker and re-run.',
+          'a person. Add it in the tracker and re-run.' +
+          (team.moreStatuses
+            ? ` This read was bounded at ${STATE_PAGE_SIZE} statuses and the team carries more, so \`${PENDING}\` ` +
+              'may exist behind that bound — the refusal is that the tick could not see it, not that it is absent.'
+            : ''),
       );
     }
 
@@ -267,17 +338,47 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
       if (actual === undefined) absent.push(status);
       else wanted.push({ name: actual, stage });
     }
+    if (team.moreStatuses) {
+      io.err(
+        line(
+          'note',
+          `the team carries more than ${STATE_PAGE_SIZE} statuses and this read was bounded there, so any named ` +
+            'below as absent may simply be behind that bound',
+        ),
+      );
+    }
     for (const status of absent) {
-      io.err(line('note', `the team carries no \`${status}\` status, so nothing can sit in it`));
+      io.err(
+        line(
+          'note',
+          team.moreStatuses
+            ? `no \`${status}\` status was among the ones read, so nothing sitting in it will be polled`
+            : `the team carries no \`${status}\` status, so nothing can sit in it`,
+        ),
+      );
     }
 
-    const issues = await tracker.issues(
+    const { issues, moreIssues } = await tracker.issues(
       team.id,
       input.project,
       wanted.map((entry) => entry.name),
       input.issuePageSize,
       input.commentPageSize,
     );
+
+    // The tick cannot act on this and does not need to. What it owes a person is that the
+    // report account for everything sitting in a stage's status, and an unexamined remainder
+    // named is that; an unexamined remainder passed over in silence is the one failure this
+    // whole path is built to refuse, since it reads exactly like a quiet pipeline.
+    if (moreIssues) {
+      io.err(
+        line(
+          'note',
+          `more issues are sitting in a stage status than the page bound of ${input.issuePageSize}, and the rest ` +
+            'were not examined. Raise --issue-page.',
+        ),
+      );
+    }
 
     const examined: Examined[] = [];
     // Everything in a stage's status that is not a task. Declined here rather than filtered
@@ -304,7 +405,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
         status: issue.status,
         branch: issue.branchName,
         stage,
-        inFlight: await established(tracker, issue, input.commentPageSize),
+        presence: await established(tracker, issue, input.commentPageSize),
       });
     }
 

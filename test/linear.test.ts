@@ -45,24 +45,32 @@ function tracker(scripted: Scripted): Tracker {
   return new Tracker({ token: 'lin_api_recorded', transport: scripted.transport });
 }
 
-const team = {
-  teams: {
-    nodes: [
-      {
-        id: 'team-1',
-        key: 'ENG',
-        name: 'eng',
-        states: { nodes: [{ name: 'todo' }, { name: 'in progress' }, { name: 'Pending' }] },
-      },
-    ],
-  },
-};
+function teamNodes(moreStatuses = false) {
+  return {
+    teams: {
+      nodes: [
+        {
+          id: 'team-1',
+          key: 'ENG',
+          name: 'eng',
+          states: {
+            pageInfo: { hasNextPage: moreStatuses },
+            nodes: [{ name: 'todo' }, { name: 'in progress' }, { name: 'Pending' }],
+          },
+        },
+      ],
+    },
+  };
+}
+
+const team = teamNodes();
 
 function issue(
   overrides: Partial<{
     identifier: string;
     state: string;
     labels: string[];
+    moreLabels: boolean;
     comments: { id: string; createdAt: string; body: string }[];
     hasNextPage: boolean;
   }> = {},
@@ -72,7 +80,10 @@ function issue(
     identifier: overrides.identifier ?? 'ENG-1',
     branchName: 'eng-1-a-task',
     state: { name: overrides.state ?? 'in progress' },
-    labels: { nodes: (overrides.labels ?? ['task']).map((name) => ({ name })) },
+    labels: {
+      pageInfo: { hasNextPage: overrides.moreLabels ?? false },
+      nodes: (overrides.labels ?? ['task']).map((name) => ({ name })),
+    },
     comments: {
       pageInfo: { hasNextPage: overrides.hasNextPage ?? false, endCursor: 'cursor-1' },
       nodes: overrides.comments ?? [],
@@ -91,8 +102,17 @@ describe('reading the team', () => {
     expect(await tracker(scripted).team('eng')).toEqual({
       id: 'team-1',
       statuses: ['todo', 'in progress', 'Pending'],
+      moreStatuses: false,
     });
     expect(scripted.sent[0]!.variables).toEqual({ team: 'eng', states: 50 });
+  });
+
+  // The difference between "the team has no `Pending`" and "no `Pending` was in what we
+  // read". Only the first is a fact, and a team past the bound would otherwise be refused
+  // with a message asserting something the read cannot support.
+  it('says when the status page was cut short rather than presenting it as the whole team', async () => {
+    const scripted = script({ body: { data: teamNodes(true) } });
+    expect((await tracker(scripted).team('eng')).moreStatuses).toBe(true);
   });
 
   it('fails rather than guessing when the name matches no team', async () => {
@@ -109,8 +129,8 @@ describe('reading the team', () => {
 
 describe('polling the project', () => {
   it('maps each issue and bounds both page sizes explicitly', async () => {
-    const scripted = script({ body: { data: { issues: { nodes: [issue()] } } } });
-    const issues = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    const scripted = script({ body: { data: { issues: { pageInfo: { hasNextPage: false }, nodes: [issue()] } } } });
+    const issues = (await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10)).issues;
 
     expect(issues).toEqual([
       {
@@ -119,6 +139,7 @@ describe('polling the project', () => {
         branchName: 'eng-1-a-task',
         status: 'in progress',
         labels: ['task'],
+        moreLabels: false,
         comments: [],
         commentsAreNewest: true,
         moreComments: false,
@@ -144,20 +165,42 @@ describe('polling the project', () => {
       { id: 'c3', createdAt: '2026-08-03T00:00:00.000Z', body: 'newest' },
       { id: 'c2', createdAt: '2026-08-02T00:00:00.000Z', body: 'middle' },
     ];
-    const scripted = script({ body: { data: { issues: { nodes: [issue({ comments })] } } } });
-    const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    const scripted = script({ body: { data: { issues: { pageInfo: { hasNextPage: false }, nodes: [issue({ comments })] } } } });
+    const [only] = (await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10)).issues;
     expect(only!.comments.map((comment) => comment.body)).toEqual(['newest', 'middle', 'oldest']);
   });
 
   it('carries every label the issue holds, since candidacy rests on one of them', async () => {
-    const scripted = script({ body: { data: { issues: { nodes: [issue({ labels: ['epic', 'urgent'] })] } } } });
-    const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    const scripted = script({ body: { data: { issues: { pageInfo: { hasNextPage: false }, nodes: [issue({ labels: ['epic', 'urgent'] })] } } } });
+    const [only] = (await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10)).issues;
     expect(only!.labels).toEqual(['epic', 'urgent']);
+  });
+
+  // A bounded page with no flag cannot tell forty issues in stage statuses from four hundred,
+  // and the overflow would be neither dispatched, nor declined, nor named anywhere. Nothing
+  // errors and the tick exits 0 — which is the one failure shape indistinguishable from a
+  // healthy quiet pipeline.
+  it('says when the project holds more issues in these statuses than the page read', async () => {
+    const scripted = script({ body: { data: { issues: { pageInfo: { hasNextPage: true }, nodes: [issue()] } } } });
+    const page = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+
+    expect(page.issues).toHaveLength(1);
+    expect(page.moreIssues, 'the caller has to be able to say the answer was cut short').toBe(true);
+  });
+
+  it('says when an issue carries more labels than the bound read', async () => {
+    const scripted = script({
+      body: { data: { issues: { pageInfo: { hasNextPage: false }, nodes: [issue({ labels: ['urgent'], moreLabels: true })] } } },
+    });
+    const [only] = (await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10)).issues;
+
+    expect(only!.labels).toEqual(['urgent']);
+    expect(only!.moreLabels, '`task` may be behind the bound, so nothing may claim it is absent').toBe(true);
   });
 
   it('asks nothing when no status resolved on the team', async () => {
     const scripted = script();
-    expect(await tracker(scripted).issues('team-1', 'jen', [], 50, 10)).toEqual([]);
+    expect(await tracker(scripted).issues('team-1', 'jen', [], 50, 10)).toEqual({ issues: [], moreIssues: false });
     expect(scripted.sent).toEqual([]);
   });
 
@@ -194,6 +237,7 @@ describe('whether a comment page can be shown to hold the newest', () => {
       body: {
         data: {
           issues: {
+            pageInfo: { hasNextPage: false },
             nodes: [
               {
                 ...issue(),
@@ -204,7 +248,7 @@ describe('whether a comment page can be shown to hold the newest', () => {
         },
       },
     });
-    const [only] = await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10);
+    const [only] = (await tracker(scripted).issues('team-1', 'jen', ['in progress'], 50, 10)).issues;
     return only!;
   }
 

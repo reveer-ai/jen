@@ -12,6 +12,13 @@
  * is then ours to notice at the tick, loudly, instead of arriving as an empty candidate
  * set — which is indistinguishable from a healthy quiet pipeline and would go unnoticed
  * for exactly as long as nobody looked.
+ *
+ * Every connection here is bounded, and **every bounded connection asks for
+ * `pageInfo { hasNextPage }` alongside its nodes.** A bound with no such flag cannot tell a
+ * short answer from a truncated one, which is the same failure one level down: the caller
+ * reads fewer issues, fewer statuses, or fewer labels than exist and has no way to know it.
+ * Four connections are bounded — statuses, issues, labels, comments — and all four carry
+ * the flag. Anything added here carries it too, and the caller does something with it.
  */
 
 /** Where the tracker's API lives. Overridable only so tests can point at a recorded transport. */
@@ -25,11 +32,22 @@ export const TOKEN_VARIABLE = 'LINEAR_API_KEY';
  *
  * Bounded like every other page here, and not a caller's choice because nothing has reason
  * to tune it: the tick reads labels to answer one yes-or-no question. Ten is well past what
- * a refined task carries, and the cost is paid per issue on every tick. An issue carrying
- * more labels than this could in principle hide its `task` label behind the bound and be
- * declined in the report as though it had none — visible, not silent, which is the trade.
+ * a refined task carries, and the cost is paid per issue on every tick.
+ *
+ * An issue carrying more labels than this could hide its `task` label behind the bound. The
+ * bound stands, and what changes is that the truncation is reported: {@link
+ * TrackerIssue.moreLabels} carries it, so the decline names the bound instead of asserting
+ * that nothing has refined the issue — which would be a claim the read cannot support.
  */
 export const LABEL_PAGE_SIZE = 10;
+
+/**
+ * How many of a team's workflow statuses the startup check asks for.
+ *
+ * A team with more statuses than this is not a failure — the read reports the truncation and
+ * the tick says so rather than asserting that a status it never saw does not exist.
+ */
+export const STATE_PAGE_SIZE = 50;
 
 /** Anything the tracker refused or answered unusably. Never swallowed into an empty result. */
 export class TrackerError extends Error {}
@@ -65,6 +83,8 @@ export interface TrackerIssue {
   status: string;
   /** Every label the issue carries, as the team names them. Candidacy rests on one of these. */
   labels: string[];
+  /** Whether the issue carries more labels than {@link LABEL_PAGE_SIZE} asked for. */
+  moreLabels: boolean;
   /** Newest first. Bounded by the page size the poll was given. */
   comments: TrackerComment[];
   /**
@@ -83,8 +103,28 @@ export interface TrackerIssue {
 
 export interface TrackerTeam {
   id: string;
-  /** Every status the team carries, as the team names them. */
+  /** Every status the team carries, as the team names them. Bounded by the page asked for. */
   statuses: string[];
+  /**
+   * Whether the team carries more statuses than {@link statuses} holds.
+   *
+   * The difference between "the team has no `Pending`" and "no `Pending` was in the page the
+   * tick read". Only the first is a fact, and the tick says which one it has.
+   */
+  moreStatuses: boolean;
+}
+
+/**
+ * A poll's worth of issues, with whether the project holds more of them in these statuses.
+ *
+ * The flag is the point of the wrapper. A bare array cannot distinguish a project with forty
+ * issues in stage statuses from one with four hundred, and the overflow would be neither
+ * dispatched nor declined nor named — the exact silence this client's header exists to
+ * refuse, since it is indistinguishable from a healthy quiet pipeline.
+ */
+export interface IssuePage {
+  issues: TrackerIssue[];
+  moreIssues: boolean;
 }
 
 export interface CommentPage {
@@ -116,7 +156,7 @@ const HEADERS = {
 const TEAM_STATUSES = `
 query JenTeamStatuses($team: String!, $states: Int!) {
   teams(first: 2, filter: { or: [{ key: { eqIgnoreCase: $team } }, { name: { eqIgnoreCase: $team } }] }) {
-    nodes { id key name states(first: $states) { nodes { id name } } }
+    nodes { id key name states(first: $states) { pageInfo { hasNextPage } nodes { id name } } }
   }
 }`;
 
@@ -130,12 +170,13 @@ query JenPipelineIssues($team: ID!, $project: String!, $states: [String!]!, $iss
       state: { name: { in: $states } }
     }
   ) {
+    pageInfo { hasNextPage }
     nodes {
       id
       identifier
       branchName
       state { name }
-      labels(first: $labels) { nodes { name } }
+      labels(first: $labels) { pageInfo { hasNextPage } nodes { name } }
       comments(first: $comments, orderBy: createdAt) {
         pageInfo { hasNextPage endCursor }
         nodes { id createdAt body }
@@ -276,9 +317,16 @@ export class Tracker {
    * workflow's status names onto the team's own, and the id to filter the poll by team
    * exactly rather than by a name that two teams could share.
    */
-  async team(team: string, statePageSize = 50): Promise<TrackerTeam> {
+  async team(team: string, statePageSize = STATE_PAGE_SIZE): Promise<TrackerTeam> {
     const data = await this.#query<{
-      teams: { nodes: { id: string; key: string; name: string; states: { nodes: { name: string }[] } }[] };
+      teams: {
+        nodes: {
+          id: string;
+          key: string;
+          name: string;
+          states: { pageInfo: { hasNextPage: boolean }; nodes: { name: string }[] };
+        }[];
+      };
     }>(TEAM_STATUSES, { team, states: statePageSize });
 
     const found = data.teams.nodes;
@@ -290,7 +338,11 @@ export class Tracker {
     }
 
     const only = found[0]!;
-    return { id: only.id, statuses: only.states.nodes.map((state) => state.name) };
+    return {
+      id: only.id,
+      statuses: only.states.nodes.map((state) => state.name),
+      moreStatuses: only.states.pageInfo.hasNextPage,
+    };
   }
 
   /**
@@ -301,6 +353,11 @@ export class Tracker {
    * unattended forever from scaling its cost with the number of tasks in flight. Both page
    * sizes are the caller's and are bounded explicitly — the API's default of 50 applied at
    * two levels is what would approach the single-query complexity cap.
+   *
+   * The tick does not page this connection, and does not need to: what it owes a person is
+   * that the report account for everything sitting in a stage's status, which a truthful
+   * {@link IssuePage.moreIssues} satisfies. Paging it would make every tick's cost scale with
+   * a project's backlog to serve a case an operator fixes once with a larger page.
    */
   async issues(
     teamId: string,
@@ -309,17 +366,18 @@ export class Tracker {
     issuePageSize: number,
     commentPageSize: number,
     labelPageSize = LABEL_PAGE_SIZE,
-  ): Promise<TrackerIssue[]> {
-    if (statuses.length === 0) return [];
+  ): Promise<IssuePage> {
+    if (statuses.length === 0) return { issues: [], moreIssues: false };
 
     const data = await this.#query<{
       issues: {
+        pageInfo: { hasNextPage: boolean };
         nodes: {
           id: string;
           identifier: string;
           branchName: string;
           state: { name: string };
-          labels: { nodes: { name: string }[] };
+          labels: { pageInfo: { hasNextPage: boolean }; nodes: { name: string }[] };
           comments: CommentConnection;
         }[];
       };
@@ -332,17 +390,21 @@ export class Tracker {
       labels: labelPageSize,
     });
 
-    return data.issues.nodes.map((node) => ({
-      id: node.id,
-      identifier: node.identifier,
-      branchName: node.branchName,
-      status: node.state.name,
-      labels: node.labels.nodes.map((label) => label.name),
-      comments: newestFirst(node.comments.nodes),
-      commentsAreNewest: holdsNewest(node.comments),
-      moreComments: node.comments.pageInfo.hasNextPage,
-      commentCursor: node.comments.pageInfo.endCursor,
-    }));
+    return {
+      issues: data.issues.nodes.map((node) => ({
+        id: node.id,
+        identifier: node.identifier,
+        branchName: node.branchName,
+        status: node.state.name,
+        labels: node.labels.nodes.map((label) => label.name),
+        moreLabels: node.labels.pageInfo.hasNextPage,
+        comments: newestFirst(node.comments.nodes),
+        commentsAreNewest: holdsNewest(node.comments),
+        moreComments: node.comments.pageInfo.hasNextPage,
+        commentCursor: node.comments.pageInfo.endCursor,
+      })),
+      moreIssues: data.issues.pageInfo.hasNextPage,
+    };
   }
 
   /**
