@@ -736,3 +736,101 @@ describe('the tick writes nothing', () => {
     }
   });
 });
+
+/**
+ * What the command does about what it decided.
+ *
+ * The deciding pass above is unchanged and stays unchanged — that is the whole arrangement.
+ * `--dry-run` is the *absence* of a launcher rather than a branch around one, so a preview
+ * cannot decide differently from the run it is previewing. A preview that does not predict
+ * is worse than no preview, because it is trusted.
+ */
+describe('a tick that acts on what it decided', () => {
+  const two = () => script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress'), issueNode('ENG-2', 'in review')) });
+
+  it('launches exactly what it dispatched, and nothing it declined', async () => {
+    const result = await jenRun([], ENV, two());
+
+    expect(result.code, result.err.join('\n')).toBe(0);
+    expect(result.launched).toEqual([
+      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+      { task: 'ENG-2', skill: 'review-task', role: 'deliver', branch: 'eng-2-a-task' },
+    ]);
+  });
+
+  it('launches nothing under --dry-run, and still says what it would have', async () => {
+    const result = await jenRun(['--dry-run'], ENV, two());
+
+    expect(result.code).toBe(0);
+    expect(result.launched).toEqual([]);
+    expect(result.out.map((line) => JSON.parse(line))).toHaveLength(2);
+    expect(result.err.join('\n')).toContain('dispatched');
+  });
+
+  // The property that makes the flag worth having: the same code decides either way.
+  it('dispatches under --dry-run exactly what it launches without it', async () => {
+    const previewed = await jenRun(['--dry-run'], ENV, two());
+    const acted = await jenRun([], ENV, two());
+
+    expect(previewed.out).toEqual(acted.out);
+    expect(acted.launched.map((request) => request.task)).toEqual(
+      previewed.out.map((line) => (JSON.parse(line) as RunRequest).task),
+    );
+  });
+
+  it('honours the cap when it launches, because the cap is already on the dispatched set', async () => {
+    const result = await jenRun(['--concurrency', '1'], ENV, two());
+
+    expect(result.launched).toHaveLength(1);
+  });
+
+  it('exits non-zero when a session could not be run, naming what failed', async () => {
+    const failing = recorder({ ok: false, failures: ['the session exited 1.'] });
+    const result = await jenRun([], ENV, two(), failing);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the session exited 1.');
+  });
+
+  // A stage that parks a task at `Pending` has succeeded — that is one of the two ways every
+  // session is supposed to end. Going red for it would train an operator to ignore the signal.
+  it('exits 0 when the sessions ran, whatever the stages decided', async () => {
+    const result = await jenRun([], ENV, two(), recorder({ ok: true }));
+
+    expect(result.code).toBe(0);
+  });
+
+  it('reports a terminated session as terminated rather than as a stage failure', async () => {
+    const stopped = recorder({ ok: false, failures: [], terminated: true });
+    const result = await jenRun([], ENV, two(), stopped);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the task is left as the session left it');
+  });
+
+  // A launcher that threw must not abandon the sessions running beside it.
+  it('sees every session through even when one of them throws', async () => {
+    const launched: RunRequest[] = [];
+    const launcher = {
+      launched,
+      launch: async (request: RunRequest) => {
+        launched.push(request);
+        if (request.task === 'ENG-1') throw new Error('the clone failed');
+        return { ok: true, failures: [], terminated: false } satisfies LaunchResult;
+      },
+    };
+    const result = await jenRun([], ENV, two(), launcher);
+
+    expect(launched).toHaveLength(2);
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the clone failed');
+  });
+
+  it('launches nothing when nothing passed the gate', async () => {
+    const session = script({ body: TEAM }, { body: polled() });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(result.launched).toEqual([]);
+  });
+});

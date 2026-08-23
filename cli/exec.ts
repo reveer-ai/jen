@@ -19,7 +19,7 @@
  * what makes a dead session's task read as in flight until a person moves it.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -355,6 +355,14 @@ export class Executor {
       const installation = await github.installation(credentials);
 
       directory = await mkdtemp(join(this.#options.root ?? tmpdir(), 'jen-run-'));
+      // Resolved, and this matters rather than being tidiness. The trust entry below is
+      // keyed by absolute path and the session looks itself up by the path it resolves to —
+      // and on macOS the system temporary directory is a symlink, so `/var/folders/…` and
+      // `/private/var/folders/…` are the same directory under two names. Writing the entry
+      // under the unresolved one means the lookup misses, the workspace reads as untrusted,
+      // and the permissions are silently inert: precisely the failure this module exists to
+      // prevent, arrived at by a route that looks like it cannot happen.
+      directory = await realpath(directory);
       const repo = join(directory, 'repo');
       const config = join(directory, 'config');
       await mkdir(config, { recursive: true });
