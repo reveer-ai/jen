@@ -161,7 +161,14 @@ export interface Installation {
   expiresAt: string;
   /** `<slug>[bot]`, the name commits made by this app carry. */
   login: string;
-  /** `<app-id>+<slug>[bot]@users.noreply.github.com`. */
+  /**
+   * `<bot-user-id>+<slug>[bot]@users.noreply.github.com`.
+   *
+   * The number is the **bot user's** id, not the app's. They are different numbers for the
+   * same app — `4588651` and `316769915` for this project's own — and the host accepts an
+   * address built from either without complaint. Only the bot user's resolves to an account,
+   * so only that one attributes a commit to the role; the other renders as an unlinked name.
+   */
   email: string;
 }
 
@@ -218,8 +225,13 @@ export class GitHub {
    * app's own `/app` response is authoritative about its slug in a way a recorded name is
    * not — a renamed app would otherwise commit under a name that no longer exists.
    *
-   * Two requests, both under the JWT, and the JWT is discarded here. Only the installation
-   * token leaves this method, and it expires on its own.
+   * The bot user's id is read for the same reason and for a sharper one: it is not the app's
+   * id, and nothing tells you when you have used the wrong one. See {@link Installation.email}.
+   *
+   * Three requests. The first two go under the JWT, which is discarded here; the third goes
+   * under the freshly minted installation token, because the JWT authenticates the *app* and
+   * `/users/…` is an ordinary read rather than an app endpoint. Only the installation token
+   * leaves this method, and it expires on its own.
    */
   async installation(credentials: Credentials): Promise<Installation> {
     const jwt = appJwt(credentials.appId, credentials.privateKey, this.#now());
@@ -239,22 +251,34 @@ export class GitHub {
     }
 
     const login = `${app.slug}[bot]`;
+    const bot = await this.#request<{ id?: number }>(`/users/${encodeURIComponent(login)}`, minted.token, 'GET');
+    if (bot.id === undefined) {
+      // Raised rather than fallen back from. An address built on the app's id is accepted by
+      // every layer that handles it and attributes the commit to nobody, which is the silent
+      // failure this whole module is shaped to refuse.
+      throw new GitHubError(`the git host named no user id for \`${login}\`, so a run has no address to commit under.`);
+    }
+
     return {
       token: minted.token,
       expiresAt: minted.expires_at ?? 'unreported',
       login,
-      email: `${credentials.appId}+${login}@users.noreply.github.com`,
+      email: `${bot.id}+${login}@users.noreply.github.com`,
     };
   }
 }
 
 /**
- * The clone URL a run pushes through, carrying the installation token.
+ * The clone URL a run pushes through.
  *
- * Kept beside the minting rather than in the executor so that the one place a token is
- * spliced into a string is the one place that knows it is a secret. `x-access-token` is the
- * username the git host expects for an installation token.
+ * It carries the username the git host expects for an installation token and **not** the
+ * token itself. The token would otherwise be an argv element of `git clone` — readable by
+ * every process on the host, and on Linux through a world-readable `/proc/<pid>/cmdline` —
+ * and it would then sit in the clone's `.git/config` for the rest of the run. Git asks for
+ * the password instead, and `GIT_ASKPASS` answers out of the environment; see `askpass` in
+ * `exec.ts`. It is the same rule `cli/AGENTS.md` states for the tracker payload, on the same
+ * host and for the same reason.
  */
-export function remoteUrl(repo: string, token: string): string {
-  return `https://x-access-token:${token}@github.com/${repo}.git`;
+export function remoteUrl(repo: string): string {
+  return `https://x-access-token@github.com/${repo}.git`;
 }

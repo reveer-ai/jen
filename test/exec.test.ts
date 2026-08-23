@@ -13,7 +13,7 @@
  * network, which is the only thing the stubs are there to avoid.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,10 +24,13 @@ import {
   Executor,
   prompt,
   readStream,
+  spawner,
   verdict,
   type Exit,
+  type ExecOptions,
   type RunOutcome,
   type SessionReport,
+  type Spawner,
 } from '../cli/exec.js';
 
 import type { RunRequest } from '../cli/run.js';
@@ -70,7 +73,7 @@ describe('reading the session’s stream', () => {
   it('reads an explicit mcp_server_errors list', () => {
     const read = readStream([init({ mcp_server_errors: ['linear failed to validate'] }), result()].join('\n'));
 
-    expect(read.mcpFailures).toEqual(['linear failed to validate']);
+    expect(read.mcpFailures).toEqual([{ server: undefined, detail: 'linear failed to validate' }]);
   });
 
   // And the shape the harness has been observed emitting. A check knowing only one of them
@@ -80,7 +83,23 @@ describe('reading the session’s stream', () => {
     const failed = init({ mcp_servers: [{ name: 'linear', status: 'failed' }] });
     const read = readStream([failed, result()].join('\n'));
 
-    expect(read.mcpFailures).toEqual(['linear reported `failed`']);
+    expect(read.mcpFailures).toEqual([{ server: 'linear', detail: 'reported `failed`' }]);
+  });
+
+  // The clone is a full jen installation, so a project's own `.mcp.json` contributes servers
+  // beside the tracker's. Each failure has to carry the name it belongs to; the verdict is
+  // where that turns into a diagnosis.
+  it('keeps each failing server’s own name rather than pooling them', () => {
+    const failed = init({
+      mcp_servers: [
+        { name: 'linear', status: 'connected' },
+        { name: 'some-other-server', status: 'failed' },
+      ],
+    });
+
+    expect(readStream([failed, result()].join('\n')).mcpFailures).toEqual([
+      { server: 'some-other-server', detail: 'reported `failed`' },
+    ]);
   });
 
   it('says nothing failed when every server connected', () => {
@@ -123,9 +142,24 @@ describe('the verdict', () => {
   });
 
   it('fails on a tracker connection that did not initialize', () => {
-    const failures = verdict(report({ mcpFailures: ['linear reported `failed`'] }), exit(), '');
+    const failures = verdict(report({ mcpFailures: [{ server: 'linear', detail: 'reported `failed`' }] }), exit(), '');
 
     expect(failures).toEqual([expect.stringContaining('tracker connection did not initialize')]);
+  });
+
+  // A second server failing is still a failed run — the session was given something it did
+  // not get — but calling it the tracker sends whoever reads the report after the wrong
+  // system entirely.
+  it('names the server that failed rather than diagnosing every one of them as the tracker', () => {
+    const failures = verdict(
+      report({ mcpFailures: [{ server: 'some-other-server', detail: 'reported `failed`' }] }),
+      exit(),
+      '',
+    );
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('some-other-server');
+    expect(failures[0]).not.toContain('tracker');
   });
 
   it('fails on a session that never started', () => {
@@ -144,7 +178,7 @@ describe('the verdict', () => {
 
   it('reports every signal that failed rather than the first', () => {
     const failures = verdict(
-      report({ isError: true, mcpFailures: ['linear reported `failed`'] }),
+      report({ isError: true, mcpFailures: [{ server: 'linear', detail: 'reported `failed`' }] }),
       exit({ code: 1 }),
       'Ignoring 8 permissions.allow entries',
     );
@@ -192,15 +226,18 @@ describe('a run', () => {
     // The stub assistant: records how it was invoked, emits canned events, exits as told.
     writeFileSync(
       stub,
-      `import { writeFileSync } from 'node:fs';
+      `import { chmodSync, writeFileSync } from 'node:fs';
 const env = process.env;
 writeFileSync(env.STUB_RECORD, JSON.stringify({
   argv: process.argv.slice(2),
   cwd: process.cwd(),
-  env: Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith('JEN') || k.startsWith('GH') || k.startsWith('GITHUB') || k === 'CLAUDE_CONFIG_DIR' || k === 'LINEAR_API_KEY' || k === 'ANTHROPIC_API_KEY')),
+  env: Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith('JEN') || k.startsWith('GH') || k.startsWith('GITHUB') || k.startsWith('GIT_') || k === 'CLAUDE_CONFIG_DIR' || k === 'LINEAR_API_KEY' || k === 'ANTHROPIC_API_KEY')),
 }));
 if (env.STUB_STDERR) process.stderr.write(env.STUB_STDERR + '\\n');
 for (const line of JSON.parse(env.STUB_EVENTS ?? '[]')) process.stdout.write(JSON.stringify(line) + '\\n');
+// Takes away the run root's write bit from inside the run, so the removal that follows
+// fails for a reason nothing in the executor can arrange for itself.
+if (env.STUB_LOCK) chmodSync(env.STUB_LOCK, 0o500);
 if (env.STUB_SLEEP) { setTimeout(() => process.exit(0), Number(env.STUB_SLEEP)); }
 else process.exit(Number(env.STUB_EXIT ?? '0'));
 `,
@@ -230,7 +267,7 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
   }
 
   /** A `GitHub` that mints without signing, so a run needs no key and no network. */
-  function host(): GitHub {
+  function host(delay = 0): GitHub {
     const minted = new GitHub({
       transport: async (input) =>
         new Response(
@@ -239,17 +276,22 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     });
     // The JWT is not what is under test here, and signing needs a real key.
     Object.defineProperty(minted, 'installation', {
-      value: async () => ({
-        token: 'ghs_recorded',
-        expiresAt: '2026-08-23T02:00:00Z',
-        login: 'reveer-jen-dev[bot]',
-        email: '4588651+reveer-jen-dev[bot]@users.noreply.github.com',
-      }),
+      value: async () => {
+        // A run's first step reaches the network before any child exists, which is where a
+        // signal used to fall through the gap. Slowed on request so that window is real.
+        if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+        return {
+          token: 'ghs_recorded',
+          expiresAt: '2026-08-23T02:00:00Z',
+          login: 'reveer-jen-dev[bot]',
+          email: '316769915+reveer-jen-dev[bot]@users.noreply.github.com',
+        };
+      },
     });
     return minted;
   }
 
-  function build(extra: Record<string, string> = {}, keepDirectory = false): Executor {
+  function build(extra: Record<string, string> = {}, keepDirectory = false, options: Partial<ExecOptions> = {}): Executor {
     return new Executor({
       env: environment(extra),
       claude: [process.execPath, stub],
@@ -257,6 +299,7 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
       root: scratch,
       github: host(),
       keepDirectory,
+      ...options,
     });
   }
 
@@ -323,7 +366,7 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     const { invoked } = await launched(REQUEST, {}, true);
 
     expect(git(['config', 'user.name'], invoked!.cwd)).toBe('reveer-jen-dev[bot]');
-    expect(git(['config', 'user.email'], invoked!.cwd)).toBe('4588651+reveer-jen-dev[bot]@users.noreply.github.com');
+    expect(git(['config', 'user.email'], invoked!.cwd)).toBe('316769915+reveer-jen-dev[bot]@users.noreply.github.com');
     rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
   });
 
@@ -348,6 +391,46 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(invoked!.env.LINEAR_API_KEY).toBe('lin_api_recorded');
     expect(Object.keys(invoked!.env).filter((key) => key.startsWith('JEN_GH_'))).toEqual([]);
     expect(JSON.stringify(invoked!.env)).not.toContain('another role’s key');
+  });
+
+  // The same rule as the tracker payload below, on the same host: an installation token
+  // spliced into the clone URL is an argv element of `git clone`, and `/proc/<pid>/cmdline`
+  // is world-readable where `/proc/<pid>/environ` is owner-only.
+  it('answers git’s prompt out of the environment rather than out of a command line', async () => {
+    const { invoked } = await launched(REQUEST, {}, true);
+    const askpass = invoked!.env.GIT_ASKPASS!;
+
+    expect(askpass).toContain(invoked!.env.CLAUDE_CONFIG_DIR!);
+    expect(existsSync(askpass)).toBe(true);
+    expect(readFileSync(askpass, 'utf8')).not.toContain('ghs_recorded');
+    // Set for the session too, so an unattended `git push` fails rather than waiting on a
+    // prompt into a stdin nobody is attached to.
+    expect(invoked!.env.GIT_TERMINAL_PROMPT).toBe('0');
+    rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
+  });
+
+  // The handshake itself, rather than the script's text. `git credential fill` is the same
+  // path a `git push` from the session takes, with the configured helpers cleared so the
+  // answer can only have come from the script.
+  it('hands git the token when git asks for it', async () => {
+    const { invoked } = await launched(REQUEST, {}, true);
+    const filled = execFileSync('git', ['credential', 'fill'], {
+      input: 'protocol=https\nhost=github.com\nusername=x-access-token\n\n',
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        // Both config files taken out of the picture, so a helper configured on the machine
+        // running the tests cannot answer in the script's place.
+        GIT_CONFIG_GLOBAL: '/dev/null',
+        GIT_CONFIG_SYSTEM: '/dev/null',
+        GIT_ASKPASS: invoked!.env.GIT_ASKPASS!,
+        GH_TOKEN: 'ghs_recorded',
+        GIT_TERMINAL_PROMPT: '0',
+      },
+    });
+
+    expect(filled).toContain('password=ghs_recorded');
+    rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
   });
 
   // A command line is readable by every process on the host, and this string carries the
@@ -443,8 +526,81 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
 
     expect(outcome.terminated).toBe(true);
+    expect(outcome.sessionStarted).toBe(true);
     expect(outcome.ok).toBe(false);
     expect(existsSync(invoked.cwd), 'the working copy went with the run').toBe(false);
+  });
+
+  // `terminate()` reaches only what is already running, so a signal landing before the first
+  // child — during the minting, where none exists at all — used to leave the run to clone,
+  // configure, and start a full session after it had been told to stop. A stage would then
+  // write to the tracker and push commits past its own cancellation.
+  it('starts no session when it was stopped before one existed', async () => {
+    rmSync(record, { force: true });
+    const sessions = new Executor({
+      env: environment(),
+      claude: [process.execPath, stub],
+      remote: () => origin,
+      root: scratch,
+      github: host(200),
+    });
+    const running = sessions.launch(REQUEST);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    sessions.terminate();
+
+    const outcome: RunOutcome = await running;
+
+    expect(existsSync(record), 'no session was started').toBe(false);
+    expect(outcome.sessionStarted).toBe(false);
+    expect(outcome.terminated).toBe(true);
+    expect(outcome.ok).toBe(false);
+  });
+
+  // The other half of the same fix, and the race it closes: a signal arriving in the instant
+  // between the session finishing and the run reading the flag. Read straight off the flag,
+  // a run that had already finished and succeeded reported as stopped, and `see()` then
+  // described its task as left mid-stage when the stage had in fact completed.
+  it('does not call a finished run stopped because a signal arrived as it ended', async () => {
+    let sessions: Executor;
+    const stopOnExit: Spawner = (spec) => {
+      const child = spawner(spec);
+      if (spec.command === process.execPath) void child.exited.then(() => sessions.terminate());
+      return child;
+    };
+    sessions = build({}, false, { spawn: stopOnExit });
+
+    const outcome = await sessions.launch(REQUEST);
+
+    expect(sessions.terminating, 'the signal really did land').toBe(true);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.terminated).toBe(false);
+  });
+
+  // Cleanup is the whole of how `stage-execution`'s "no credential remains on the host" is
+  // satisfied — `config/mcp.json` holds the tracker's, live until someone rotates it — so
+  // the one case that violates the requirement must not be the one case nothing reports.
+  it('reports a run directory it could not remove, naming where it is', async () => {
+    if (process.getuid?.() === 0) return; // root ignores the permission this test relies on.
+    const locked = await realpath(await mkdtemp(join(tmpdir(), 'jen-locked-')));
+    try {
+      const outcome = await new Executor({
+        env: environment({ STUB_LOCK: locked }),
+        claude: [process.execPath, stub],
+        remote: () => origin,
+        root: locked,
+        github: host(),
+      }).launch(REQUEST);
+
+      expect(outcome.ok).toBe(false);
+      expect(outcome.failures.at(-1)).toContain(locked);
+      expect(outcome.failures.at(-1)).toContain('tracker credential');
+      // The session's own verdict is not displaced by the sweep's — it is added beside it.
+      expect(outcome.sessionId).toBe('s-1');
+      expect(outcome.cost).toBe(0.5);
+    } finally {
+      chmodSync(locked, 0o700);
+      rmSync(locked, { recursive: true, force: true });
+    }
   });
 
   it('makes its directories where it was told to', async () => {

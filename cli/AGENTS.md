@@ -354,8 +354,59 @@ The tracker's `--mcp-config` payload is written to a file inside the run's own c
 directory, never passed inline. A command line is readable by every process on the host, and
 that string carries the tracker credential. The file goes with the directory when the run ends.
 
+**The same rule governs the clone, and it is easy to break there without noticing.** An
+installation token spliced into the clone URL is an argv element of `git clone` — the same
+exposure, on the same host, and argv is the worse hiding place of the two:
+`/proc/<pid>/cmdline` is world-readable where `/proc/<pid>/environ` is owner-only. So
+`remoteUrl` carries the username and no credential, and `GIT_ASKPASS` points at a script in
+the run's config directory that echoes `GH_TOKEN`. The session inherits both, which is what
+lets it push through the same clone afterwards — the credential is supplied at each use and
+goes with the run rather than sitting in `.git/config` for the length of it.
+
 **Setting the token without setting `user.name`/`user.email` is a silent bug.** The token
 governs what a run may *do*; the git config governs what the history *says* it was. Leave the
 second out and commits carry whatever identity the host has configured — a person's, on a
 local runner — and the attribution `pipeline-identity` builds its audit story on stops being
 true without anything failing.
+
+**The noreply address is keyed by the bot user's id, not the app's, and nothing tells you
+when you have used the wrong one.** They are different numbers for the same app —
+`reveer-jen-dev[bot]` is app `4588651` and user `316769915`; `github-actions[bot]` is `15368`
+and `41898282` — and an address built from the app id is accepted by every layer that handles
+it and resolves to no account, so the commit renders with an unlinked name. That is the
+attribution failure the paragraph above warns about, reached from *inside* the mitigation and
+looking exactly like success. `installation()` therefore makes a third request,
+`GET /users/<slug>[bot]`, and raises rather than falling back if the host names no id. It goes
+under the minted installation token rather than the JWT: the JWT authenticates the *app*, and
+a user lookup is an ordinary read rather than an app endpoint.
+
+## A stop has to reach the steps between children, not only the running one
+
+`terminate()` kills what is in `#live`. Nothing not yet spawned is in it — and a run's first
+step is minting, which reaches the network with no child in existence at all. So a signal
+landing in that window left the run to clone, configure, and start a full session after it had
+been told to stop: money spent, and a stage writing to the tracker and pushing commits past
+its own cancellation. `#spawn` refuses once `#terminating` is set, which puts the refusal on
+the path the existing `catch` already handles and leaves the cleanup unchanged.
+
+The outcome distinguishes the two stops, and `see()` in `run.ts` reads both: `sessionStarted`
+false means nothing ran, true means the task holds whatever the session got to. `terminated`
+is not the raw flag either — read straight off it, a run that had already finished and
+succeeded reported as stopped, and the report then described a completed stage as one left
+mid-session.
+
+**A cleanup that failed is reported, not swallowed.** Removing the run directory is the whole
+of how `stage-execution`'s "no credential remains on the host" is satisfied — `config/mcp.json`
+holds the tracker's, live until someone rotates it — so the single case that violates the
+requirement must not be the single case nothing says anything about. (The git token is not
+among what is left behind, and only because of the `GIT_ASKPASS` arrangement above: put it
+back in the clone URL and it sits in `.git/config` here too.) It is added to the run's
+failures rather than raised over them, so it never masks the session's own outcome.
+
+## Only the tracker's own key earns the tracker's diagnosis
+
+A run's clone is a full jen installation, so a project's own `.mcp.json` contributes MCP
+servers beside the one the executor passes. `readStream` keeps each failure's server name and
+`verdict` reserves "the tracker connection did not initialize" for `TRACKER_SERVER`; anything
+else is named as itself. Pooling them sends whoever reads the report after the wrong system
+entirely, and the report is all an unattended run leaves behind.

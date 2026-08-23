@@ -183,32 +183,61 @@ describe('the app JWT', () => {
   });
 });
 
+/** The three responses a successful mint reads, in the order the client asks for them. */
+function minting(overrides: { app?: unknown; token?: unknown; bot?: unknown } = {}) {
+  return stub(
+    { body: overrides.app ?? { slug: 'reveer-jen-dev' } },
+    { body: overrides.token ?? { token: 'ghs_recorded', expires_at: '2026-08-23T02:00:00Z' } },
+    { body: overrides.bot ?? { id: 316769915 } },
+  );
+}
+
 describe('minting the installation token', () => {
   it('exchanges the JWT and reports the identity the run commits under', async () => {
-    const { transport, asked } = stub(
-      { body: { slug: 'reveer-jen-dev' } },
-      { body: { token: 'ghs_recorded', expires_at: '2026-08-23T02:00:00Z' } },
-    );
+    const { transport, asked } = minting();
 
     const installation = await new GitHub({ transport }).installation(credentials());
 
     expect(installation.token).toBe('ghs_recorded');
     expect(installation.login).toBe('reveer-jen-dev[bot]');
-    expect(installation.email).toBe('4588651+reveer-jen-dev[bot]@users.noreply.github.com');
+    expect(installation.email).toBe('316769915+reveer-jen-dev[bot]@users.noreply.github.com');
     expect(asked[0]!.url).toMatch(/\/app$/);
     expect(asked[1]!.url).toMatch(/\/app\/installations\/153578694\/access_tokens$/);
     expect(asked[1]!.method).toBe('POST');
+    expect(asked[2]!.url).toMatch(/\/users\/reveer-jen-dev%5Bbot%5D$/);
   });
 
-  // Both requests go under the JWT, and the JWT never leaves the client. Only the minted
-  // token does, and it expires on its own.
-  it('authenticates both requests as the app', async () => {
-    const { transport, asked } = stub({ body: { slug: 'reveer-jen-dev' } }, { body: { token: 'ghs_recorded' } });
+  // The whole reason the third request exists. The two numbers belong to the same app and
+  // nothing rejects the wrong one: an address built on the app id is delivered, accepted,
+  // and attributed to nobody, so a run's commits render with an unlinked name and
+  // `pipeline-identity`'s attribution quietly stops holding.
+  it('addresses the commit by the bot user’s id rather than the app’s', async () => {
+    const { transport } = minting();
+
+    const installation = await new GitHub({ transport }).installation(credentials({ appId: '4588651' }));
+
+    expect(installation.email).not.toContain('4588651+');
+    expect(installation.email).toBe('316769915+reveer-jen-dev[bot]@users.noreply.github.com');
+  });
+
+  // Silence here would be the failure this refuses, so it raises rather than falling back to
+  // the app id — an address that works everywhere except where it is read.
+  it('raises when the host names no user id, rather than committing to an address that resolves to nobody', async () => {
+    const { transport } = minting({ bot: { login: 'reveer-jen-dev[bot]' } });
+
+    await expect(new GitHub({ transport }).installation(credentials())).rejects.toThrow('no user id');
+  });
+
+  // The app's own endpoints go under the JWT, which never leaves the client. The user lookup
+  // is an ordinary read rather than an app endpoint, so it goes under the minted token —
+  // which is scoped to this installation and expires on its own.
+  it('authenticates the app’s endpoints as the app and the user lookup as the installation', async () => {
+    const { transport, asked } = minting();
     await new GitHub({ transport }).installation(credentials());
 
-    for (const request of asked) {
-      expect(request.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
-    }
+    expect(asked[0]!.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+    expect(asked[1]!.authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+    expect(asked[2]!.authorization).toBe('Bearer ghs_recorded');
   });
 
   // The failure this refuses is the same one `linear.ts` refuses one layer over: a
@@ -227,7 +256,7 @@ describe('minting the installation token', () => {
   });
 
   it('raises when the exchange returns no token', async () => {
-    const { transport } = stub({ body: { slug: 'reveer-jen-dev' } }, { body: { message: 'ok' } });
+    const { transport } = minting({ token: { message: 'ok' } });
 
     await expect(new GitHub({ transport }).installation(credentials())).rejects.toThrow('minted no token');
   });
@@ -248,9 +277,10 @@ describe('minting the installation token', () => {
 });
 
 describe('the clone URL', () => {
-  it('carries the token as the username the host expects', () => {
-    expect(remoteUrl('reveer-ai/jen', 'ghs_recorded')).toBe(
-      'https://x-access-token:ghs_recorded@github.com/reveer-ai/jen.git',
-    );
+  // The username the host expects for an installation token, and nothing else. A token
+  // spliced in here would be an argv element of `git clone`, readable by every process on
+  // the host — the same exposure the tracker payload is written to a file to avoid.
+  it('names the username the host expects and carries no credential', () => {
+    expect(remoteUrl('reveer-ai/jen')).toBe('https://x-access-token@github.com/reveer-ai/jen.git');
   });
 });

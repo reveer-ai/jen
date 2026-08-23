@@ -114,8 +114,14 @@ export interface LaunchResult {
   ok: boolean;
   /** Every signal that said failure. Empty where {@link ok}. */
   failures: string[];
-  /** Whether the run ended because it was terminated rather than because the session did. */
+  /** Whether the run ended because it was stopped rather than because the session did. */
   terminated: boolean;
+  /**
+   * Whether the stage session was started at all. A stop can arrive before it, and the two
+   * cases leave the task in different states — nothing done, against whatever the session
+   * had got to — so the report says which.
+   */
+  sessionStarted: boolean;
 }
 
 /** How the tick acts, without knowing anything about what acting involves. */
@@ -356,7 +362,7 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
         // A launcher that threw is a failed run like any other. Never a rejected set, which
         // would abandon the sessions still running beside it.
         const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, failures: [message], terminated: false } satisfies LaunchResult;
+        return { ok: false, failures: [message], terminated: false, sessionStarted: false } satisfies LaunchResult;
       }
     }),
   );
@@ -366,7 +372,14 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
     const request = dispatched[index]!;
     if (result.terminated) {
       failed += 1;
-      io.err(line('terminated', `${request.task}  ${request.skill} — stopped; the task is left as the session left it`));
+      io.err(
+        line(
+          'terminated',
+          result.sessionStarted
+            ? `${request.task}  ${request.skill} — stopped mid-session; the task is left as the session left it`
+            : `${request.task}  ${request.skill} — stopped before its session started; nothing was run`,
+        ),
+      );
       return;
     }
     if (result.ok) {

@@ -75,13 +75,17 @@ Clones are full rather than shallow. Stages read history — the resume conventi
 
 ### Git identity is configured in the clone, per role
 
-The run sets `user.name` and `user.email` in the clone to the role's app identity (`<app-slug>[bot]` and the corresponding `<app_id>+<app-slug>[bot]@users.noreply.github.com`).
+The run sets `user.name` and `user.email` in the clone to the role's app identity (`<app-slug>[bot]` and the corresponding `<bot-user-id>+<app-slug>[bot]@users.noreply.github.com`).
 
 Without this, commits carry whatever identity the host machine has configured — a person's, on a local runner — and the attribution that `pipeline-identity` builds its audit story on silently stops being true. The token governs what the run may *do*; the git config governs what the history *says* it was, and they have to be set together.
 
+**The number in that address is the bot user's id, not the app's.** This paragraph said `<app_id>` until review caught it, and the correction is worth keeping visible because the wrong one fails in the same shape the whole section is about. They are different numbers for the same app — `4588651` and `316769915` for this project's own `dev` role — and an address built from the app id is accepted by every layer that handles it while resolving to no account, so the commit renders with an unlinked name and nothing anywhere reports a problem. The slug read from `GET /app` does not carry it, so the run makes a third request, `GET /users/<slug>[bot]`, and fails rather than falling back if the host names no id.
+
 ### Installation tokens are minted per run, in-process
 
-Per role, the environment supplies an app id, an installation id, and a private key. The run builds an RS256 JWT with `node:crypto`, exchanges it for an installation access token, and puts that token in the session's environment for `gh` and in the clone's remote URL for git.
+Per role, the environment supplies an app id, an installation id, and a private key. The run builds an RS256 JWT with `node:crypto`, exchanges it for an installation access token, and puts that token in the session's environment for `gh` and for git.
+
+**Not in the clone's remote URL**, which is what this paragraph said until review caught it. A token spliced into the URL is an argv element of `git clone`, readable by every process on the host — the same exposure that put the `--mcp-config` payload in a file, on the same host, and argv is the worse of the two: `/proc/<pid>/cmdline` is world-readable where `/proc/<pid>/environ` is owner-only. The URL carries `x-access-token` and no credential; `GIT_ASKPASS` points at a script in the run's config directory that echoes `GH_TOKEN`, which the session already holds for `gh`. The session inherits both, so it pushes through the same clone without the token ever resting in `.git/config`.
 
 `node:crypto` signs RS256 natively, so this adds no dependency. The alternative of shelling out to a GitHub Action that mints tokens was rejected as a layering error: it would work under one runner and not the other, and the whole point of this module is that it cannot tell which runner produced its request.
 

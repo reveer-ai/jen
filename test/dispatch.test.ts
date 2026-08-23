@@ -242,7 +242,7 @@ function recorder(result: Partial<LaunchResult> = {}): { launch: Launch; launche
     launched,
     launch: async (request) => {
       launched.push(request);
-      return { ok: true, failures: [], terminated: false, ...result };
+      return { ok: true, failures: [], terminated: false, sessionStarted: true, ...result };
     },
   };
 }
@@ -834,7 +834,7 @@ describe('a tick that acts on what it decided', () => {
       launch: async (request: RunRequest) => {
         launched.push(request);
         if (request.task === 'ENG-1') throw new Error('the clone failed');
-        return { ok: true, failures: [], terminated: false } satisfies LaunchResult;
+        return { ok: true, failures: [], terminated: false, sessionStarted: true } satisfies LaunchResult;
       },
     };
     const result = await jenRun([], ENV, two(), launcher);

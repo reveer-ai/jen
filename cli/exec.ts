@@ -42,6 +42,17 @@ export const PERMISSION_WARNING = /Ignoring \d+ permissions\.allow entries/;
 /** Where the tracker's MCP server lives. Overridable only so a test can point elsewhere. */
 export const TRACKER_MCP_URL = 'https://mcp.linear.app/mcp';
 
+/**
+ * The key the tracker's server is written under, and therefore the name the session reports
+ * it by.
+ *
+ * Named rather than assumed, because the clone is a full jen installation: a project's own
+ * `.mcp.json` contributes servers beside this one, and a failure has to be able to say which
+ * of them it was. Diagnosing every unconnected server as the tracker sends whoever reads the
+ * report after the wrong thing entirely.
+ */
+export const TRACKER_SERVER = 'linear';
+
 /** What a finished run is known to have done. Handed back; nothing here records it. */
 export interface RunOutcome {
   task: string;
@@ -56,8 +67,16 @@ export interface RunOutcome {
   sessionId?: string;
   /** The session's own stream, line-delimited, as it was emitted. */
   transcript: string;
-  /** Whether the run ended because it was terminated rather than because the session did. */
+  /** Whether the run ended because it was stopped rather than because the session did. */
   terminated: boolean;
+  /**
+   * Whether the stage session was started at all.
+   *
+   * Read beside {@link terminated}, which without it cannot tell a run stopped before its
+   * session from one stopped in the middle of it. The two leave the task in different
+   * states: the first did nothing, and the second left whatever the session had got to.
+   */
+  sessionStarted: boolean;
 }
 
 /** What `tick()` is given so it can act without importing anything that acts. */
@@ -119,7 +138,7 @@ export interface ExecOptions {
   /** The assistant, as a command and its leading arguments. Tests point this at a stub. */
   claude?: string[];
   /** How a repository is addressed for cloning. Tests point this at a local path. */
-  remote?: (repo: string, token: string) => string;
+  remote?: (repo: string) => string;
   /** Where run directories are made. Defaults to the system temporary directory. */
   root?: string;
   trackerMcpUrl?: string;
@@ -140,10 +159,18 @@ interface StreamEvent {
   result?: string;
 }
 
+/** An MCP server the session reported as anything but connected, and what was said about it. */
+export interface McpFailure {
+  /** The server's own name, where the event carried one. */
+  server?: string;
+  /** What the event said about it, without a diagnosis attached. */
+  detail: string;
+}
+
 /** What the session's own stream said, reduced to the three things a verdict rests on. */
 export interface SessionReport {
-  /** Tracker servers that did not come up, named. Empty where every one connected. */
-  mcpFailures: string[];
+  /** Servers that did not come up, each named. Empty where every one connected. */
+  mcpFailures: McpFailure[];
   /** Whether an init event was seen at all. Its absence is itself a failure. */
   started: boolean;
   isError?: boolean;
@@ -188,11 +215,15 @@ export function readStream(stdout: string): SessionReport {
       report.started = true;
       report.sessionId ??= event.session_id;
       for (const failure of event.mcp_server_errors ?? []) {
-        report.mcpFailures.push(typeof failure === 'string' ? failure : JSON.stringify(failure));
+        const named = typeof failure === 'object' && failure !== null ? (failure as { name?: unknown }).name : undefined;
+        report.mcpFailures.push({
+          server: typeof named === 'string' ? named : undefined,
+          detail: typeof failure === 'string' ? failure : JSON.stringify(failure),
+        });
       }
       for (const server of event.mcp_servers ?? []) {
         if (server.status && server.status !== 'connected') {
-          report.mcpFailures.push(`${server.name ?? 'an MCP server'} reported \`${server.status}\``);
+          report.mcpFailures.push({ server: server.name, detail: `reported \`${server.status}\`` });
         }
       }
     }
@@ -231,7 +262,15 @@ export function verdict(report: SessionReport, exit: Exit, stderr: string): stri
     );
   }
   for (const failure of report.mcpFailures) {
-    failures.push(`the tracker connection did not initialize: ${failure}`);
+    // Only the tracker's own key earns the tracker's diagnosis. The clone is a full jen
+    // installation, so a project's `.mcp.json` contributes servers too, and reporting one of
+    // those as the tracker points the reader at the wrong system.
+    failures.push(
+      failure.server === TRACKER_SERVER
+        ? `the tracker connection did not initialize: ${failure.detail}`
+        : `an MCP server the session was given did not initialize: ` +
+          `${failure.server ? `\`${failure.server}\` ` : ''}${failure.detail}`,
+    );
   }
   if (!report.started) {
     failures.push('the session emitted no init event, so it never started.');
@@ -270,10 +309,36 @@ export function prompt(request: RunRequest): string {
 function mcpConfig(url: string, token: string): string {
   return JSON.stringify({
     mcpServers: {
-      linear: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } },
+      [TRACKER_SERVER]: { type: 'http', url, headers: { Authorization: `Bearer ${token}` } },
     },
   });
 }
+
+/**
+ * The script `GIT_ASKPASS` points at, so the token answers git's prompt out of the
+ * environment rather than out of a command line.
+ *
+ * `cli/AGENTS.md` states the rule as the justification for writing the tracker payload to a
+ * file: a command line is readable by every process on the host. An installation token
+ * spliced into a clone URL breaks exactly that rule, on the same host, and argv is the worse
+ * of the two hiding places — `/proc/<pid>/cmdline` is world-readable where
+ * `/proc/<pid>/environ` is owner-only.
+ *
+ * The script itself holds no secret: it echoes `GH_TOKEN`, which the session's environment
+ * already carries for `gh`. That is what lets the session push through the same clone after
+ * the run has configured it — the remote URL names the username and nothing else, and the
+ * credential is supplied at each use and goes with the run.
+ *
+ * The username branch is unreachable while the URL names `x-access-token`, and is here so
+ * that a URL which stops naming it fails at the clone rather than by prompting into a stdin
+ * nobody is attached to.
+ */
+const ASKPASS = `#!/bin/sh
+case "$1" in
+Username*) printf '%s' 'x-access-token' ;;
+*) printf '%s' "$GH_TOKEN" ;;
+esac
+`;
 
 /**
  * The child's environment: this run's role and nothing of another's.
@@ -285,7 +350,13 @@ function mcpConfig(url: string, token: string): string {
  * through the minted token, which is already scoped to its own installation and expires on
  * its own.
  */
-function childEnvironment(base: Environment, credentials: Credentials, token: string, configDir: string): NodeJS.ProcessEnv {
+function childEnvironment(
+  base: Environment,
+  credentials: Credentials,
+  token: string,
+  configDir: string,
+  askpass: string,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(base)) {
     if (key.startsWith('JEN_GH_')) continue;
@@ -298,6 +369,10 @@ function childEnvironment(base: Environment, credentials: Credentials, token: st
   // What `gh` reads. The stage conventions put every pull-request act through it.
   env.GH_TOKEN = token;
   env.GITHUB_TOKEN = token;
+  // What `git push` reads, through the script above. Without these the session would have a
+  // clone it cannot push, since the remote URL deliberately carries no credential.
+  env.GIT_ASKPASS = askpass;
+  env.GIT_TERMINAL_PROMPT = '0';
   return env;
 }
 
@@ -346,9 +421,20 @@ export class Executor {
 
   launch = async (request: RunRequest): Promise<RunOutcome> => {
     const role = request.role as Role;
-    const base: RunOutcome = { task: request.task, skill: request.skill, role, transcript: '', ok: false, failures: [], terminated: false };
+    const base: RunOutcome = {
+      task: request.task,
+      skill: request.skill,
+      role,
+      transcript: '',
+      ok: false,
+      failures: [],
+      terminated: false,
+      sessionStarted: false,
+    };
 
     let directory: string | undefined;
+    let sessionStarted = false;
+    let outcome: RunOutcome;
     try {
       const credentials = credentialsFor(role, this.#env);
       const github = this.#options.github ?? new GitHub();
@@ -367,7 +453,8 @@ export class Executor {
       const config = join(directory, 'config');
       await mkdir(config, { recursive: true });
 
-      await this.#clone(repo, request.branch, credentials, installation.token);
+      const { script, env: gitEnv } = await this.#askpass(config, installation.token);
+      await this.#clone(repo, request.branch, credentials, gitEnv);
       await this.#configureIdentity(repo, installation.login, installation.email);
       await this.#trust(config, repo);
 
@@ -379,33 +466,78 @@ export class Executor {
         mode: 0o600,
       });
 
-      const exit = await this.#session(repo, config, mcp, request, credentials, installation.token);
+      const session = this.#session(repo, config, mcp, request, credentials, installation.token, script);
+      sessionStarted = true;
+      const exit = await session.exited;
       const report = readStream(exit.stdout);
       const failures = verdict(report, exit, exit.stderr);
 
-      return {
+      outcome = {
         ...base,
         ok: failures.length === 0,
         failures,
         cost: report.cost,
         sessionId: report.sessionId,
         transcript: exit.stdout,
-        terminated: this.#terminating,
+        sessionStarted,
+        // A stop that arrived after the session had already finished cut nothing short. Read
+        // straight off the flag, this line called a completed successful run `terminated`,
+        // and `see()` then described a task as left mid-stage when it was not.
+        //
+        // A run that was failing anyway when the stop arrived is reported as stopped, which
+        // is the direction to be imprecise in: it says the task may have been left partway,
+        // and the failures beside it say what went wrong either way.
+        terminated: this.#terminating && failures.length > 0,
       };
     } catch (error) {
-      return {
+      outcome = {
         ...base,
         failures: [error instanceof Error ? error.message : String(error)],
+        sessionStarted,
         terminated: this.#terminating,
       };
-    } finally {
-      if (directory && !this.#options.keepDirectory) {
-        await rm(directory, { recursive: true, force: true }).catch(() => {});
-      }
     }
+
+    // Cleanup is the whole of how `stage-execution`'s "no credential remains on the host" is
+    // satisfied — `config/mcp.json` holds the tracker's, live until someone rotates it — so
+    // the one case that violates the requirement must not also be the one case nothing
+    // reports. It is added to the failures rather than raised over them, so a cleanup that
+    // failed never masks what the session itself did.
+    const left = await this.#sweep(directory);
+    return left ? { ...outcome, ok: false, failures: [...outcome.failures, left] } : outcome;
   };
 
+  /** Remove the run's directory. Returns what to report where it could not be removed. */
+  async #sweep(directory: string | undefined): Promise<string | undefined> {
+    if (!directory || this.#options.keepDirectory) return undefined;
+    try {
+      await rm(directory, { recursive: true, force: true });
+      return undefined;
+    } catch (error) {
+      return (
+        `the run directory could not be removed and is still on the host at ${directory}, ` +
+        `holding this run's tracker credential: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * Start a child, or refuse because the runner has been stopped.
+   *
+   * `terminate()` reaches only what is already running, so without this a signal landing
+   * between two steps — most of all during the minting, where no child exists at all — left
+   * the run to clone, configure, and start a full session after it had been told to stop. A
+   * stage would then write to the tracker and push commits past its own cancellation, and
+   * the outcome would report a session that ran to the end as one that was stopped.
+   *
+   * Refusing by throwing rather than by returning something empty puts this on the path the
+   * `catch` above already handles, and leaves the sweep to run exactly as it does for a run
+   * that ends any other way.
+   */
   #spawn(spec: CommandSpec): Child {
+    if (this.#terminating) {
+      throw new ExecError('the runner was stopped before this run could start its session.');
+    }
     const child = (this.#options.spawn ?? spawner)(spec);
     this.#live.add(child);
     child.exited.finally(() => this.#live.delete(child)).catch(() => {});
@@ -436,17 +568,33 @@ export class Executor {
    * against completion markers, and `openspec archive` and delivery both work over more than
    * one commit — so the cost on a large repository is accepted rather than solved.
    */
-  async #clone(repo: string, branch: string, credentials: Credentials, token: string): Promise<void> {
-    const url = (this.#options.remote ?? remoteUrl)(credentials.repo, token);
-    await this.#run({ command: 'git', args: ['clone', url, repo] }, 'cloning the repository');
+  async #clone(repo: string, branch: string, credentials: Credentials, git: NodeJS.ProcessEnv): Promise<void> {
+    const url = (this.#options.remote ?? remoteUrl)(credentials.repo);
+    await this.#run({ command: 'git', args: ['clone', url, repo], env: git }, 'cloning the repository');
 
-    const fetched = await this.#spawn({ command: 'git', args: ['fetch', 'origin', branch], cwd: repo }).exited;
+    const fetched = await this.#spawn({ command: 'git', args: ['fetch', 'origin', branch], cwd: repo, env: git }).exited;
     if (fetched.code === 0) {
       await this.#run({ command: 'git', args: ['switch', '--force-create', branch, 'FETCH_HEAD'], cwd: repo }, `switching to ${branch}`);
       return;
     }
 
     await this.#run({ command: 'git', args: ['switch', '--create', branch], cwd: repo }, `creating ${branch}`);
+  }
+
+  /**
+   * Write the askpass script, and the environment the run's own `git` calls answer through.
+   *
+   * Layered over `process.env` rather than over the executor's injected environment, because
+   * these are the runner's own git invocations: they need its `PATH`, its `HOME`, and
+   * whatever else git reaches for. Only the two credential-bearing variables are added.
+   */
+  async #askpass(config: string, token: string): Promise<{ script: string; env: NodeJS.ProcessEnv }> {
+    const script = join(config, 'askpass.sh');
+    await writeFile(script, ASKPASS, { mode: 0o700 });
+    return {
+      script,
+      env: { ...process.env, GH_TOKEN: token, GIT_ASKPASS: script, GIT_TERMINAL_PROMPT: '0' },
+    };
   }
 
   /**
@@ -482,15 +630,22 @@ export class Executor {
     await writeFile(join(config, '.claude.json'), JSON.stringify(store, null, 2), { mode: 0o600 });
   }
 
-  /** The session. The prompt goes last — a variadic flag placed before it consumes it. */
-  async #session(
+  /**
+   * The session. The prompt goes last — a variadic flag placed before it consumes it.
+   *
+   * The running child is handed back rather than awaited here, so the caller can record that
+   * the session started at the moment it did. `#spawn` can refuse, and a flag set before the
+   * call would then claim a session that never existed.
+   */
+  #session(
     repo: string,
     config: string,
     mcp: string,
     request: RunRequest,
     credentials: Credentials,
     token: string,
-  ): Promise<Exit> {
+    askpass: string,
+  ): Child {
     const [command, ...leading] = this.#options.claude ?? ['claude'];
     return this.#spawn({
       command: command!,
@@ -507,8 +662,8 @@ export class Executor {
         prompt(request),
       ],
       cwd: repo,
-      env: childEnvironment(this.#env, credentials, token, config),
-    }).exited;
+      env: childEnvironment(this.#env, credentials, token, config, askpass),
+    });
   }
 }
 
