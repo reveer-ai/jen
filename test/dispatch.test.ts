@@ -11,7 +11,15 @@ import { describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
 import type { Transport } from '../cli/linear.js';
-import { COMMENT_PAGE_BUDGET, decide, inFlight, type Examined } from '../cli/run.js';
+import {
+  COMMENT_PAGE_BUDGET,
+  decide,
+  inFlight,
+  type Examined,
+  type Launch,
+  type LaunchResult,
+  type RunRequest,
+} from '../cli/run.js';
 import { stageFor } from '../cli/stages.js';
 import { repoRoot } from './helpers.js';
 
@@ -215,18 +223,41 @@ interface Captured {
   out: string[];
   err: string[];
   requests: Session['requests'];
+  /** Every request that reached the launcher, in dispatch order. */
+  launched: RunRequest[];
+}
+
+/**
+ * A launcher that records and succeeds, standing in for execution.
+ *
+ * The tick's tests invoke `jen run` exactly as an operator does — no flag, acting by
+ * default — and execute nothing, which is the point of the launcher being a parameter. A
+ * test that reached for `--dry-run` instead would be exercising a different code path from
+ * the one that runs unattended, and the whole reason `--dry-run` is the *absence* of a
+ * launcher rather than a branch is that the two must not be able to decide differently.
+ */
+function recorder(result: Partial<LaunchResult> = {}): { launch: Launch; launched: RunRequest[] } {
+  const launched: RunRequest[] = [];
+  return {
+    launched,
+    launch: async (request) => {
+      launched.push(request);
+      return { ok: true, failures: [], terminated: false, sessionStarted: true, ...result };
+    },
+  };
 }
 
 async function jenRun(
   args: string[],
   env: Record<string, string | undefined>,
   session: Session = script(),
+  launcher = recorder(),
 ): Promise<Captured> {
   const out: string[] = [];
   const err: string[] = [];
   const io: Io = { out: (line) => out.push(line), err: (line) => err.push(line) };
-  const code = await run(['run', ...args], io, { env, transport: session.transport });
-  return { code, out, err, requests: session.requests };
+  const code = await run(['run', ...args], io, { env, transport: session.transport, launch: launcher.launch });
+  return { code, out, err, requests: session.requests, launched: launcher.launched };
 }
 
 const TEAM = {
@@ -703,5 +734,121 @@ describe('the tick writes nothing', () => {
       expect(source, `${module} must not reach the filesystem`).not.toMatch(/from 'node:fs'/);
       expect(source, `${module} must not write a file`).not.toMatch(/writeFileSync|mkdirSync|unlinkSync|createWriteStream/);
     }
+  });
+
+  // The decision path is not the only place this has to hold. `stage-execution` requires
+  // that nothing be written to the tracker for a session that failed or was terminated, and
+  // `task-dispatch` states categorically that every tracker write belongs to a stage session.
+  // The executor is the one module that could break that and the only one running when a
+  // session dies, so the guard extends to it rather than stopping where the tick does.
+  it('leaves the tracker alone from the module that runs when a session dies', () => {
+    const source = readFileSync(`${repoRoot}cli/exec.ts`, 'utf8');
+
+    expect(source, 'exec.ts must not reach the tracker client').not.toMatch(/from '\.\/linear\.js'/);
+    expect(source, 'exec.ts must send no mutation').not.toMatch(/\bmutation\s+\w/);
+  });
+
+  // `run.ts` must not reach the executor even for a type: an erased import is still an
+  // import, and the arrangement it would quietly undo is the one the guard above rests on.
+  it('does not let the decision path import the executor at all', () => {
+    expect(readFileSync(`${repoRoot}cli/run.ts`, 'utf8')).not.toMatch(/from '\.\/exec\.js'/);
+  });
+});
+
+/**
+ * What the command does about what it decided.
+ *
+ * The deciding pass above is unchanged and stays unchanged — that is the whole arrangement.
+ * `--dry-run` is the *absence* of a launcher rather than a branch around one, so a preview
+ * cannot decide differently from the run it is previewing. A preview that does not predict
+ * is worse than no preview, because it is trusted.
+ */
+describe('a tick that acts on what it decided', () => {
+  const two = () => script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress'), issueNode('ENG-2', 'in review')) });
+
+  it('launches exactly what it dispatched, and nothing it declined', async () => {
+    const result = await jenRun([], ENV, two());
+
+    expect(result.code, result.err.join('\n')).toBe(0);
+    expect(result.launched).toEqual([
+      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+      { task: 'ENG-2', skill: 'review-task', role: 'deliver', branch: 'eng-2-a-task' },
+    ]);
+  });
+
+  it('launches nothing under --dry-run, and still says what it would have', async () => {
+    const result = await jenRun(['--dry-run'], ENV, two());
+
+    expect(result.code).toBe(0);
+    expect(result.launched).toEqual([]);
+    expect(result.out.map((line) => JSON.parse(line))).toHaveLength(2);
+    expect(result.err.join('\n')).toContain('dispatched');
+  });
+
+  // The property that makes the flag worth having: the same code decides either way.
+  it('dispatches under --dry-run exactly what it launches without it', async () => {
+    const previewed = await jenRun(['--dry-run'], ENV, two());
+    const acted = await jenRun([], ENV, two());
+
+    expect(previewed.out).toEqual(acted.out);
+    expect(acted.launched.map((request) => request.task)).toEqual(
+      previewed.out.map((line) => (JSON.parse(line) as RunRequest).task),
+    );
+  });
+
+  it('honours the cap when it launches, because the cap is already on the dispatched set', async () => {
+    const result = await jenRun(['--concurrency', '1'], ENV, two());
+
+    expect(result.launched).toHaveLength(1);
+  });
+
+  it('exits non-zero when a session could not be run, naming what failed', async () => {
+    const failing = recorder({ ok: false, failures: ['the session exited 1.'] });
+    const result = await jenRun([], ENV, two(), failing);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the session exited 1.');
+  });
+
+  // A stage that parks a task at `Pending` has succeeded — that is one of the two ways every
+  // session is supposed to end. Going red for it would train an operator to ignore the signal.
+  it('exits 0 when the sessions ran, whatever the stages decided', async () => {
+    const result = await jenRun([], ENV, two(), recorder({ ok: true }));
+
+    expect(result.code).toBe(0);
+  });
+
+  it('reports a terminated session as terminated rather than as a stage failure', async () => {
+    const stopped = recorder({ ok: false, failures: [], terminated: true });
+    const result = await jenRun([], ENV, two(), stopped);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the task is left as the session left it');
+  });
+
+  // A launcher that threw must not abandon the sessions running beside it.
+  it('sees every session through even when one of them throws', async () => {
+    const launched: RunRequest[] = [];
+    const launcher = {
+      launched,
+      launch: async (request: RunRequest) => {
+        launched.push(request);
+        if (request.task === 'ENG-1') throw new Error('the clone failed');
+        return { ok: true, failures: [], terminated: false, sessionStarted: true } satisfies LaunchResult;
+      },
+    };
+    const result = await jenRun([], ENV, two(), launcher);
+
+    expect(launched).toHaveLength(2);
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('the clone failed');
+  });
+
+  it('launches nothing when nothing passed the gate', async () => {
+    const session = script({ body: TEAM }, { body: polled() });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(result.launched).toEqual([]);
   });
 });

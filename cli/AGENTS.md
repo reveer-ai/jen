@@ -105,11 +105,19 @@ cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-*.tgz && npx
 
 ## The tick writes nothing, and that is why the announcement is the session's
 
-`run.ts` reads, decides, prints, and exits. No tracker mutation, no git-host call, no file
-— which is what makes it safe to run at any time, twice, and before `ENG-164` exists to
-consume anything it emits. `test/dispatch.test.ts` holds it both ways: every document the
+`run.ts` reads, decides, prints, and hands the dispatched set to a launcher it was given.
+No tracker mutation, no git-host call, no file — which is what makes deciding safe to run
+at any time, twice, and what lets two runners reach identical conclusions. `test/dispatch.test.ts` holds it both ways: every document the
 tick sends must parse as a `query`, and the modules on its path must import nothing from
 `node:fs`. Adding a write here is not a small change; it is the property being protected.
+
+**Execution is injected rather than imported, and that is what keeps the guard honest.**
+`tick()` takes a `Launch` and never reaches for `exec.ts`. Importing it directly would work
+and would force the guard to be relaxed for a transitive import that legitimately writes —
+and a relaxed guard no longer distinguishes the case it was written to catch. `run.ts` does
+not even import the *type*: `LaunchResult` is declared structurally there, and `RunOutcome`
+in `exec.ts` satisfies it while carrying more. `--dry-run` is the absence of a launcher, not
+a branch around one, so a preview cannot decide differently from the run it previews.
 
 The cost of that is worth stating, because it looks like an oversight. The comment marking
 a task as taken is written by the **session**, once it is up, rather than by the dispatcher
@@ -264,3 +272,180 @@ rather than widening `init` and `update`, which are synchronous and whose caller
 it — `test/install.test.ts` narrows the union at its one call site rather than casting, so an
 installer that quietly became asynchronous fails loudly instead of comparing a pending
 promise against an exit code.
+
+## Workspace trust is the invocation's, and `-p` does not exempt a run from it
+
+`-p`'s own help says the trust dialog is skipped in non-interactive mode, which reads like a
+dispatched run is exempt. It is not. A fresh clone under `-p --permission-mode dontAsk` still
+prints `Ignoring N permissions.allow entries from .claude/settings.json: this workspace has
+not been trusted` and runs **as though the file were empty** — on every run, since every clone
+is a path nothing has ever trusted. Under `dontAsk` the consequence is the failure the seeded
+allow list exists to prevent, reached with nobody present to grant anything.
+
+Three routes past it were verified against 2.1.220 rather than read off documentation:
+`--settings` (works, and rejected — it leaves the project's own file inert, so a project could
+never grant its runs a command jen does not ship, and jen cannot know a project's typecheck,
+build, or test commands); overriding `HOME` (works, and rejected — it also relocates git's
+config, ssh's known-hosts, and npm's cache, which a stage's own build reaches for); and
+`CLAUDE_CONFIG_DIR`, which moves exactly the one store that needs moving. That is what
+`exec.ts` uses, writing `projects[<clone>].hasTrustDialogAccepted` into a store the run throws
+away.
+
+**`CLAUDE_CONFIG_DIR` is not in `claude --help`.** The mitigation is worth more than the
+choice: the run scans the session's stderr for that warning and fails the run on it. The check
+is on the *symptom*, so it holds whatever the mechanism, and it catches the variable being
+withdrawn as readily as a path written wrong. Do not soften it into a warning — the whole
+point is that it turns a denial found halfway through a run into a first-second failure.
+
+**The clone path must be `realpath`'d before the trust entry is keyed by it.** This is not
+tidiness and it is not obvious: on macOS the system temporary directory is a symlink, so
+`mkdtemp` hands back `/var/folders/…` while the session resolves its own workspace to
+`/private/var/folders/…`. Key the entry by the unresolved path and the lookup misses, the
+workspace reads as untrusted, and the permissions are silently inert — the exact failure this
+module exists to prevent, by a route that looks impossible. It was found by a test, not by
+reasoning, and the stderr check above is what would have made it loud in production.
+
+## A run's clone cannot use `--branch`
+
+`git clone --branch <branch>` fails when the branch does not exist, and **`design-task` runs
+against a branch that does not exist yet** — the request carries the tracker's *suggested*
+branch name, and design is the stage that first creates and pushes it. So a clone insisting on
+the branch would fail every design dispatch, which is the pipeline's entry point, before the
+session could report anything useful. `exec.ts` clones at the default branch, then places the
+branch locally. It never pushes it: pushing is the stage's, and a branch pushed by the executor
+is a branch with no commit explaining it.
+
+Clones are full rather than shallow, and this is load-bearing rather than lazy. Stages read
+history — the resume convention has them check commits against completion markers — and
+`openspec archive` and delivery both work over more than one commit.
+
+**Which of the two cases it is, is asked of the clone rather than of an exit code.** This ran
+`git fetch origin <branch>` and read a non-zero exit as "the remote carries no such branch"
+until review caught it. A missing ref and an unreachable remote **both exit 128**, with nothing
+in the status separating them — so any transport or auth failure fell through to `--create` and
+handed the session a branch cut from the default branch, with none of the task's history on it.
+The resume convention amplifies that rather than catching it: a stage takes the commits on the
+branch as evidence over any marker, so it reads the task as untouched, redoes the work,
+announces itself, writes to the tracker, and moves the status — and the only thing that fails is
+the push at the end, by which point the tracker says the stage completed. Late and silent.
+
+A full clone already carries every head, so `git rev-parse --verify --quiet
+refs/remotes/origin/<branch>` settles it against the clone, where a missing ref exits **1** and a
+repository-level failure exits **128** and the two *are* separable. Only `1` is read as absent;
+anything else is raised. And `git switch <branch>` off the remote-tracking ref sets the upstream,
+which `--force-create <branch> FETCH_HEAD` does not — without it every resumed branch left the
+session's own `git push` failing with *has no upstream branch*.
+
+## The outcome is read from every signal, because no one of them is the whole story
+
+ENG-164 was opened saying an in-run failure prints as the result rather than raising the exit
+code. Verified against 2.1.220, an authentication failure raised **both** — exit 1 and
+`is_error: true`. So reading either alone is right by accident and wrong the first time a
+failure reports only one. `verdict()` fails on any of four: the stderr warning above, a
+non-empty MCP failure off the `system/init` event, `is_error` on the result, and a non-zero
+exit. They agree on success, and a disagreement is a failure either way.
+
+Reading the init event is what forces `--output-format stream-json` and therefore `--verbose`,
+which it requires. Plain `json` returns only the final result, and a session that never reached
+the tracker cannot announce itself — which feeds straight back into the next tick dispatching
+that task again.
+
+**Two shapes of MCP failure exist and both are read**: an explicit `mcp_server_errors` list,
+and an `mcp_servers` entry whose status is anything but `connected`. The task was written
+against the first; the second is what has actually been observed. A check knowing only one of
+them passes a session that never reached the tracker.
+
+## A session gets its own role's token and none of another's
+
+`credentialsFor` reads only the named role's variables, and `exec.ts` then strips **every**
+`JEN_GH_*` variable out of the child's environment rather than filtering it down. A runner
+configured for all three roles holds all three private keys, and a session inherits whatever
+the runner's environment held. It needs none of them: it acts through the minted installation
+token, already scoped to its own installation and expiring on its own.
+
+The app slug comes from `GET /app` under the JWT rather than from a tenth environment
+variable. `registry.yaml` records an `app` name per role, but the executor reads no files, and
+a renamed app would otherwise commit under a name that no longer exists.
+
+The tracker's `--mcp-config` payload is written to a file inside the run's own config
+directory, never passed inline. A command line is readable by every process on the host, and
+that string carries the tracker credential. The file goes with the directory when the run ends.
+
+**The same rule governs the clone, and it is easy to break there without noticing.** An
+installation token spliced into the clone URL is an argv element of `git clone` — the same
+exposure, on the same host, and argv is the worse hiding place of the two:
+`/proc/<pid>/cmdline` is world-readable where `/proc/<pid>/environ` is owner-only. So
+`remoteUrl` carries the username and no credential, and `GIT_ASKPASS` points at a script in
+the run's config directory that echoes `GH_TOKEN`. The session inherits both, which is what
+lets it push through the same clone afterwards — the credential is supplied at each use and
+goes with the run rather than sitting in `.git/config` for the length of it.
+
+**Setting the token without setting `user.name`/`user.email` is a silent bug.** The token
+governs what a run may *do*; the git config governs what the history *says* it was. Leave the
+second out and commits carry whatever identity the host has configured — a person's, on a
+local runner — and the attribution `pipeline-identity` builds its audit story on stops being
+true without anything failing.
+
+**The noreply address is keyed by the bot user's id, not the app's, and nothing tells you
+when you have used the wrong one.** They are different numbers for the same app —
+`reveer-jen-dev[bot]` is app `4588651` and user `316769915`; `github-actions[bot]` is `15368`
+and `41898282` — and an address built from the app id is accepted by every layer that handles
+it and resolves to no account, so the commit renders with an unlinked name. That is the
+attribution failure the paragraph above warns about, reached from *inside* the mitigation and
+looking exactly like success. `installation()` therefore makes a third request,
+`GET /users/<slug>[bot]`, and raises rather than falling back if the host names no id. It goes
+under the minted installation token rather than the JWT: the JWT authenticates the *app*, and
+a user lookup is an ordinary read rather than an app endpoint.
+
+## A stop has to reach the steps between children, not only the running one
+
+`terminate()` kills what is in `#live`. Nothing not yet spawned is in it — and a run's first
+step is minting, which reaches the network with no child in existence at all. So a signal
+landing in that window left the run to clone, configure, and start a full session after it had
+been told to stop: money spent, and a stage writing to the tracker and pushing commits past
+its own cancellation. `#spawn` refuses once `#terminating` is set, which puts the refusal on
+the path the existing `catch` already handles and leaves the cleanup unchanged.
+
+The outcome distinguishes the two stops, and `see()` in `run.ts` reads both: `sessionStarted`
+false means nothing ran, true means the task holds whatever the session got to. `terminated`
+is not the raw flag either — read straight off it, a run that had already finished and
+succeeded reported as stopped, and the report then described a completed stage as one left
+mid-session.
+
+**A cleanup that failed is reported, not swallowed.** Removing the run directory is the whole
+of how `stage-execution`'s "no credential remains on the host" is satisfied — `config/mcp.json`
+holds the tracker's, live until someone rotates it — so the single case that violates the
+requirement must not be the single case nothing says anything about. (The git token is not
+among what is left behind, and only because of the `GIT_ASKPASS` arrangement above: put it
+back in the clone URL and it sits in `.git/config` here too.) It is added to the run's
+failures rather than raised over them, so it never masks the session's own outcome.
+
+## Only the tracker's own key earns the tracker's diagnosis
+
+A run's clone is a full jen installation, so a project's own `.mcp.json` contributes MCP
+servers beside the one the executor passes. `readStream` keeps each failure's server name and
+`verdict` reserves "the tracker connection did not initialize" for `TRACKER_SERVER`; anything
+else is named as itself. Pooling them sends whoever reads the report after the wrong system
+entirely, and the report is all an unattended run leaves behind.
+
+## A run can outlive the token it minted, and the two halves fail apart
+
+The installation token `github.ts` mints expires an hour after minting, it is minted **once** at
+the very start of the run, and `jen run` now blocks for as long as its sessions take — which a
+stage session can plainly push past an hour.
+
+What makes this worse than a plain expiry is *which* half stops working. The tracker credential
+is the project's long-lived agent key, so `LINEAR_API_KEY` keeps working for the whole session;
+only `gh` and `git push` go 401. A stage that crosses the hour can therefore still announce,
+comment, and move the task's status while being unable to push what it did or to touch the PR.
+It ends by writing a closing comment saying the stage is done, and the commits go with the run
+directory when it is swept. That is exactly the marker-outliving-its-work case the resume
+convention warns a later stage about — manufactured by the executor rather than by a killed run.
+
+`expiresAt` is captured and currently read by nothing; it is carried so this is observable
+rather than because anything acts on it. There is no cheap fix, which is why this is a note and
+not a guard: the session holds the token in its environment, and neither `gh` nor an
+already-started child can be handed a new one. Anything real here is a design decision — an
+askpass reading a file the run refreshes, a `gh` credential helper, or a run that declares a
+ceiling on session length and fails *at* it rather than past it. ENG-167 carries the observation
+that settles which: how long a real stage session actually takes against the hour it has.

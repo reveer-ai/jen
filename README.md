@@ -123,6 +123,16 @@ You have two ways forward, and both are decisions rather than workarounds:
 
 `jen init` also refuses a project that reaches a managed path through a symlinked directory, `--force` included. Everything below such a link belongs to wherever it points, possibly outside your project entirely.
 
+**Running the pipeline unattended is not part of adoption yet.** `jen run` performs one pass over the tracker — it polls, decides which tasks are ready for which stage, and runs a session for each one that passed, exiting when those sessions have finished. It never loops; driving it on a schedule is the runner's job and is still being built.
+
+What it needs beyond `jen init` is a registered identity per role on the git host, an agent on the tracker, and their credentials in the environment — none of which adoption sets up for you. Until that exists, the useful invocation is:
+
+```
+npx jen run --dry-run
+```
+
+which polls and reports what the pipeline would do right now, launching nothing, cloning nothing, and writing nothing anywhere. It is also the flag to reach for if you want a running pipeline to stop acting without redeploying anything.
+
 ## Changing jen itself
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
