@@ -735,6 +735,24 @@ describe('the tick writes nothing', () => {
       expect(source, `${module} must not write a file`).not.toMatch(/writeFileSync|mkdirSync|unlinkSync|createWriteStream/);
     }
   });
+
+  // The decision path is not the only place this has to hold. `stage-execution` requires
+  // that nothing be written to the tracker for a session that failed or was terminated, and
+  // `task-dispatch` states categorically that every tracker write belongs to a stage session.
+  // The executor is the one module that could break that and the only one running when a
+  // session dies, so the guard extends to it rather than stopping where the tick does.
+  it('leaves the tracker alone from the module that runs when a session dies', () => {
+    const source = readFileSync(`${repoRoot}cli/exec.ts`, 'utf8');
+
+    expect(source, 'exec.ts must not reach the tracker client').not.toMatch(/from '\.\/linear\.js'/);
+    expect(source, 'exec.ts must send no mutation').not.toMatch(/\bmutation\s+\w/);
+  });
+
+  // `run.ts` must not reach the executor even for a type: an erased import is still an
+  // import, and the arrangement it would quietly undo is the one the guard above rests on.
+  it('does not let the decision path import the executor at all', () => {
+    expect(readFileSync(`${repoRoot}cli/run.ts`, 'utf8')).not.toMatch(/from '\.\/exec\.js'/);
+  });
 });
 
 /**

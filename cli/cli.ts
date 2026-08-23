@@ -317,14 +317,6 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
 }
 
 /**
- * Every command, dispatched.
- *
- * The return type is a union rather than a promise throughout: `init` and `update` are
- * synchronous and their callers — the tests among them — depend on that, while the tick is
- * inherently not. Widening the two to match the one would buy nothing and cost every
- * existing caller an `await`.
- */
-/**
  * A tick that acts: the deciding pass, then the sessions, with a signal handler over them.
  *
  * The handler is installed here rather than inside the executor because the process is the
@@ -356,6 +348,14 @@ async function dispatch(input: TickInput, io: Io, env: Environment, options: Run
   }
 }
 
+/**
+ * Every command, dispatched.
+ *
+ * The return type is a union rather than a promise throughout: `init` and `update` are
+ * synchronous and their callers — the tests among them — depend on that, while the tick is
+ * inherently not. Widening the two to match the one would buy nothing and cost every
+ * existing caller an `await`.
+ */
 export function run(argv: string[], io: Io, options: RunOptions = {}): number | Promise<number> {
   const [command, ...rest] = argv;
 
