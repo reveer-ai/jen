@@ -16,7 +16,11 @@ This change is the other half: a run request in, a completed stage session out. 
 
 - **A fresh clone per run**, at the task's branch, discarded when the run ends. Concurrent runs share no working copy, and no state survives a run except what it pushed and what it wrote to the tracker.
 
-- **The stage is named, never inferred.** The session is launched as `claude -p` with `/<skill-name>` in the prompt, which Claude Code expands as an explicit by-name invocation. Auto-triggering a skill from its description is a judgment, and judgment in the trigger is the thing this whole layer is arranged to avoid.
+- **The stage and the task are both named in the prompt, and neither is inferred.** The session is launched as `claude -p` with the skill named explicitly — `/design-task ENG-164` — which Claude Code expands as a by-name invocation rather than matching a description. Auto-triggering a skill from its description is a judgment, and judgment in the trigger is the thing this whole layer is arranged to avoid.
+
+  Naming the task is not decoration, and it is the half that interacts with `dontAsk`. `stage-conventions` has a stage take its task "given directly or inferred from context", ask when that is unclear, and stop when it cannot identify one and cannot ask. A dispatched run has no asking branch, so a session launched with a bare skill name would correctly refuse to act — spending a dispatch and looking, from outside, exactly like a stage failure. The run request already carries the task for this reason; the executor's job is to put it where the session will read it.
+
+  **The exact form is left to `design` and owes a real run.** None of the stage skills declare an `argument-hint` or template `$ARGUMENTS`, so nothing here depends on argument substitution: the prompt is free text and can equally carry `/design-task ENG-164` or `/design-task` followed by a sentence naming the task. Which one to standardise on is worth settling against an actual session rather than from the documented behaviour — this change has already found one place where `-p`'s documented behaviour and its real behaviour differ.
 
 - **`--permission-mode dontAsk`,** which denies `AskUserQuestion` outright even where an allow rule would match it. The stage skills already say they never block on a human; this is the harness enforcing that rather than the prose being trusted for it.
 
