@@ -580,9 +580,11 @@ export class Executor {
    * against the clone, where a missing ref exits 1 and a repo-level failure exits 128 and
    * the two are separable.
    *
-   * `git switch <branch>` off the remote-tracking ref also sets the upstream, which
+   * The explicit local branch off the remote-tracking ref also sets the upstream, which
    * `--force-create <branch> FETCH_HEAD` does not — without it every resumed branch made the
-   * session's own `git push` fail with *has no upstream branch*.
+   * session's own `git push` fail with *has no upstream branch*. Both the start point and
+   * `--track` are named because the operator's global `checkout.guess` and
+   * `branch.autoSetupMerge` settings are allowed to differ from git's defaults.
    */
   async #clone(repo: string, branch: string, credentials: Credentials, git: NodeJS.ProcessEnv): Promise<void> {
     const url = (this.#options.remote ?? remoteUrl)(credentials.repo);
@@ -595,7 +597,10 @@ export class Executor {
     }).exited;
 
     if (known.code === 0) {
-      await this.#run({ command: 'git', args: ['switch', branch], cwd: repo }, `switching to ${branch}`);
+      await this.#run(
+        { command: 'git', args: ['switch', '--create', branch, '--track', `origin/${branch}`], cwd: repo },
+        `switching to ${branch}`,
+      );
       return;
     }
 

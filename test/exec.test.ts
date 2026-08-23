@@ -361,6 +361,27 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
   });
 
+  // Runner git calls inherit the operator's global configuration. Branch placement must
+  // name both the start point and the tracking relationship instead of depending on DWIM:
+  // `checkout.guess = false` rejects `git switch <branch>`, while
+  // `branch.autoSetupMerge = false` silently leaves the branch without an upstream.
+  it('places and tracks a resumed branch when the operator disables git’s branch defaults', async () => {
+    const config = join(scratch, 'hostile-gitconfig');
+    writeFileSync(config, '[checkout]\n\tguess = false\n[branch]\n\tautoSetupMerge = false\n');
+    const hostile: Spawner = (spec) =>
+      spawner({ ...spec, env: { ...process.env, ...spec.env, GIT_CONFIG_GLOBAL: config } });
+
+    rmSync(record, { force: true });
+    const outcome = await build({}, true, { spawn: hostile }).launch({ ...REQUEST, branch: 'eng-2-designed' });
+    expect(outcome.ok).toBe(true);
+    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+    expect(git(['branch', '--show-current'], invoked.cwd)).toBe('eng-2-designed');
+    expect(git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], invoked.cwd)).toBe(
+      'origin/eng-2-designed',
+    );
+    rmSync(join(invoked.cwd, '..'), { recursive: true, force: true });
+  });
+
   // The defect this replaced: `git fetch origin <branch>` exits 128 both when the ref is
   // absent and when the fetch could not happen at all, so a transport or auth failure was
   // read as "the remote has no such branch" and the session was handed a branch cut from the
