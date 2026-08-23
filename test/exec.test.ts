@@ -13,7 +13,7 @@
  * network, which is the only thing the stubs are there to avoid.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -347,6 +347,49 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(git(['branch', '--show-current'], invoked!.cwd)).toBe('eng-2-designed');
     expect(existsSync(join(invoked!.cwd, 'design.md'))).toBe(true);
     rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
+  });
+
+  // A branch placed off `origin/<branch>` tracks it; one placed off `FETCH_HEAD` tracks
+  // nothing, and the session's own `git push` fails with *has no upstream branch* — on every
+  // stage after design, which is every stage that resumes a branch.
+  it('leaves the resumed branch tracking its remote, so the session can push it', async () => {
+    const { invoked } = await launched({ ...REQUEST, branch: 'eng-2-designed' }, {}, true);
+
+    expect(git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], invoked!.cwd)).toBe(
+      'origin/eng-2-designed',
+    );
+    rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
+  });
+
+  // The defect this replaced: `git fetch origin <branch>` exits 128 both when the ref is
+  // absent and when the fetch could not happen at all, so a transport or auth failure was
+  // read as "the remote has no such branch" and the session was handed a branch cut from the
+  // default one, carrying none of the task's history. The stage would then read the task as
+  // untouched, redo it, write to the tracker, and fail only at the push.
+  it('places a branch the remote has even when the remote goes unreachable after the clone', async () => {
+    const moved = `${origin}-unreachable`;
+    // The origin disappears the instant the clone finishes, so anything reaching for the
+    // remote past that point fails exactly as an unreachable host or a dead credential does.
+    const cutOff: Spawner = (spec) => {
+      const child = spawner(spec);
+      if (spec.args[0] === 'clone') void child.exited.then(() => renameSync(origin, moved)).catch(() => {});
+      return child;
+    };
+
+    rmSync(record, { force: true });
+    let outcome: RunOutcome;
+    try {
+      outcome = await build({}, true, { spawn: cutOff }).launch({ ...REQUEST, branch: 'eng-2-designed' });
+    } finally {
+      if (existsSync(moved)) renameSync(moved, origin);
+    }
+    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+
+    expect(outcome.ok).toBe(true);
+    expect(git(['branch', '--show-current'], invoked.cwd)).toBe('eng-2-designed');
+    // The history is the point: a branch off the default one would not carry this.
+    expect(existsSync(join(invoked.cwd, 'design.md'))).toBe(true);
+    rmSync(join(invoked.cwd, '..'), { recursive: true, force: true });
   });
 
   // The pipeline's entry point: `design-task` runs against a branch that does not exist yet,

@@ -311,13 +311,30 @@ reasoning, and the stderr check above is what would have made it loud in product
 against a branch that does not exist yet** — the request carries the tracker's *suggested*
 branch name, and design is the stage that first creates and pushes it. So a clone insisting on
 the branch would fail every design dispatch, which is the pipeline's entry point, before the
-session could report anything useful. `exec.ts` clones at the default branch, then fetches and
-switches, falling back to creating the branch locally. It never pushes it: pushing is the
-stage's, and a branch pushed by the executor is a branch with no commit explaining it.
+session could report anything useful. `exec.ts` clones at the default branch, then places the
+branch locally. It never pushes it: pushing is the stage's, and a branch pushed by the executor
+is a branch with no commit explaining it.
 
 Clones are full rather than shallow, and this is load-bearing rather than lazy. Stages read
 history — the resume convention has them check commits against completion markers — and
 `openspec archive` and delivery both work over more than one commit.
+
+**Which of the two cases it is, is asked of the clone rather than of an exit code.** This ran
+`git fetch origin <branch>` and read a non-zero exit as "the remote carries no such branch"
+until review caught it. A missing ref and an unreachable remote **both exit 128**, with nothing
+in the status separating them — so any transport or auth failure fell through to `--create` and
+handed the session a branch cut from the default branch, with none of the task's history on it.
+The resume convention amplifies that rather than catching it: a stage takes the commits on the
+branch as evidence over any marker, so it reads the task as untouched, redoes the work,
+announces itself, writes to the tracker, and moves the status — and the only thing that fails is
+the push at the end, by which point the tracker says the stage completed. Late and silent.
+
+A full clone already carries every head, so `git rev-parse --verify --quiet
+refs/remotes/origin/<branch>` settles it against the clone, where a missing ref exits **1** and a
+repository-level failure exits **128** and the two *are* separable. Only `1` is read as absent;
+anything else is raised. And `git switch <branch>` off the remote-tracking ref sets the upstream,
+which `--force-create <branch> FETCH_HEAD` does not — without it every resumed branch left the
+session's own `git push` failing with *has no upstream branch*.
 
 ## The outcome is read from every signal, because no one of them is the whole story
 
@@ -410,3 +427,25 @@ servers beside the one the executor passes. `readStream` keeps each failure's se
 `verdict` reserves "the tracker connection did not initialize" for `TRACKER_SERVER`; anything
 else is named as itself. Pooling them sends whoever reads the report after the wrong system
 entirely, and the report is all an unattended run leaves behind.
+
+## A run can outlive the token it minted, and the two halves fail apart
+
+The installation token `github.ts` mints expires an hour after minting, it is minted **once** at
+the very start of the run, and `jen run` now blocks for as long as its sessions take — which a
+stage session can plainly push past an hour.
+
+What makes this worse than a plain expiry is *which* half stops working. The tracker credential
+is the project's long-lived agent key, so `LINEAR_API_KEY` keeps working for the whole session;
+only `gh` and `git push` go 401. A stage that crosses the hour can therefore still announce,
+comment, and move the task's status while being unable to push what it did or to touch the PR.
+It ends by writing a closing comment saying the stage is done, and the commits go with the run
+directory when it is swept. That is exactly the marker-outliving-its-work case the resume
+convention warns a later stage about — manufactured by the executor rather than by a killed run.
+
+`expiresAt` is captured and currently read by nothing; it is carried so this is observable
+rather than because anything acts on it. There is no cheap fix, which is why this is a note and
+not a guard: the session holds the token in its environment, and neither `gh` nor an
+already-started child can be handed a new one. Anything real here is a design decision — an
+askpass reading a file the run refreshes, a `gh` credential helper, or a run that declares a
+ceiling on session length and fails *at* it rather than past it. ENG-167 carries the observation
+that settles which: how long a real stage session actually takes against the hour it has.

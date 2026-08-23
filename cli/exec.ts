@@ -567,15 +567,44 @@ export class Executor {
    * Full rather than shallow. Stages read history — the resume convention checks commits
    * against completion markers, and `openspec archive` and delivery both work over more than
    * one commit — so the cost on a large repository is accepted rather than solved.
+   *
+   * **Which of the two it is, is asked of the clone and not of an exit code.** This ran
+   * `git fetch origin <branch>` and read a non-zero exit as "the remote carries no such
+   * branch" until review caught it: a missing ref and an unreachable remote both exit 128,
+   * so any transport or auth failure fell through to `--create` and handed the session a
+   * branch cut from the default branch with none of the task's history on it. The resume
+   * convention then amplifies it rather than catching it — a stage takes the commits on the
+   * branch as evidence over any marker, so it reads the task as untouched, redoes the work,
+   * writes to the tracker, and moves the status, and the only thing that fails is the push
+   * at the end. A full clone already carries every head, so `origin/<branch>` settles it
+   * against the clone, where a missing ref exits 1 and a repo-level failure exits 128 and
+   * the two are separable.
+   *
+   * `git switch <branch>` off the remote-tracking ref also sets the upstream, which
+   * `--force-create <branch> FETCH_HEAD` does not — without it every resumed branch made the
+   * session's own `git push` fail with *has no upstream branch*.
    */
   async #clone(repo: string, branch: string, credentials: Credentials, git: NodeJS.ProcessEnv): Promise<void> {
     const url = (this.#options.remote ?? remoteUrl)(credentials.repo);
     await this.#run({ command: 'git', args: ['clone', url, repo], env: git }, 'cloning the repository');
 
-    const fetched = await this.#spawn({ command: 'git', args: ['fetch', 'origin', branch], cwd: repo, env: git }).exited;
-    if (fetched.code === 0) {
-      await this.#run({ command: 'git', args: ['switch', '--force-create', branch, 'FETCH_HEAD'], cwd: repo }, `switching to ${branch}`);
+    const known = await this.#spawn({
+      command: 'git',
+      args: ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`],
+      cwd: repo,
+    }).exited;
+
+    if (known.code === 0) {
+      await this.#run({ command: 'git', args: ['switch', branch], cwd: repo }, `switching to ${branch}`);
       return;
+    }
+
+    // Only `1` means the ref is absent. Anything else is the repository itself failing to
+    // answer, and inferring "the remote has no such branch" from that is the mistake above.
+    if (known.code !== 1) {
+      throw new ExecError(
+        `looking for ${branch} failed (${known.signal ?? `exit ${known.code}`}): ${known.stderr.trim().slice(0, 500)}`,
+      );
     }
 
     await this.#run({ command: 'git', args: ['switch', '--create', branch], cwd: repo }, `creating ${branch}`);

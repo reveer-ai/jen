@@ -65,13 +65,15 @@ Alternatives considered:
 
 ### Clone at the default branch, then place the branch locally
 
-`git clone` then `git fetch origin <branch> && git switch <branch>`, falling back to `git switch -c <branch>` when the remote has no such branch.
+`git clone`, then `git switch <branch>` where the clone already carries `origin/<branch>`, falling back to `git switch -c <branch>` where it does not.
 
 `git clone --branch <branch>` cannot be used, and this is not a stylistic point: **`design-task` runs against a branch that does not exist yet.** The run request carries the tracker's *suggested* branch name, and design is the stage that first creates and pushes it. A clone that insists on the branch would fail every design dispatch — the pipeline's entry point — and fail it before the session could report anything useful.
 
 The run places the branch and stops there. It does not create it on the remote: pushing is the stage's, and a branch pushed by the executor would be a branch with no commit explaining it.
 
 Clones are full rather than shallow. Stages read history — the resume convention has them check commits on the branch against completion markers — and `openspec archive` and the deliver stage both operate on more than a single commit.
+
+**Which of the two cases it is, is asked of the clone rather than of an exit code.** This paragraph said `git fetch origin <branch>` and keyed the fallback on "the remote has no such branch" until review caught it, and the correction is worth keeping visible because the wrong version fails in the shape this whole module exists to refuse. A missing ref and an unreachable remote **both exit 128**, so any transport or auth failure was read as an absent branch and the session was handed a branch cut from the default branch with none of the task's history on it. The resume convention amplifies that rather than catching it: the stage reads the task as untouched, redoes the work, announces itself, writes to the tracker, and moves the status, and the only thing that fails is the push at the end — late and silent. Because the clone is full it already carries every head, so `git rev-parse --verify --quiet refs/remotes/origin/<branch>` settles it locally, where an absent ref exits 1 and a repository-level failure exits 128 and the two are separable; only 1 is read as absent. `git switch <branch>` off the remote-tracking ref also sets the upstream, which the `FETCH_HEAD` form did not, so a resumed branch no longer leaves the session's own `git push` failing for want of one.
 
 ### Git identity is configured in the clone, per role
 

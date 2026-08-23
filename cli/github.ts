@@ -157,7 +157,11 @@ export interface GitHubOptions {
 export interface Installation {
   /** The installation access token. Short-lived, per-run, and discarded with the run. */
   token: string;
-  /** ISO-8601, as the host supplies it. Reported, never acted on. */
+  /**
+   * ISO-8601, as the host supplies it. Carried so the expiry is observable; nothing acts on
+   * it, and a run that outlives it keeps its tracker key while `gh` and `git push` go 401 —
+   * see *A run can outlive the token it minted* in `cli/AGENTS.md`.
+   */
   expiresAt: string;
   /** `<slug>[bot]`, the name commits made by this app carry. */
   login: string;
@@ -231,7 +235,9 @@ export class GitHub {
    * Three requests. The first two go under the JWT, which is discarded here; the third goes
    * under the freshly minted installation token, because the JWT authenticates the *app* and
    * `/users/…` is an ordinary read rather than an app endpoint. Only the installation token
-   * leaves this method, and it expires on its own.
+   * leaves this method, and it expires on its own — an hour from here, which a run that
+   * blocks on its session can outlive. `cli/AGENTS.md` records what that costs and why there
+   * is no cheap guard against it.
    */
   async installation(credentials: Credentials): Promise<Installation> {
     const jwt = appJwt(credentials.appId, credentials.privateKey, this.#now());
