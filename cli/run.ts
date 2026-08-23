@@ -1,14 +1,25 @@
 /**
- * The tick: one poll-map-gate-dispatch pass over the tracker, then exit.
+ * The tick: one poll-map-gate-dispatch pass over the tracker, then the sessions it
+ * dispatched, then exit.
  *
  * The loop is not here. `jen run` is the seam between the dispatcher and whatever drives
  * it, so a scheduled job and a long-running local process are both thin wrappers over this
  * one entry point rather than two implementations of the same decision that drift.
  *
- * Nothing below writes. Not to the tracker, not to the git host, not to the filesystem —
- * which is what makes a tick safe to run at any time, twice, and before anything exists to
- * consume what it emits. The comment marking a task as taken is the session's own, written
- * once the session is actually running; see `cli/AGENTS.md` for what that costs.
+ * **Nothing in this module writes** — not to the tracker, not to the git host, not to the
+ * filesystem. That is what makes deciding safe to run at any time, twice, and what lets two
+ * runners reach identical conclusions from identical state. It is held by a source-level
+ * guard in `test/dispatch.test.ts` and it is the property, not an obstacle.
+ *
+ * Execution is therefore *injected* rather than imported: {@link tick} takes a {@link Launch}
+ * and never reaches for the module implementing one. Importing `exec.ts` here would force
+ * that guard to be relaxed for a transitive import that legitimately writes, and a relaxed
+ * guard no longer distinguishes the case it was written to catch.
+ *
+ * The comment marking a task as taken is still the session's own, written once the session
+ * is actually running — launching one is not a tracker write, and the code that launched it
+ * writes nothing on its behalf, not for a session that failed and not for one that was
+ * terminated. See `cli/AGENTS.md` for what that costs.
  */
 import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './stages.js';
 import {
@@ -89,6 +100,37 @@ export interface RunRequest {
 }
 
 export type Verdict = { dispatch: RunRequest } | { declined: string };
+
+/**
+ * What the tick needs to know about a session that has finished.
+ *
+ * Declared structurally here rather than imported from the executor, which is the whole
+ * arrangement: this module reaches nothing that writes, not even for a type. `RunOutcome`
+ * in `exec.ts` satisfies this and carries more — the cost, the session id, the transcript —
+ * none of which the tick has any business with, since recording a run is ENG-165's.
+ */
+export interface LaunchResult {
+  /** Whether the session both ran and reported success. */
+  ok: boolean;
+  /** Every signal that said failure. Empty where {@link ok}. */
+  failures: string[];
+  /** Whether the run ended because it was terminated rather than because the session did. */
+  terminated: boolean;
+}
+
+/** How the tick acts, without knowing anything about what acting involves. */
+export type Launch = (request: RunRequest) => Promise<LaunchResult>;
+
+export interface TickOptions {
+  /** The tracker transport, injected by tests. Defaults to global `fetch`. */
+  transport?: typeof fetch;
+  /**
+   * What turns a dispatched request into a session. Absent under `--dry-run`, which is the
+   * whole of what that flag does — the deciding pass above it is the same code either way,
+   * because a preview that does not predict is worse than no preview.
+   */
+  launch?: Launch;
+}
 
 export interface Outcome {
   identifier: string;
@@ -286,13 +328,68 @@ function notATask(issue: TrackerIssue): string | undefined {
 }
 
 /**
+ * Launch what was dispatched, and see it through.
+ *
+ * All of them together, awaited as a set: {@link decide} has already capped the dispatched
+ * set at `--concurrency`, so anything launching exactly what it emitted is capped by
+ * construction and no semaphore is needed here.
+ *
+ * The command waits rather than exiting once the sessions are started, and that is the
+ * point of it: a command that launches and exits orphans them — the runner driving it ends,
+ * taking down the very sessions it started, and no process is left responsible for them or
+ * able to receive a termination signal on their behalf. Waiting on launched work is not
+ * looping; the pass happened once.
+ *
+ * The exit code is about the *executor*, not about what a stage decided. A stage that moved
+ * its task to `Pending` succeeded — that is one of the two ways every session is supposed to
+ * end. Going red every time a stage correctly asks for a human trains an operator to ignore
+ * the signal, which is worse than not reporting at all.
+ */
+async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<number> {
+  io.err('');
+
+  const results = await Promise.all(
+    dispatched.map(async (request) => {
+      try {
+        return await launch(request);
+      } catch (error) {
+        // A launcher that threw is a failed run like any other. Never a rejected set, which
+        // would abandon the sessions still running beside it.
+        const message = error instanceof Error ? error.message : String(error);
+        return { ok: false, failures: [message], terminated: false } satisfies LaunchResult;
+      }
+    }),
+  );
+
+  let failed = 0;
+  results.forEach((result, index) => {
+    const request = dispatched[index]!;
+    if (result.terminated) {
+      failed += 1;
+      io.err(line('terminated', `${request.task}  ${request.skill} — stopped; the task is left as the session left it`));
+      return;
+    }
+    if (result.ok) {
+      io.err(line('ran', `${request.task}  ${request.skill} as ${request.role}`));
+      return;
+    }
+    failed += 1;
+    io.err(line('failed', `${request.task}  ${request.skill} as ${request.role}`));
+    for (const failure of result.failures) io.err(`${' '.repeat(13)}${failure}`);
+  });
+
+  return failed === 0 ? 0 : 1;
+}
+
+/**
  * One tick.
  *
  * Every refusal happens before anything is polled, so a misconfigured run fails naming
  * what is missing rather than partway through a pass that has already emitted some of its
  * run requests.
  */
-export async function tick(input: TickInput, io: Io, env: Environment, transport?: typeof fetch): Promise<number> {
+export async function tick(input: TickInput, io: Io, env: Environment, options: TickOptions = {}): Promise<number> {
+  const { transport, launch } = options;
   try {
     const token = env[TOKEN_VARIABLE];
     if (!token) {
@@ -413,9 +510,11 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
     // background of any project with epics in it and the first is what changed this tick.
     const outcomes = [...decide(examined, input.concurrency), ...notTasks];
 
+    const dispatched: RunRequest[] = [];
     for (const outcome of outcomes) {
       if ('dispatch' in outcome.verdict) {
         const request = outcome.verdict.dispatch;
+        dispatched.push(request);
         io.out(JSON.stringify(request));
         io.err(line('dispatched', `${outcome.identifier}  ${request.skill} as ${request.role}  ${request.branch}`));
       } else {
@@ -433,7 +532,12 @@ export async function tick(input: TickInput, io: Io, env: Environment, transport
     ].filter((part): part is string => part !== undefined);
     if (budget.length > 0) io.err(line('budget', budget.join(', ')));
 
-    return 0;
+    // Everything above this line is the deciding pass, and it has now finished reporting.
+    // `--dry-run` is exactly the absence of a launcher: the same decisions, reached by the
+    // same code, with nothing done about them.
+    if (!launch || dispatched.length === 0) return 0;
+
+    return await see(dispatched, launch, io);
   } catch (error) {
     if (error instanceof Refusal) {
       io.err(`jen run: ${error.message}`);

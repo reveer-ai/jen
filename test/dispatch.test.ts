@@ -11,7 +11,15 @@ import { describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
 import type { Transport } from '../cli/linear.js';
-import { COMMENT_PAGE_BUDGET, decide, inFlight, type Examined } from '../cli/run.js';
+import {
+  COMMENT_PAGE_BUDGET,
+  decide,
+  inFlight,
+  type Examined,
+  type Launch,
+  type LaunchResult,
+  type RunRequest,
+} from '../cli/run.js';
 import { stageFor } from '../cli/stages.js';
 import { repoRoot } from './helpers.js';
 
@@ -215,18 +223,41 @@ interface Captured {
   out: string[];
   err: string[];
   requests: Session['requests'];
+  /** Every request that reached the launcher, in dispatch order. */
+  launched: RunRequest[];
+}
+
+/**
+ * A launcher that records and succeeds, standing in for execution.
+ *
+ * The tick's tests invoke `jen run` exactly as an operator does — no flag, acting by
+ * default — and execute nothing, which is the point of the launcher being a parameter. A
+ * test that reached for `--dry-run` instead would be exercising a different code path from
+ * the one that runs unattended, and the whole reason `--dry-run` is the *absence* of a
+ * launcher rather than a branch is that the two must not be able to decide differently.
+ */
+function recorder(result: Partial<LaunchResult> = {}): { launch: Launch; launched: RunRequest[] } {
+  const launched: RunRequest[] = [];
+  return {
+    launched,
+    launch: async (request) => {
+      launched.push(request);
+      return { ok: true, failures: [], terminated: false, ...result };
+    },
+  };
 }
 
 async function jenRun(
   args: string[],
   env: Record<string, string | undefined>,
   session: Session = script(),
+  launcher = recorder(),
 ): Promise<Captured> {
   const out: string[] = [];
   const err: string[] = [];
   const io: Io = { out: (line) => out.push(line), err: (line) => err.push(line) };
-  const code = await run(['run', ...args], io, { env, transport: session.transport });
-  return { code, out, err, requests: session.requests };
+  const code = await run(['run', ...args], io, { env, transport: session.transport, launch: launcher.launch });
+  return { code, out, err, requests: session.requests, launched: launcher.launched };
 }
 
 const TEAM = {

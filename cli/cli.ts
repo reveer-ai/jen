@@ -21,7 +21,8 @@ import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
 import { payloadFiles, SCAFFOLD, SKILLS } from './payload.js';
 import { TOKEN_VARIABLE } from './linear.js';
-import { DEFAULTS, tick, type Environment, type TickInput } from './run.js';
+import { executor, type ExecOptions } from './exec.js';
+import { DEFAULTS, tick, type Environment, type Launch, type TickInput } from './run.js';
 
 const USAGE = `jen — the workflow layer for automated, agentic software development
 
@@ -31,10 +32,11 @@ Usage:
 Commands:
   init      install the workflow into a project and initialize OpenSpec
   update    refresh the managed files and remove the ones jen no longer ships
-  run       one dispatch pass over the tracker: poll, map, gate, emit, exit
+  run       one dispatch pass over the tracker: poll, map, gate, then run what passed
 
 Options:
       --force          on init, overwrite a file jen owns wholesale that the project already has
+      --dry-run        on run, decide and report without launching anything
       --team           on run, the tracker team to act on (or JEN_TEAM)
       --project        on run, the tracker project to act on (or JEN_PROJECT)
       --concurrency    on run, simultaneous runs to allow (default ${DEFAULTS.concurrency})
@@ -47,10 +49,16 @@ Options:
 ${SKILLS.length} skills it ships, and a scaffold the project then owns; it touches nothing else. Neither
 command prompts, and both are safe to re-run and safe in CI.
 
-\`run\` takes no project path and reads no file — it is told which team and project to act
-on, reads its tracker credential from ${TOKEN_VARIABLE}, and writes nothing anywhere. Run
-requests go to stdout as one JSON object per line and the report goes to stderr, so
-\`jen run | executor\` works with no flag.
+\`run\` takes no project path and is told which team and project to act on, reading its
+tracker credential from ${TOKEN_VARIABLE}. It polls once, decides, launches a session for
+each task that passed the gate, and exits when those sessions have finished — it never
+loops. Run requests go to stdout as one JSON object per line and the report goes to
+stderr, so \`jen run | recorder\` works with no flag.
+
+\`--dry-run\` is the deciding pass on its own: same poll, same gate, same report, and
+nothing launched, nothing cloned, nothing written anywhere. It is what answers "what would
+the pipeline do right now", and what an operator reaches for to stop it acting without
+redeploying anything.
 
 Every page \`run\` reads is bounded, and the report says so wherever a bound cut the answer
 short — \`--issue-page\` and \`--comment-page\` are what you raise when it does.`;
@@ -69,6 +77,20 @@ export interface RunOptions {
   env?: Environment;
   /** The tracker transport, injected by tests. Defaults to global `fetch`. */
   transport?: typeof fetch;
+  /**
+   * How the real executor is built, for a test driving the whole command against a stub
+   * assistant and a local remote. Ignored when {@link launch} is given.
+   */
+  exec?: ExecOptions;
+  /**
+   * A launcher, replacing execution entirely.
+   *
+   * This is what lets the tick's own tests exercise `jen run` exactly as an operator invokes
+   * it — no flag, acting by default — while executing nothing. Without it a test of the
+   * *decision* would have to either spawn sessions or take a different code path than the
+   * one that runs unattended, and the second is the worse of the two.
+   */
+  launch?: Launch;
 }
 
 type Command = 'init' | 'update' | 'run';
@@ -88,8 +110,20 @@ function version(): string {
   return manifest.version;
 }
 
+/** What `jen run` was asked to do: the tick's input, and whether it may act on it. */
+interface Invoked {
+  input: TickInput;
+  /**
+   * Whether to stop after deciding. Carried beside {@link TickInput} rather than in it,
+   * because the tick has no such setting — acting is the presence of a launcher and
+   * `--dry-run` is its absence, which is what keeps the deciding pass one code path.
+   */
+  dryRun: boolean;
+}
+
 /** `jen run`'s flags, each falling back to the environment the runner supplies. */
-function parseTick(args: string[], env: Environment): TickInput {
+function parseTick(args: string[], env: Environment): Invoked {
+  let dryRun = false;
   const input: TickInput = {
     team: env.JEN_TEAM,
     project: env.JEN_PROJECT,
@@ -108,7 +142,9 @@ function parseTick(args: string[], env: Environment): TickInput {
     const arg = args[index]!;
     const value = args[index + 1];
 
-    if (arg === '--team' || arg === '--project') {
+    if (arg === '--dry-run') {
+      dryRun = true;
+    } else if (arg === '--team' || arg === '--project') {
       if (value === undefined || value.startsWith('-')) throw new UsageError(`${arg} takes a value`);
       if (arg === '--team') input.team = value;
       else input.project = value;
@@ -122,11 +158,14 @@ function parseTick(args: string[], env: Environment): TickInput {
     } else if (arg.startsWith('-')) {
       throw new UsageError(`unknown option: ${arg}`);
     } else {
-      throw new UsageError(`jen run takes no project path, and was given ${arg}. It reads no files.`);
+      throw new UsageError(
+        `jen run takes no project path, and was given ${arg}. It is told which team and project to act on ` +
+          'rather than pointed at a checkout — each run clones its own.',
+      );
     }
   }
 
-  return input;
+  return { input, dryRun };
 }
 
 function parse(command: InstallCommand, args: string[], cwd: string): Invocation {
@@ -285,6 +324,38 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
  * inherently not. Widening the two to match the one would buy nothing and cost every
  * existing caller an `await`.
  */
+/**
+ * A tick that acts: the deciding pass, then the sessions, with a signal handler over them.
+ *
+ * The handler is installed here rather than inside the executor because the process is the
+ * command's, not a module's — and it is removed again on the way out, so a caller invoking
+ * `run` twice in one process (which the tests do) does not accumulate handlers.
+ *
+ * SIGTERM is ordinary operation: a cancelled Actions job and a stopping local runner both
+ * send it. Forwarding it to the sessions is what lets each one abort its turn, kill its
+ * process tree, and run its `SessionEnd` hooks, rather than being orphaned or hard-killed.
+ */
+async function dispatch(input: TickInput, io: Io, env: Environment, options: RunOptions): Promise<number> {
+  if (options.launch) return tick(input, io, env, { transport: options.transport, launch: options.launch });
+
+  const sessions = executor({ env, ...options.exec });
+  const stop = (signal: NodeJS.Signals) => () => {
+    io.err(`jen run: ${signal} received — stopping the sessions in flight and writing nothing for them.`);
+    sessions.terminate(signal);
+  };
+  const onTerm = stop('SIGTERM');
+  const onInt = stop('SIGINT');
+
+  process.on('SIGTERM', onTerm);
+  process.on('SIGINT', onInt);
+  try {
+    return await tick(input, io, env, { transport: options.transport, launch: sessions.launch });
+  } finally {
+    process.off('SIGTERM', onTerm);
+    process.off('SIGINT', onInt);
+  }
+}
+
 export function run(argv: string[], io: Io, options: RunOptions = {}): number | Promise<number> {
   const [command, ...rest] = argv;
 
@@ -316,7 +387,9 @@ export function run(argv: string[], io: Io, options: RunOptions = {}): number | 
           return 0;
         }
         const env = options.env ?? process.env;
-        return tick(parseTick(rest, env), io, env, options.transport);
+        const { input, dryRun } = parseTick(rest, env);
+        if (dryRun) return tick(input, io, env, { transport: options.transport });
+        return dispatch(input, io, env, options);
       }
 
       default:
