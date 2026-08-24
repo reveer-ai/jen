@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
-import type { Transport } from '../cli/linear.js';
+import { PAUSED_STATUS_NAME, type Transport } from '../cli/linear.js';
 import {
   COMMENT_PAGE_BUDGET,
   decide,
@@ -801,31 +801,60 @@ describe('an issue in a stage status that is not a task', () => {
  * runner already looks, and un-pausing resumes the pipeline with nothing restarted.
  */
 describe('a project that is not being worked', () => {
-  for (const type of ['paused', 'completed', 'canceled']) {
+  for (const type of ['completed', 'canceled']) {
     it(`halts before polling when the project is ${type}`, async () => {
       const session = script({ body: TEAM }, { body: project(type, 'On hold') });
       const result = await jenRun([], ENV, session);
 
-      expect(result.code, 'a deliberate pause is not a failed tick').toBe(0);
+      expect(result.code, 'a deliberate halt is not a failed tick').toBe(0);
       expect(result.err.join('\n')).toContain('On hold');
       expect(result.out, 'nothing is dispatched, so nothing is emitted at all').toEqual([]);
       expect(session.requests, 'the halt comes before the poll').toHaveLength(2);
     });
   }
 
-  // Read by type rather than by name, so a workspace that renamed its paused status still
-  // halts — and so a status jen has never heard of is understood by its category.
-  it('halts on a renamed status, because it matches the type', async () => {
-    const session = script({ body: TEAM }, { body: project('paused', 'Parked until Q3') });
+  // These two are the workspace's own statuses, matched on the category the tracker files
+  // them under — so a workspace that renamed `Completed` is still understood, and so is a
+  // status jen has never heard of.
+  it('halts on a renamed completed status, because it matches the type', async () => {
+    const session = script({ body: TEAM }, { body: project('canceled', 'Shelved indefinitely') });
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
-    expect(result.err.join('\n')).toContain('Parked until Q3');
+    expect(result.err.join('\n')).toContain('Shelved indefinitely');
   });
 
-  // A deny list over three named types, not an allow list over `started`. jen's own project
-  // sits in `Backlog` while its pipeline runs, and an allow list would have halted it.
-  it('polls normally from a backlog or planned project', async () => {
+  // The pause is the other half, and it is the one jen names. Its type is `started` — the
+  // category every working project shares — so the type carries no signal and the name is
+  // the whole of the match. This is the case that fails silently if the match is lost: a
+  // paused project that dispatches looks exactly like one that was never paused.
+  it('halts on the prescribed pause status, whose type is the working one', async () => {
+    const session = script({ body: TEAM }, { body: project('started', PAUSED_STATUS_NAME) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code, 'a deliberate pause is not a failed tick').toBe(0);
+    expect(result.err.join('\n')).toContain(PAUSED_STATUS_NAME);
+    expect(result.out).toEqual([]);
+    expect(session.requests, 'the halt comes before the poll').toHaveLength(2);
+  });
+
+  // Folded exactly as every status the pipeline names is folded, and no further. A team
+  // writes its statuses how it likes; `on pause` is `On Pause` and `On-Pause` is not.
+  it('folds the pause status the way every other prescribed status is folded', async () => {
+    for (const name of ['on pause', '  On Pause  ', 'ON PAUSE']) {
+      const session = script({ body: TEAM }, { body: project('started', name) });
+      const result = await jenRun([], ENV, session);
+
+      expect(result.code, name).toBe(0);
+      expect(result.out, name).toEqual([]);
+    }
+  });
+
+  // A deny list over named types, not an allow list over `started`. jen's own project sits
+  // in `Backlog` while its pipeline runs, and an allow list would have halted it. The
+  // `started` case is load-bearing twice over now: it is the type the pause is filed under,
+  // so halting on the type rather than the name would stop every working pipeline.
+  it('polls normally from a backlog, planned, or ordinary in-progress project', async () => {
     for (const type of ['backlog', 'planned', 'started']) {
       const session = script({ body: TEAM }, { body: project(type) }, { body: polled(issueNode('ENG-1', 'in progress')) });
       const result = await jenRun([], ENV, session);
@@ -833,6 +862,28 @@ describe('a project that is not being worked', () => {
       expect(result.code, type).toBe(0);
       expect(requestsIn(result.out), type).toHaveLength(1);
     }
+  });
+
+  // The near-misses, which the pipeline leaves alone for the same reason `stageFor` leaves
+  // `Designing` alone: everything past folding case is synonym matching.
+  it('does not halt on a status that merely resembles the prescribed pause', async () => {
+    for (const name of ['Paused', 'On-Pause', 'On Pause (Q3)']) {
+      const session = script({ body: TEAM }, { body: project('started', name) }, { body: polled(issueNode('ENG-1', 'in progress')) });
+      const result = await jenRun([], ENV, session);
+
+      expect(result.code, name).toBe(0);
+      expect(requestsIn(result.out), name).toHaveLength(1);
+    }
+  });
+
+  // The status Linear files its own migrated pauses under. It must not halt: ordinary
+  // planning projects carry `planned` too, which is the whole reason the pause is a name.
+  it('does not halt on a status named `Paused` under the planned category', async () => {
+    const session = script({ body: TEAM }, { body: project('planned', 'Paused') }, { body: polled(issueNode('ENG-1', 'in progress')) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(requestsIn(result.out)).toHaveLength(1);
   });
 
   it('polls a project carrying no status at all', async () => {
@@ -844,7 +895,7 @@ describe('a project that is not being worked', () => {
   });
 
   it('leaves the tracker untouched while halted, and launches nothing', async () => {
-    const session = script({ body: TEAM }, { body: project('paused') });
+    const session = script({ body: TEAM }, { body: project('started', PAUSED_STATUS_NAME) });
     const result = await jenRun([], ENV, session);
 
     expect(result.launched, 'a session already running is not stopped by a halt — none is started').toEqual([]);

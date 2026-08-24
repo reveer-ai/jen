@@ -12,6 +12,8 @@ The documentation SHALL state what the pipeline will do while nobody is watching
 
 It SHALL state how to stop it. The halt SHALL be documented as the tracker's project status, applying under either runner, rather than as stopping a runner or editing task statuses.
 
+Because the status that pauses the pipeline is one the adopter creates, the documentation SHALL name it exactly, SHALL say which category to file it under, and SHALL state that renaming it disables the halt without any other symptom. An adopter who never creates it SHALL be told what they do not have, since a pipeline missing only its halt runs indistinguishably from one that has it.
+
 #### Scenario: An adopter chooses a runner
 
 - **WHEN** an adopter reads the documentation to decide how to run the pipeline
@@ -33,7 +35,13 @@ It SHALL state how to stop it. The halt SHALL be documented as the tracker's pro
 
 - **WHEN** an adopter looks for how to halt the pipeline
 - **THEN** the documentation names the project status that halts dispatch
+- **AND** says where to create it and which category it belongs under
 - **AND** does not require deleting a schedule or editing task statuses
+
+#### Scenario: An adopter reads what the halt costs
+
+- **WHEN** an adopter reads how the pause status is matched
+- **THEN** the documentation states that renaming it turns the halt off silently
 
 #### Scenario: A quiet pipeline is disabled by the git host
 

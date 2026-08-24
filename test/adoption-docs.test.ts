@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { VARIABLES } from '../cli/github.js';
+import { PAUSED_STATUS_NAME } from '../cli/linear.js';
 import { STAGES } from '../cli/stages.js';
 import { readRepoFile } from './helpers.js';
 
@@ -95,8 +96,19 @@ describe('the runner chapter', () => {
   it('documents the halt as the tracker\'s project status, under either runner', () => {
     const stopping = chapter.slice(chapter.indexOf('### Stopping it'));
 
-    expect(stopping).toMatch(/paused, completed, or cancelled status/);
+    expect(stopping).toContain(PAUSED_STATUS_NAME);
     expect(stopping).toMatch(/halt under both runners/);
     expect(stopping).toMatch(/no schedule to delete, no process to stop, no task's status to edit/);
+  });
+
+  // The status is one the adopter creates, so naming it is not enough on its own — an
+  // adopter who cannot find it in Linear has no halt, and nothing else about the pipeline
+  // looks any different. The rename is the same class of silence, one step later.
+  it('says where to create the pause status, and what renaming it costs', () => {
+    const stopping = chapter.slice(chapter.indexOf('### Stopping it'));
+
+    expect(stopping, 'the category it goes under').toMatch(/In Progress.{0,40}categor|categor.{0,40}In Progress/s);
+    expect(stopping, 'where in Linear').toMatch(/workspace settings/i);
+    expect(stopping, 'renaming it turns the halt off').toMatch(/rename.{0,80}(halt|silent)/is);
   });
 });

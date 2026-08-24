@@ -2,22 +2,32 @@
 
 ### Requirement: A paused project halts dispatch
 
-The tick SHALL read the tracker project's own status before it polls, and SHALL halt without dispatching when that status means the project is not being worked — paused, completed, or cancelled. It SHALL report which it found and SHALL launch nothing.
+The tick SHALL read the tracker project's own status before it polls, and SHALL halt without dispatching when that status means the project is not being worked. It SHALL report which status it found and SHALL launch nothing.
 
-The status SHALL be identified by its type rather than by its name, so that a workspace which has renamed or added statuses is still understood.
+Two kinds of status SHALL halt, distinguished by whose name the status is.
+
+A status the workspace named SHALL be identified by its **type**, so that a workspace which has renamed or added statuses is still understood by the category the tracker files it under. The types that halt SHALL be completed and cancelled. They SHALL be named individually rather than expressed as "anything but active" — a project that sits in a backlog or planning status while its tasks move is ordinary, and halting on it would stop a working pipeline silently.
+
+The pause SHALL be a status the pipeline prescribes and SHALL be identified by its **name**, matched as every other status the pipeline names is matched: trimmed and case-folded, and nothing further. It SHALL be filed under the tracker's in-progress category, which every working project shares and which therefore SHALL NOT halt on its own. Identifying it by name is what the prescription buys: the category can carry no signal, and the alternative — filing a pause under a completed or cancelled category so that the type could carry it — would make the tracker assert that a live project is finished or abandoned.
+
+It follows that renaming the prescribed status disables the halt. This SHALL be documented where an operator creating it will read it, because the failure is silent and is discovered only when the halt is reached for.
 
 This SHALL be the pipeline's halt: it stops dispatch without deleting a schedule, stopping a runner, or editing any task's status, and it is reached from the tracker, which is the one place every runner already looks. Every runner SHALL therefore honour it with nothing added to any of them, and un-pausing SHALL resume the pipeline with no runner restarted and no configuration changed.
-
-The statuses that halt SHALL be named individually rather than expressed as "anything but active". A project that sits in a backlog or planning status while its tasks move is ordinary, and halting on it would stop a working pipeline silently.
 
 A halt SHALL leave every task exactly where it is. Sessions already running SHALL NOT be stopped by it — the halt governs dispatch, and a session that has announced itself owns its task until it reports.
 
 #### Scenario: The project is paused
 
-- **WHEN** a tick begins against a project whose status type is paused
+- **WHEN** a tick begins against a project carrying the prescribed pause status
 - **THEN** it halts before polling
-- **AND** it reports that the project is paused
+- **AND** it reports the status it found by name
 - **AND** nothing is dispatched
+
+#### Scenario: The pause status is filed under the in-progress category
+
+- **WHEN** the prescribed pause status's type is the one ordinary working projects carry
+- **THEN** the tick still halts on it
+- **AND** a project carrying any other status of that same type dispatches normally
 
 #### Scenario: The pause is lifted
 
@@ -30,10 +40,16 @@ A halt SHALL leave every task exactly where it is. Sessions already running SHAL
 - **WHEN** a tick begins against a project whose status type is backlog or planned
 - **THEN** it polls and dispatches normally
 
-#### Scenario: The status has been renamed
+#### Scenario: A completed or cancelled project
 
-- **WHEN** a workspace has renamed the status that means paused
-- **THEN** the tick still halts on it
+- **WHEN** a tick begins against a project whose status type is completed or cancelled
+- **THEN** it halts before polling, whatever that status is named
+
+#### Scenario: The prescribed pause status has been renamed
+
+- **WHEN** a workspace renames the prescribed pause status
+- **THEN** the tick no longer halts on it
+- **AND** the project dispatches as though it were not paused
 
 #### Scenario: A session is running when the project is paused
 

@@ -20,7 +20,7 @@ import { ignoredPaths } from './ignore.js';
 import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
 import { payloadFiles, placeholderFor, SCAFFOLD, SKILLS } from './payload.js';
-import { TOKEN_VARIABLE } from './linear.js';
+import { PAUSED_STATUS_NAME, TOKEN_VARIABLE } from './linear.js';
 import { executor, type ExecOptions } from './exec.js';
 import { DEFAULTS, tick, type Environment, type Launch, type TickInput } from './run.js';
 import { DEFAULT_INTERVAL_SECONDS, resolveIdentity, watch, type WatchInput } from './watch.js';
@@ -84,9 +84,10 @@ requests, while a scheduled one is billed by the git host in whole minutes. Unde
 interval is a floor between the end of one tick and the start of the next — never a promise
 of when a poll happens, because a tick waits for the sessions it launched.
 
-The halt is neither runner's: move the tracker project to a paused, completed, or cancelled
-status and every tick stops dispatching, with no schedule deleted, no process stopped, and no
-task's status touched.`;
+The halt is neither runner's: move the tracker project to a status named \`${PAUSED_STATUS_NAME}\` and
+every tick stops dispatching, with no schedule deleted, no process stopped, and no task's
+status touched. Create that status under the tracker's in-progress category first — it is
+matched by name, so a project that has never been given one has no halt to reach for.`;
 
 export interface Io {
   out(line: string): void;

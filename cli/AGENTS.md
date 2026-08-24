@@ -513,17 +513,39 @@ invocation and removes them on the way out; `watch()` installs its own for the l
 process and calls `tick()` directly rather than routing through `dispatch()`, which is what
 keeps the two from ever both being installed.
 
-## The halt is matched on a status *type*, and one of the three is unverified
+## The halt matches two ways, and which one applies depends on whose name the status is
 
-`HALTING_STATUS_TYPES` is `paused`, `completed`, `canceled`, compared against the `type` of the
-tracker project's status so that a workspace which renamed the status still halts. A deny list
-rather than an allow list over `started`, because jen's own project sits in `Backlog` while its
-pipeline runs and an allow list would have halted it silently.
+`haltingStatus()` in `run.ts` is the single seam, and it asks two questions. A status the
+*workspace* named is matched on its `type` — `HALTING_STATUS_TYPES` is `completed`, `canceled`
+— so a workspace that renamed `Completed` or added a status of its own is still understood by
+the category the tracker files it under. A deny list rather than an allow list over `started`,
+because jen's own project sits in `Backlog` while its pipeline runs and an allow list would
+have halted it silently.
 
-**`paused` was not verified against the live schema.** Linear's help documentation lists five
-project status *categories* — Backlog, Planned, In Progress, Completed, Canceled — with no
-paused among them, while the API's older project `state` field carried one. No credential
-exists in this repository to introspect the enum with, and the failure mode is benign in the
-direction that matters: a type that never occurs never halts, and `completed` and `canceled`
-are unaffected either way. If it turns out Linear has no paused type, the fix is a name in that
-list, not a change to how the halt works.
+The pause is matched on its **name**, `PAUSED_STATUS_NAME` — `On Pause` — folded exactly as
+the stage statuses are. That is not the type rule being abandoned; it is the type rule running
+out of signal. Verified live against this workspace: `ProjectStatus.type` is the *category*,
+and there are exactly five — `backlog`, `planned`, `started`, `completed`, `canceled` (one
+`l`). There is no `paused`. The pause the API's older project `state` field carried became a
+status *named* `Paused` filed under `planned`, and `planned` is precisely the category that
+must not halt, since ordinary planning projects share it. So the pause is filed under
+`In Progress` (`type: started`) where it reads truthfully, and a category every working
+project shares can carry no signal at all.
+
+**The rule to keep, when the next status question comes up:** match by name only what jen
+prescribes and `setup-jen` tells the operator to create, the way `stages.ts` already matches
+`In Design` and `Pending`. Match by type anything the workspace chose for its own reasons.
+Inferring a workspace's meaning from a name it picked itself is the thing that stays banned.
+
+Two traps worth naming, both found the expensive way:
+
+- `save_project`'s `state` is not a probe. A name that resolves to no status is answered by
+  the project's status simply not changing, with no error — so a failed set is not evidence
+  the status is absent, and a set that appears to work is the only thing that means anything.
+- `list_projects`' `state` filter does not validate its argument either. A nonsense value
+  returns an empty list, identically to a real-but-unused one. An empty result there is not
+  evidence about the schema.
+
+Together those are why `setup-jen` reports this status rather than verifying it: the tracker's
+tool surface has no call that lists project statuses and none that creates one, and neither of
+the two above can be bent into standing in for the missing read.

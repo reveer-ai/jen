@@ -45,6 +45,21 @@ Report exactly which statuses are absent, by the name the workflow uses. Create 
 
 A missing status does not end the run. Nothing else here depends on the statuses being complete, so do all of it anyway and report on every part. That is what makes the re-run cheap: the user adds the status in Linear, runs you again, and the second run finds the registry, the labels, and the identities already correct and the statuses now satisfied.
 
+## The project's own status, which is the pipeline's halt
+
+Those nine are the *team's issue* statuses. The **project** carries a status of its own, and one of them is how an operator stops the pipeline: a project status named exactly `On Pause`, filed under the `In Progress` category. `jen run` reads it before it polls and dispatches nothing while the project sits in it.
+
+It is the tracker's shape like every other status here, so the same rule holds — report it, never create it — and here the tool surface agrees: it exposes the team's issue statuses (`list_issue_statuses`) and the workspace's project *labels*, and nothing at all for project statuses. There is no call to list them with and none to create one. Do not reach for `save_project`'s `state` as a substitute in either direction: it selects an existing status and no more, and a name that resolves to nothing is answered by the project's status not changing rather than by an error — so setting it creates nothing, and failing to set it proves nothing either.
+
+That leaves you unable to check this one the way you check the nine, and the honest report says so rather than implying either answer. Tell the user what to create — **workspace settings → Projects → Statuses**, a status named `On Pause` under the `In Progress` category — and that you could not verify it from here.
+
+Two things about it are worth stating rather than leaving the user to find out:
+
+- **The name is matched, not the category.** `In Progress` is the category every working project sits in, so it carries no signal the halt could read; the name is what jen matches, folding case exactly as the issue statuses are folded. Renaming this status turns the halt off silently. Nothing else jen prescribes is renameable either, but this is the one where the symptom is a kill switch that quietly stops working.
+- **Why not file it somewhere the category would do the work.** Under `Completed` or `Canceled` the category alone would halt, with no prescribed name to protect — but those already halt, and they mean the project is *over*. Pausing a live pipeline by marking its project cancelled makes the tracker say something untrue on every surface that reads the category. The halt is not worth that.
+
+A project that has no `On Pause` status is not a project that fails to run — it is a project whose kill switch does not exist yet, which the user finds out at the moment they need it. Report it with the outstanding work at the end of the run.
+
 ## The labels
 
 The workflow labels the issues it creates — `epic` for an epic, `task` for a task. Ensure both exist on the team, creating only what is absent.

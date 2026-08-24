@@ -25,6 +25,7 @@ import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './s
 import {
   HALTING_STATUS_TYPES,
   LABEL_PAGE_SIZE,
+  PAUSED_STATUS_NAME,
   newestFirst,
   PROJECT_PAGE_SIZE,
   RateLimited,
@@ -297,13 +298,19 @@ export function decide(examined: Examined[], concurrency: number): Outcome[] {
 /**
  * The project's status where it means the project is not being worked, or nothing.
  *
- * Matched on the status's `type` rather than on its name, so a workspace that renamed the
- * status still halts, and a workspace that added one is understood by the category the
- * tracker files it under.
+ * Two matches rather than one, and which of them applies is decided by whose name the status
+ * is. A status the *workspace* named is matched on its `type`, so a workspace that renamed
+ * `Completed` or added a status of its own is still understood by the category the tracker
+ * files it under. The pause is matched on its name, because jen prescribes that name and its
+ * category — `started` — is one that must never halt on its own.
+ *
+ * The single seam both runners reach the halt through. A tick asks this once, before it
+ * polls, and neither runner carries a switch of its own.
  */
 export function haltingStatus(project: TrackerProject): { name: string; type: string } | undefined {
   const status = project.status;
   if (!status) return undefined;
+  if (fold(status.name) === fold(PAUSED_STATUS_NAME)) return status;
   return (HALTING_STATUS_TYPES as readonly string[]).includes(fold(status.type)) ? status : undefined;
 }
 

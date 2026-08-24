@@ -64,8 +64,33 @@ export const PROJECT_PAGE_SIZE = 2;
  * Named individually rather than expressed as "anything but started". A project sitting in
  * a backlog or planning status while its tasks move is ordinary — jen's own does — and an
  * allow list would have stopped a working pipeline silently.
+ *
+ * These two are the ordinary *end* of a project rather than a way to pause one, which is
+ * why pausing is {@link PAUSED_STATUS_NAME} instead of a third entry here. There is no
+ * `paused` category to add: the tracker has exactly five — `backlog`, `planned`, `started`,
+ * `completed`, `canceled` — and the pause it once carried as a project state became a
+ * status *named* `Paused` filed under `planned`, which is the one category that must never
+ * halt.
  */
-export const HALTING_STATUS_TYPES = ['paused', 'completed', 'canceled'] as const;
+export const HALTING_STATUS_TYPES = ['completed', 'canceled'] as const;
+
+/**
+ * The project status that halts dispatch by name, which the operator creates and moves the
+ * project to when they want the pipeline to stop.
+ *
+ * Matched on the name because its category carries no signal: it is filed under the tracker's
+ * `In Progress` — `type: started` — and halting on that type would halt every working
+ * pipeline. Filing it anywhere the type could carry the signal means filing a pause as a
+ * cancellation or a completion, which is the tracker then saying something untrue about the
+ * project on every surface that reads the category.
+ *
+ * A name rather than a type is not the fragility type-matching exists to avoid. That rule is
+ * about a *workspace's* names, which are the workspace's to choose and mean what it decides.
+ * This one is jen's, prescribed exactly as the stage statuses in `stages.ts` are and verified
+ * at bind time the same way — and what it costs is stated where the operator can act on it:
+ * rename this status and the halt stops working.
+ */
+export const PAUSED_STATUS_NAME = 'On Pause';
 
 /** Anything the tracker refused or answered unusably. Never swallowed into an empty result. */
 export class TrackerError extends Error {}

@@ -179,9 +179,15 @@ The scheduled runner has a bound the local one does not: its job ends after two 
 
 ### Stopping it
 
-Move the **tracker project** to a paused, completed, or cancelled status. The next tick reads that before it polls, reports it, and dispatches nothing.
+Move the **tracker project** to a status named `On Pause`. The next tick reads that before it polls, reports it, and dispatches nothing.
 
-That is the halt under both runners, and it is deliberately not a runner-level switch: no schedule to delete, no process to stop, no task's status to edit, and nothing to redeploy when you want it back. Move the project to an active status and the next tick carries on. Sessions already running are not interrupted — a session that has announced itself owns its task until it reports.
+That status is one you create, once, in Linear's **workspace settings → Projects → Statuses**: a status named exactly `On Pause`, filed under the **`In Progress`** category. `setup-jen` tells you to create it but cannot check that you did — Linear's API offers no way to read a workspace's project statuses, let alone add one. Until it exists, the pipeline runs fine and has no off switch.
+
+The name is what jen matches, and the category deliberately is not. `In Progress` is where every working project sits, so it carries nothing the halt could read; filing the pause under `Completed` or `Canceled` instead would let the category do the work, but only by making the tracker say your live project is finished or abandoned on every surface that shows its status. So: **rename that status and the halt stops working, silently.** It is the one piece of jen's configuration where a rename costs you something you only discover when you reach for it.
+
+Those two categories do still halt, matched on the category rather than on any name — a project that is genuinely completed or cancelled dispatches nothing, which is what you want and needs no setup.
+
+That is the halt under both runners, and it is deliberately not a runner-level switch: no schedule to delete, no process to stop, no task's status to edit, and nothing to redeploy when you want it back. Move the project back to an active status and the next tick carries on. Sessions already running are not interrupted — a session that has announced itself owns its task until it reports.
 
 For a preview rather than a stop:
 
