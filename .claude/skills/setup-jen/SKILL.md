@@ -116,6 +116,8 @@ Then **carry on with the rest of the run**. The tracker binding, the statuses, t
 
 Every credential — an application's private key, the agent's token — belongs in whatever secret store the runner reads from, and the run supplies them to a stage through its environment. Say that, once, to the user, and name what each role needs.
 
+The names are not yours to choose, and they are the same under both runners: `JEN_GH_APP_ID_<ROLE>`, `JEN_GH_INSTALLATION_<ROLE>`, and `JEN_GH_PRIVATE_KEY_<ROLE>` for each of `DESIGN`, `DEV`, and `DELIVER`, plus `LINEAR_API_KEY` and `ANTHROPIC_API_KEY`. Eleven. The scheduled workflow reads them as repository secrets under exactly those names — it is written that way and jen rewrites it, so a secret stored under any other name reaches nothing — and `jen watch` reads the same names from the environment it was started in.
+
 None of them goes in `registry.yaml`, in any other tracked file, or in a comment on the issue. The registry names identities; the environment authenticates them; the two never meet on disk.
 
 ## The registry
@@ -129,6 +131,28 @@ Record each registered identity there too, in the `identity` shape the stub docu
 Edit the `resources:` entry in place. Do not load and re-dump the file: the stub is mostly comments documenting the resource shape, and a YAML round-trip strips them and reformats whatever it kept. `resources: []` is what "nobody has filled this in" looks like; replace that, and leave everything around it untouched.
 
 Leave every resource the file already declares alone. If an entry already records a tracker naming a different team or project, ask the user before replacing it — a repository whose registry points somewhere unexpected is more likely to be a repository you have misidentified than a stale entry.
+
+## What jen derives from the registry
+
+Binding is what fills the registry in, and the file jen derives from it was written before that happened: an installation writes the pipeline's scheduled workflow with nothing to resolve, so a project that has just been bound still has a runner polling nothing. That is a state that looks finished and is not — the tracker is bound, the identities exist, and the schedule fires against an empty team name.
+
+So once the registry records the tracker, run `jen update` in the project. It rewrites every managed file, and the workflow's two values — the team and the project — are resolved from the registry as it writes.
+
+**Read its report, not its exit code.** The report names every path it wrote and every value that did not resolve, and a refresh that resolved nothing exits zero exactly as one that resolved everything does. Confirm the values actually reached the file, and report *which* ones did, by name, rather than reporting that you refreshed it. "Refreshed the workflow" is true of the failure as well as of the success.
+
+Where nothing resolved, say what the registry is missing — no `project-management` resource, several of them, no `team` on the one that is there — rather than reporting the refresh as failed. The refresh worked; the registry did not answer it. An unresolved value is written as empty and never as its placeholder, so the runner refuses naming the missing team rather than polling a project called `{{jen:team}}`.
+
+Never edit the workflow file to fix this. It is jen's, replaced wholesale on the next update, and the registry is where its values are changed — which is also what you tell the user when they ask how to point the pipeline somewhere else.
+
+### A schedule the git host has disabled
+
+GitHub disables a scheduled workflow on a **public** repository that has gone 60 days without repository activity. It is a real failure mode for this pipeline specifically, because the symptom is silence and quiet is what triggers it: nobody promotes work for two months, the schedule is disabled, and the failure surfaces at the moment somebody finally does promote something and nothing happens.
+
+A re-run of this binding is where an adopter would plausibly find that out, so check it: read whether the pipeline's workflow is enabled, and report it if it is not. `gh workflow enable jen.yml` re-enables it.
+
+**Report it; do not re-enable it yourself.** Disabling that workflow is also how somebody deliberately stops the scheduled runner, and the two states are identical from here. Say what you found, name the command, and let the user decide which of the two it was.
+
+A project that drives the pipeline with `jen watch` rather than from the git host has no schedule to disable, and nothing here applies to it. The workflow still ships and is still jen's; it simply never runs.
 
 ## The merge gate
 
@@ -187,7 +211,7 @@ If they decline, apply nothing, report the gate as outstanding, and state plainl
 
 ## The report
 
-End with what the run found, separating what was already correct from what this run did. "`task` already exists" and "created `task`" are different facts about the project, and collapsing them costs the user the only signal that says whether anything actually changed. Hold to that split across all of it — the statuses, the labels, the identities, and the gate. "`dev`'s application was already registered" and "guided registration of `dev`'s application" are as different as the labels are, and so are a gate that was already correct and a gate this run tightened.
+End with what the run found, separating what was already correct from what this run did. "`task` already exists" and "created `task`" are different facts about the project, and collapsing them costs the user the only signal that says whether anything actually changed. Hold to that split across all of it — the statuses, the labels, the identities, the derived workflow, and the gate. "`dev`'s application was already registered" and "guided registration of `dev`'s application" are as different as the labels are, and so are a gate that was already correct and a gate this run tightened.
 
 Say plainly whether the project is ready for the pipeline. It is not, while any status is missing, any identity is unregistered, or the gate is unsatisfied — including when the user declined it, and including when you could not reach a host to check. Withholding "ready" is not a judgement about the user's choice; it is the honest reading of a pipeline that would not yet run correctly, and it is the reason a later run knows there is something to resume.
 

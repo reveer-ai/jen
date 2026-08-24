@@ -44,16 +44,16 @@
 
 ## 7. Binding
 
-- [ ] 7.1 Extend the `setup-jen` skill to finish by running `jen update`, confirm the substituted values reached the workflow, and report which resolved — naming what the registry is missing where none did.
-- [ ] 7.2 Extend it to check whether the scheduled workflow has been disabled by the git host, since a re-run of binding is where an adopter would find out.
+- [x] 7.1 Extend the `setup-jen` skill to finish by running `jen update`, confirm the substituted values reached the workflow, and report which resolved — naming what the registry is missing where none did.
+- [x] 7.2 Extend it to check whether the scheduled workflow has been disabled by the git host, since a re-run of binding is where an adopter would find out.
 
 ## 8. Documentation
 
-- [ ] 8.1 Add the runner chapter to `README.md`: choosing between the two, what each needs configured, the eleven secrets by name, and starting each one.
-- [ ] 8.2 State the conditions each runner carries — schedule dormancy on an inactive public repository and how to re-enable, and a local session dying with its process and what the task then reads.
-- [ ] 8.3 Document the halt as the tracker's project status, under both runners, and what the pipeline does unsupervised: the transitions a human still owns, that a stage may park a task at `Pending`, and the concurrency cap.
-- [ ] 8.4 Extend the ownership boundary ahead of the install instructions: the workflow is jen's, it is the one managed file outside `.claude/` and the root, and the registry — not the workflow file — is where its values are changed.
+- [x] 8.1 Add the runner chapter to `README.md`: choosing between the two, what each needs configured, the eleven secrets by name, and starting each one.
+- [x] 8.2 State the conditions each runner carries — schedule dormancy on an inactive public repository and how to re-enable, and a local session dying with its process and what the task then reads.
+- [x] 8.3 Document the halt as the tracker's project status, under both runners, and what the pipeline does unsupervised: the transitions a human still owns, that a stage may park a task at `Pending`, and the concurrency cap.
+- [x] 8.4 Extend the ownership boundary ahead of the install instructions: the workflow is jen's, it is the one managed file outside `.claude/` and the root, and the registry — not the workflow file — is where its values are changed.
 
 ## 9. Notes
 
-- [ ] 9.1 Record in `cli/AGENTS.md` what the next session would otherwise rediscover: that a job-level `if` cannot read the `env` context, which is why an unbound project fails rather than skipping; that substitution must never emit the placeholder; and that the local runner deliberately holds no lock.
+- [x] 9.1 Record in `cli/AGENTS.md` what the next session would otherwise rediscover: that a job-level `if` cannot read the `env` context, which is why an unbound project fails rather than skipping; that substitution must never emit the placeholder; and that the local runner deliberately holds no lock.
