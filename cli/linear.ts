@@ -86,9 +86,11 @@ export const HALTING_STATUS_TYPES = ['completed', 'canceled'] as const;
  *
  * A name rather than a type is not the fragility type-matching exists to avoid. That rule is
  * about a *workspace's* names, which are the workspace's to choose and mean what it decides.
- * This one is jen's, prescribed exactly as the stage statuses in `stages.ts` are and verified
- * at bind time the same way — and what it costs is stated where the operator can act on it:
- * rename this status and the halt stops working.
+ * This one is jen's, prescribed exactly as the stage statuses in `stages.ts` are. Unlike them
+ * it cannot be verified at bind time — the tracker tools binding holds expose no read of a
+ * workspace's project statuses — so what stands behind this one is not a check but the fact
+ * that its cost is stated where the operator creating it will read it: rename this status and
+ * the halt stops working, silently.
  */
 export const PAUSED_STATUS_NAME = 'On Pause';
 
