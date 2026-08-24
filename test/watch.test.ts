@@ -293,6 +293,24 @@ describe('the local runner', () => {
     expect(result.waits, 'and nothing was waited out').toEqual([]);
   });
 
+  // The intersection the two refusal cases above each hide, by holding fixed the one value
+  // that hides it: one binds the project so only the credential is missing, the other supplies
+  // the credential so only the binding is. Both missing is what an unbound checkout with
+  // nothing exported looks like — a first run — and there the registry is not the answer to
+  // the refusal being made, so offering it contradicts the line it prints under.
+  it('does not offer the registry under a refusal the registry cannot answer', async () => {
+    const root = project({ 'registry.yaml': 'resources:\n  - name: acme\n    kind: repository\n' }, 'watch-neither');
+    const result = await jenWatch([root], {}, 1);
+
+    expect(result.code).toBe(1);
+
+    const refused = result.err.join('\n');
+    expect(refused, 'the credential is what stopped it, and is what it says').toContain('LINEAR_API_KEY is not set');
+    expect(refused, 'and binding the checkout would not change that').not.toContain('Or bind the checkout');
+    expect(refused, 'so the checkout is not named as a remedy either').not.toContain(root);
+    expect(result.ticks).toBe(0);
+  });
+
   it('exits non-zero when the checkout names no tracker project and none was given', async () => {
     const root = project({ 'registry.yaml': 'resources:\n  - name: acme\n    kind: repository\n' }, 'watch-unbound');
     const result = await jenWatch([root], ENV, 1);

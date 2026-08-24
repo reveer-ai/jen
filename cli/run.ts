@@ -487,6 +487,27 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
   return failed === 0 ? 0 : 1;
 }
 
+/** Which of the tick's inputs a refusal is about. */
+export type Refused = 'credential' | 'team' | 'project' | 'concurrency';
+
+/** A refusal, and the input it is a refusal over. */
+export interface Impossible {
+  /**
+   * The value this refusal is about.
+   *
+   * Said rather than left to be inferred. A caller with more to offer about one of these
+   * values — a runner that looked somewhere this function has never heard of — needs to know
+   * whether *that* value is what stopped the tick, and the only other way to work it out is
+   * to re-derive the order of the checks below from outside. That inference reads as correct
+   * and is not: it is a claim about which check fired, written as a claim about which values
+   * happen to be present, and the next check inserted ahead of another one breaks it without
+   * breaking anything that would fail.
+   */
+  refused: Refused;
+  /** What the operator is told, with `jen run: ` or `jen watch: ` in front of it. */
+  why: string;
+}
+
 /**
  * Why this tick cannot run at all, or nothing.
  *
@@ -498,17 +519,30 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
  *
  * Exported so a runner can ask before it starts, rather than inferring the difference from
  * an exit code that cannot express it.
+ *
+ * The messages name a flag and a variable and nothing else, because those are the two places
+ * every runner has. A runner with a third says so itself; this function must never learn
+ * that a checkout or a registry exists, or the two runners diverge here rather than in the
+ * wrapper where the difference is harmless.
  */
-export function impossible(input: TickInput, env: Environment): string | undefined {
+export function impossible(input: TickInput, env: Environment): Impossible | undefined {
   if (!env[TOKEN_VARIABLE]) {
-    return (
-      `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
-      'of use, and never from a file.'
-    );
+    return {
+      refused: 'credential',
+      why:
+        `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
+        'of use, and never from a file.',
+    };
   }
-  if (!input.team) return 'no tracker team was given. Pass --team, or set JEN_TEAM.';
-  if (!input.project) return 'no tracker project was given. Pass --project, or set JEN_PROJECT.';
-  if (input.concurrency < 1) return `--concurrency must be at least 1, and was ${input.concurrency}.`;
+  if (!input.team) {
+    return { refused: 'team', why: 'no tracker team was given. Pass --team, or set JEN_TEAM.' };
+  }
+  if (!input.project) {
+    return { refused: 'project', why: 'no tracker project was given. Pass --project, or set JEN_PROJECT.' };
+  }
+  if (input.concurrency < 1) {
+    return { refused: 'concurrency', why: `--concurrency must be at least 1, and was ${input.concurrency}.` };
+  }
   return undefined;
 }
 
@@ -523,7 +557,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
   const { transport, launch } = options;
   try {
     const refusal = impossible(input, env);
-    if (refusal) throw new Refusal(refusal);
+    if (refusal) throw new Refusal(refusal.why);
 
     // Narrowed by the check above, which is exactly what refused when either was absent.
     const token = env[TOKEN_VARIABLE]!;

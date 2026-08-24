@@ -180,14 +180,21 @@ export async function watch(
 
   const refusal = impossible(input, env);
   if (refusal) {
-    io.err(`jen watch: ${refusal}`);
+    io.err(`jen watch: ${refusal.why}`);
 
     // The shared message names the flag and the variable, because those are the two places
     // `jen run` has. This runner had a third, and it is the one an operator pointing it at a
     // checkout was relying on — so a refusal that stops at the other two describes a search
     // this runner did not perform. Said here rather than in `impossible()`, which `jen run`
     // shares and which must never learn that a registry exists.
-    const missing = !input.team ? unresolved.team : !input.project ? unresolved.project : undefined;
+    //
+    // Gated on what the refusal is *about*, which is why `impossible()` says so. The registry
+    // is an answer to a missing team or project and to nothing else: offered under the
+    // credential refusal — the state an unbound checkout with nothing exported is in, and so
+    // the first thing a new operator sees — it contradicts the line above it, which has just
+    // said the credential never comes from a file.
+    const missing =
+      refusal.refused === 'team' ? unresolved.team : refusal.refused === 'project' ? unresolved.project : undefined;
     if (missing) io.err(`Or bind the checkout at ${projectRoot}, where ${missing}.`);
 
     io.err('This cannot change while the process runs, so the loop was not started.');
