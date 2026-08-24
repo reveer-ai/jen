@@ -332,7 +332,20 @@ export class Tracker {
       complexityCharged: header(response.headers, HEADERS.complexityCharged),
     };
 
-    const text = await response.text();
+    // Reading the body is a second chance to lose the connection, and a separate one from
+    // reaching the endpoint: the response object arrives as soon as the headers do, so a
+    // stream that dies mid-body rejects here rather than at the `fetch` above. Left bare it
+    // escapes as a `TypeError` that no caller classifies — the same transient fault as an
+    // unreachable tracker, wearing a shape that ends a runner instead of being retried.
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      throw new TrackerError(
+        `could not read the tracker's answer: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     let payload: GraphQLResponse<T> | undefined;
     try {
       payload = JSON.parse(text) as GraphQLResponse<T>;

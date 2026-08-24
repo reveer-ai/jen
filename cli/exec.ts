@@ -543,10 +543,18 @@ export class Executor {
    * and two runs of the same stage against the same task never land on one file. Every
    * component is reduced to characters a path can hold, because the task identifier and the
    * skill name both arrive from a run request rather than from this module.
+   *
+   * **Nothing means no file, not an empty one.** A session that started and then failed
+   * before producing a line — a `claude` that isn't on `PATH` is the one an operator hits
+   * first — reaches here with `sessionStarted` set and no stream, and writing that would
+   * put a zero-byte path into the run record. The record says a transcript was kept and
+   * reading it says nothing about why, which is strictly worse than the `null` the same
+   * run carries otherwise. A session that never started has no transcript either, so
+   * asking about the stream answers both questions.
    */
   async #keep(outcome: RunOutcome): Promise<{ path?: string; failure?: string }> {
     const directory = this.#options.transcripts;
-    if (!directory || !outcome.sessionStarted) return {};
+    if (!directory || !outcome.transcript) return {};
 
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const path = join(directory, `${[outcome.task, outcome.skill, stamp].map(safeName).join('-')}.jsonl`);

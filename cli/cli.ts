@@ -243,13 +243,13 @@ function parseWatch(args: string[], env: Environment, cwd: string): WatchInput &
   // team and project here — resolving those is the runner's, below.
   const { input, transcripts } = parseTick(rest, {});
   const projectRoot = resolve(cwd, path ?? '.');
-  const { team, project, sources } = resolveIdentity(
+  const { team, project, sources, unresolved } = resolveIdentity(
     { team: input.team, project: input.project },
     env,
     projectRoot,
   );
 
-  return { input: { ...input, team, project }, intervalSeconds, projectRoot, sources, transcripts };
+  return { input: { ...input, team, project }, intervalSeconds, projectRoot, sources, unresolved, transcripts };
 }
 
 function parse(command: InstallCommand, args: string[], cwd: string): Invocation {

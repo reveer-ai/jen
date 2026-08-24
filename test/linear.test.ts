@@ -370,6 +370,23 @@ describe('what the client refuses to swallow', () => {
     await expect(tracker(scripted).team('eng')).rejects.toThrow(/could not reach the tracker: getaddrinfo/);
   });
 
+  // Reaching the endpoint and reading its answer are two chances to lose the connection,
+  // and only the first sits inside the `fetch` call. A body that dies mid-stream rejects
+  // from `text()`, which — left bare — is a `TypeError` no caller classifies, and a runner
+  // whose survival depends on classification ends on it.
+  it('reports a body it could not finish reading as the tracker failing', async () => {
+    const truncated: Transport = async () => {
+      // Built here rather than through `script`, which only models an answer that arrives.
+      const response = new Response('{}');
+      Object.defineProperty(response, 'text', { value: () => Promise.reject(new TypeError('terminated')) });
+      return response;
+    };
+
+    const call = tracker({ transport: truncated, sent: [] }).team('eng');
+    await expect(call).rejects.toBeInstanceOf(TrackerError);
+    await expect(call).rejects.toThrow(/could not read the tracker's answer: terminated/);
+  });
+
   it('makes exactly one request per read, with no retry behind it', async () => {
     const scripted = script({ status: 500, body: {} });
     await expect(tracker(scripted).team('eng')).rejects.toThrow();

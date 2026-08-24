@@ -79,12 +79,30 @@ interface Recorded {
 }
 
 /**
+ * What can go wrong with the tracker a tick talks to, from a given tick onward.
+ *
+ * Three failures rather than one, because the loop's guarantee is about a *class* and the
+ * three sit at different distances from code that names them. `failFrom` is the poll
+ * answering with an error the tracker itself reports; `truncateFrom` is a connection lost
+ * while the body is being read, which arrives as a rejection from `text()` rather than from
+ * the request; `malformFrom` is a transport that does not answer with a response at all,
+ * standing in for the faults nothing anticipated — a bug, a mocked layer, a runtime
+ * mismatch. Only the first two are classified anywhere, and the loop must survive all three.
+ */
+interface TrackerOptions {
+  issues?: string[];
+  failFrom?: number;
+  truncateFrom?: number;
+  malformFrom?: number;
+}
+
+/**
  * A tracker that answers every tick the same way, so the loop is what varies.
  *
  * `failFrom` makes the poll fail from that tick onward, which is how "a failed tick does not
  * end the loop" is exercised against a failure the pipeline is expected to survive.
  */
-function tracker(options: { issues?: string[]; failFrom?: number } = {}): {
+function tracker(options: TrackerOptions = {}): {
   transport: Transport;
   requests: Recorded[];
   ticks: () => number;
@@ -102,6 +120,19 @@ function tracker(options: { issues?: string[]; failFrom?: number } = {}): {
     }
     if (sent.query.includes('JenTeamProjects')) return new Response(JSON.stringify(PROJECT));
 
+    if (options.truncateFrom !== undefined && ticks >= options.truncateFrom) {
+      // A response whose headers arrived and whose body did not. `text()` rejects where the
+      // `fetch` call itself already resolved, which is the seam the tracker's own error
+      // handling has to reach across.
+      const truncated = new Response('{}');
+      Object.defineProperty(truncated, 'text', { value: () => Promise.reject(new TypeError('terminated')) });
+      return truncated;
+    }
+    if (options.malformFrom !== undefined && ticks >= options.malformFrom) {
+      // Not a response. Reading a header off it throws where nothing is looking, which is
+      // exactly the shape of a fault the tick cannot classify.
+      return undefined as unknown as Response;
+    }
     if (options.failFrom !== undefined && ticks >= options.failFrom) {
       return new Response(JSON.stringify({ errors: [{ message: 'the tracker is briefly unreachable' }] }), {
         status: 500,
@@ -139,7 +170,7 @@ async function jenWatch(
   args: string[],
   env: Record<string, string | undefined>,
   ticks: number,
-  options: { issues?: string[]; failFrom?: number; launch?: Launch } = {},
+  options: TrackerOptions & { launch?: Launch } = {},
 ): Promise<Watched> {
   const out: string[] = [];
   const err: string[] = [];
@@ -220,6 +251,35 @@ describe('the local runner', () => {
     expect(result.err.join('\n')).toContain('the tracker');
   });
 
+  // The loop's guarantee is not a list of failures it happens to know. `tick()` names three
+  // and rethrows the rest, so the runner's survival cannot rest on the naming — a fault
+  // nobody anticipated is still one failed tick.
+  it('survives a tick that fails in a way nothing classified', async () => {
+    const root = project({ 'registry.yaml': BOUND }, 'watch-unclassified');
+    const result = await jenWatch([root], ENV, 3, { malformFrom: 1 });
+
+    expect(result.ticks, 'the loop kept ticking').toBe(3);
+    expect(result.code, 'and a stopped runner is not a failed one').toBe(0);
+
+    const reported = result.err.join('\n');
+    expect(reported, 'the failure was reported rather than thrown past the loop').toContain('the tick failed');
+    expect(reported, 'and the operator is told the loop is still running').toContain('is the retry');
+  });
+
+  // The case the fault above stands in for, at its real source: a body read that dies
+  // mid-stream. It is a tracker failure like any other and is now named as one, so it is
+  // both caught below in the loop and reported above it as what it actually is.
+  it('reports a connection lost mid-body as a tracker failure, and ticks again', async () => {
+    const root = project({ 'registry.yaml': BOUND }, 'watch-truncated');
+    const result = await jenWatch([root], ENV, 3, { truncateFrom: 1 });
+
+    expect(result.ticks).toBe(3);
+    expect(result.code).toBe(0);
+    expect(result.err.join('\n'), 'named as the tracker rather than as an unclassified fault').toContain(
+      "could not read the tracker's answer",
+    );
+  });
+
   // What cannot change while the process runs is answered once rather than forever: the
   // environment a tick reads is fixed for the length of a process, so looping on it would
   // print the same message until somebody noticed.
@@ -238,7 +298,15 @@ describe('the local runner', () => {
     const result = await jenWatch([root], ENV, 1);
 
     expect(result.code).toBe(1);
-    expect(result.err.join('\n')).toContain('no tracker team was given');
+
+    const refused = result.err.join('\n');
+    expect(refused).toContain('no tracker team was given');
+
+    // The refusal has to name all three places this runner looked. The shared message knows
+    // two of them, and the registry — the one an operator pointing it at a checkout was
+    // relying on — is the one only this runner can speak to.
+    expect(refused, 'the checkout it read').toContain(root);
+    expect(refused, 'and what that registry was missing').toContain('project-management');
     expect(result.ticks).toBe(0);
   });
 });

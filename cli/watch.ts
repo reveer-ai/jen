@@ -18,6 +18,7 @@
  * a tick decides, which is what keeps a runner that has a checkout and a runner that does not
  * from taking different paths through the deciding pass.
  */
+import { type SubstitutionName } from './payload.js';
 import { resolveFromRegistry } from './registry.js';
 import { impossible, tick, type Environment, type Launch, type TickInput } from './run.js';
 
@@ -48,6 +49,14 @@ export interface WatchInput {
   /** The checkout whose registry supplied what no flag or variable did. */
   projectRoot: string;
   sources: { team?: Source; project?: Source };
+  /**
+   * Why the registry did not answer for a value that reached it and came back missing.
+   *
+   * Carried so a refusal can name the checkout it read rather than only the two places the
+   * shared message knows about. Empty where the registry was never consulted, which is what
+   * a value resolved from a flag or the environment means.
+   */
+  unresolved: Partial<Record<SubstitutionName, string>>;
 }
 
 export interface WatchOptions {
@@ -68,8 +77,9 @@ export function resolveIdentity(
   flags: { team?: string; project?: string },
   env: Environment,
   projectRoot: string,
-): { team?: string; project?: string; sources: WatchInput['sources'] } {
+): { team?: string; project?: string; sources: WatchInput['sources']; unresolved: WatchInput['unresolved'] } {
   const sources: WatchInput['sources'] = {};
+  const unresolved: WatchInput['unresolved'] = {};
   let team = flags.team;
   let project = flags.project;
 
@@ -84,7 +94,7 @@ export function resolveIdentity(
     project = env.JEN_PROJECT;
     sources.project = 'environment';
   }
-  if (team && project) return { team, project, sources };
+  if (team && project) return { team, project, sources, unresolved };
 
   // Read once, and only for what is still missing. This is the parity with a person's own
   // working copy that makes the local runner worth having: pointed at a checkout, it polls
@@ -99,7 +109,15 @@ export function resolveIdentity(
     sources.project = 'registry';
   }
 
-  return { team, project, sources };
+  // Kept only for what is still missing after all three: a `why` about a value some flag
+  // supplied would be an explanation of nothing, and the reason a registry gives is only
+  // worth reporting where its answer was the one being waited on.
+  for (const { name, why } of registry.unresolved) {
+    if (name === 'team' && !team) unresolved.team = why;
+    if (name === 'project' && !project) unresolved.project = why;
+  }
+
+  return { team, project, sources, unresolved };
 }
 
 function describe(what: string, value: string | undefined, source: Source | undefined): string {
@@ -138,8 +156,12 @@ function sleeper(): { wait: (ms: number) => Promise<void>; wake: () => void } {
  * **A failed tick does not end it; an impossible one never starts it.** A tracker error, a
  * rate limit, a record it could not read to the end, and a paused project are all answered
  * by the next tick — each can resolve without anybody restarting anything, and a pause is
- * meant to be waited out. What cannot resolve while the process runs is checked once, before
- * the first tick, because looping on it would print the same message forever.
+ * meant to be waited out. The guarantee is unconditional rather than a list: a fault the
+ * tick could not name is caught here too and retried the same way, because the alternative
+ * is a runner that ends on something it merely failed to recognise. What cannot resolve
+ * while the process runs is checked once, before the first tick, because looping on it
+ * would print the same message forever — and `impossible()` is the only way out of the
+ * loop that isn't a signal.
  *
  * **Signals belong to the loop rather than to any one tick.** `jen run` installs handlers per
  * invocation and removes them on the way out; this installs its own for the length of the
@@ -154,11 +176,20 @@ export async function watch(
   sessions: Sessions,
   options: WatchOptions = {},
 ): Promise<number> {
-  const { input, intervalSeconds, sources } = invoked;
+  const { input, intervalSeconds, projectRoot, sources, unresolved } = invoked;
 
   const refusal = impossible(input, env);
   if (refusal) {
     io.err(`jen watch: ${refusal}`);
+
+    // The shared message names the flag and the variable, because those are the two places
+    // `jen run` has. This runner had a third, and it is the one an operator pointing it at a
+    // checkout was relying on — so a refusal that stops at the other two describes a search
+    // this runner did not perform. Said here rather than in `impossible()`, which `jen run`
+    // shares and which must never learn that a registry exists.
+    const missing = !input.team ? unresolved.team : !input.project ? unresolved.project : undefined;
+    if (missing) io.err(`Or bind the checkout at ${projectRoot}, where ${missing}.`);
+
     io.err('This cannot change while the process runs, so the loop was not started.');
     return 1;
   }
@@ -188,7 +219,28 @@ export async function watch(
       // Awaited, so the interval is a floor between the *end* of one tick and the start of
       // the next and two ticks can never overlap. A tick waits for the sessions it launched,
       // so a long session delays the following poll — which is the cost of not overlapping.
-      await tick(input, io, env, { transport: options.transport, launch: sessions.launch });
+      try {
+        await tick(input, io, env, { transport: options.transport, launch: sessions.launch });
+      } catch (error) {
+        // `tick()` reports the failures it can name and rethrows the rest, so what arrives
+        // here is a fault nothing has classified — a connection lost mid-body, a bug, a
+        // transport that threw where nobody expected one. None of that is a reason for the
+        // runner to stop: `impossible()` already answered, before the first tick, the only
+        // question whose answer cannot change while this process runs. Anything reaching
+        // this line is a failed tick, and the next tick is its retry.
+        //
+        // Left uncaught it would leave `watch`, leave `run()` — whose own `try` is
+        // synchronous and never sees a rejected promise — and end the process as an
+        // unhandled rejection. That is also where the two runners would part: under the
+        // scheduled runner the same fault is one red job and the next cron picks up, while
+        // here it would be silence, which is the one state this pipeline must never be
+        // mistaken for.
+        io.err(`jen watch: the tick failed — ${error instanceof Error ? error.message : String(error)}`);
+        // Not promised where a stop has already landed: the next tick is the retry only if
+        // there is going to be one, and this line is the operator's evidence the runner is
+        // still up.
+        if (!stopping) io.err(`             the loop continues; the next tick, in ${intervalSeconds}s, is the retry.`);
+      }
       if (stopping) break;
       await waitFor(intervalSeconds * 1000);
     }

@@ -733,6 +733,27 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
       expect(outcome.cost, 'the session’s own result is untouched').toBe(0.5);
     });
 
+    // `sessionStarted` and "there is a transcript" are different questions, and this is
+    // where they come apart: the flag is set the instant the child exists, before its exit
+    // is awaited, so a `claude` that isn't on `PATH` reaches the catch with the flag true
+    // and the stream still empty. A zero-byte file is worse than no file — the run record
+    // names it as a transcript that was kept, and reading it says nothing about why.
+    it('keeps nothing for a session that started and then produced no stream', async () => {
+      const kept = join(scratch, 'no-stream');
+      const failsToRun: Spawner = (spec) =>
+        spec.command === process.execPath
+          ? { exited: Promise.reject(new Error('spawn claude ENOENT')), kill: () => {} }
+          : spawner(spec);
+
+      const outcome = await build({}, false, { transcripts: kept, spawn: failsToRun }).launch(REQUEST);
+
+      expect(outcome.sessionStarted, 'the child existed, so the run really did get this far').toBe(true);
+      expect(outcome.ok).toBe(false);
+      expect(outcome.transcript, 'and nothing came back from it').toBe('');
+      expect(outcome.transcriptPath, 'so the record names no transcript').toBeUndefined();
+      expect(existsSync(kept), 'and no directory is made to hold an empty one').toBe(false);
+    });
+
     it('keeps nothing for a run whose session never started', async () => {
       const kept = join(scratch, 'never-started');
       const executor = build({}, false, { transcripts: kept });
