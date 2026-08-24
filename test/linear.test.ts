@@ -127,6 +127,49 @@ describe('reading the team', () => {
   });
 });
 
+describe('resolving the project', () => {
+  function projectNodes(nodes: unknown[], hasNextPage = false) {
+    return { data: { team: { projects: { pageInfo: { hasNextPage }, nodes } } } };
+  }
+
+  it('answers the project and its status, asking for two so several is detectable', async () => {
+    const scripted = script({
+      body: projectNodes([{ id: 'project-1', name: 'Acme Web', status: { name: 'In Progress', type: 'started' } }]),
+    });
+
+    expect(await tracker(scripted).project('team-1', 'acme web')).toEqual({
+      projects: [{ id: 'project-1', name: 'Acme Web', status: { name: 'In Progress', type: 'started' } }],
+      moreProjects: false,
+    });
+    expect(scripted.sent[0]!.variables).toEqual({ team: 'team-1', project: 'acme web', projects: 2 });
+  });
+
+  // Hands back what matched rather than choosing. The caller refuses on two, and a client
+  // that picked one would be the silent merge this lookup exists to make impossible.
+  it('hands back every match rather than choosing between them', async () => {
+    const scripted = script({
+      body: projectNodes([
+        { id: 'project-1', name: 'jen', status: null },
+        { id: 'project-2', name: 'Jen', status: null },
+      ]),
+    });
+
+    const match = await tracker(scripted).project('team-1', 'jen');
+    expect(match.projects.map((found) => found.id)).toEqual(['project-1', 'project-2']);
+    expect(match.projects[0]!.status, 'a project need not carry a status').toBeUndefined();
+  });
+
+  it('carries the truncation flag every bounded connection here carries', async () => {
+    const scripted = script({ body: projectNodes([{ id: 'p1', name: 'jen', status: null }], true) });
+    expect((await tracker(scripted).project('team-1', 'jen')).moreProjects).toBe(true);
+  });
+
+  it('raises rather than answering empty when the team is gone', async () => {
+    const scripted = script({ body: { data: { team: null } } });
+    await expect(tracker(scripted).project('team-1', 'jen')).rejects.toThrow(/no longer has a team/);
+  });
+});
+
 describe('polling the project', () => {
   it('maps each issue and bounds both page sizes explicitly', async () => {
     const scripted = script({ body: { data: { issues: { pageInfo: { hasNextPage: false }, nodes: [issue()] } } } });

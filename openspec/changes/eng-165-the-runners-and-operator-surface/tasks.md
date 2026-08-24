@@ -16,10 +16,10 @@
 
 ## 3. The halt, and the project it halts
 
-- [ ] 3.1 Add the project lookup to `linear.ts` — resolve the named project to exactly one, asking for two so ambiguity is detectable, and read its status type. Name every field, and ask for `pageInfo` as every other bounded connection does.
-- [ ] 3.2 Refuse in `run.ts` when the name matches several projects or none, before polling, beside the existing credential and `Pending` refusals.
-- [ ] 3.3 Halt in `run.ts` when the project's status type is `paused`, `completed`, or `canceled` — reported, dispatching nothing, leaving running sessions alone. Halt on named types rather than on "not started".
-- [ ] 3.4 Tests in `test/dispatch.test.ts`: each halting type halts and reports; a backlog or planned project polls normally; two matching projects refuse; the halt leaves the tracker untouched, and the tick still imports nothing from `node:fs`.
+- [x] 3.1 Add the project lookup to `linear.ts` — resolve the named project to exactly one, asking for two so ambiguity is detectable, and read its status type. Name every field, and ask for `pageInfo` as every other bounded connection does.
+- [x] 3.2 Refuse in `run.ts` when the name matches several projects or none, before polling, beside the existing credential and `Pending` refusals.
+- [x] 3.3 Halt in `run.ts` when the project's status type is `paused`, `completed`, or `canceled` — reported, dispatching nothing, leaving running sessions alone. Halt on named types rather than on "not started".
+- [x] 3.4 Tests in `test/dispatch.test.ts`: each halting type halts and reports; a backlog or planned project polls normally; two matching projects refuse; the halt leaves the tracker untouched, and the tick still imports nothing from `node:fs`.
 
 ## 4. Run records
 

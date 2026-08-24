@@ -23,8 +23,10 @@
  */
 import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './stages.js';
 import {
+  HALTING_STATUS_TYPES,
   LABEL_PAGE_SIZE,
   newestFirst,
+  PROJECT_PAGE_SIZE,
   RateLimited,
   STATE_PAGE_SIZE,
   Tracker,
@@ -32,6 +34,7 @@ import {
   TOKEN_VARIABLE,
   type TrackerComment,
   type TrackerIssue,
+  type TrackerProject,
 } from './linear.js';
 
 import type { Io } from './cli.js';
@@ -233,6 +236,19 @@ export function decide(examined: Examined[], concurrency: number): Outcome[] {
   });
 }
 
+/**
+ * The project's status where it means the project is not being worked, or nothing.
+ *
+ * Matched on the status's `type` rather than on its name, so a workspace that renamed the
+ * status still halts, and a workspace that added one is understood by the category the
+ * tracker files it under.
+ */
+export function haltingStatus(project: TrackerProject): { name: string; type: string } | undefined {
+  const status = project.status;
+  if (!status) return undefined;
+  return (HALTING_STATUS_TYPES as readonly string[]).includes(fold(status.type)) ? status : undefined;
+}
+
 /** A refusal: the tick declines to run at all, naming what is missing. */
 class Refusal extends Error {}
 
@@ -432,6 +448,38 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
               'may exist behind that bound — the refusal is that the tick could not see it, not that it is absent.'
             : ''),
       );
+    }
+
+    // The project as an entity rather than as a name. The poll filters issues by the name it
+    // was given, which cannot tell one project from two sharing it — and the failure is
+    // silent in the direction that matters, since an unrelated project's issues would be
+    // polled, mapped, and dispatched as though they were the pipeline's.
+    const { projects, moreProjects } = await tracker.project(team.id, input.project);
+    if (projects.length === 0) {
+      throw new Refusal(
+        `the team \`${input.team}\` has no project named \`${input.project}\`. Refusing rather than polling ` +
+          'nothing, which would report a quiet pipeline.',
+      );
+    }
+    if (projects.length > 1) {
+      throw new Refusal(
+        `\`${input.project}\` matches ${moreProjects ? `at least ${PROJECT_PAGE_SIZE}` : projects.length} projects ` +
+          `in the team \`${input.team}\`, and the tick acts on one. Rename one of them, or point the runner at a ` +
+          'name that picks out exactly the project the pipeline runs.',
+      );
+    }
+
+    const project = projects[0]!;
+    const halted = haltingStatus(project);
+    if (halted) {
+      // Not a failure: the pause is somebody's deliberate act, and every runner reaches this
+      // same conclusion from the tracker with nothing configured on either of them. Sessions
+      // already running are left alone — the halt governs dispatch, and a session that has
+      // announced itself owns its task until it reports.
+      io.err(`jen run — ${input.team}/${project.name}`);
+      io.err('');
+      io.err(line('halted', `the project is \`${halted.name}\` — nothing is dispatched until that changes`));
+      return 0;
     }
 
     io.err(`jen run — ${input.team}/${input.project}`);

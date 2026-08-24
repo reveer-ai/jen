@@ -288,6 +288,49 @@ const TEAM = {
   },
 };
 
+/**
+ * The project the tick resolves before it polls, in an ordinary working status.
+ *
+ * Every scripted session carries one, because resolving the project is not optional: the
+ * poll filters issues by a *name*, and one name matching two projects would merge an
+ * unrelated project's issues into this pipeline's without anything failing.
+ */
+const PROJECT = {
+  data: {
+    team: {
+      projects: {
+        pageInfo: { hasNextPage: false },
+        nodes: [{ id: 'project-1', name: 'jen', status: { name: 'Backlog', type: 'backlog' } }],
+      },
+    },
+  },
+};
+
+/** A project whose status halts dispatch, of the given type. */
+function project(type: string, name = type) {
+  return {
+    data: {
+      team: {
+        projects: { pageInfo: { hasNextPage: false }, nodes: [{ id: 'project-1', name: 'jen', status: { name, type } }] },
+      },
+    },
+  };
+}
+
+/** More than one project of that name, which the tick refuses on. */
+function projects(...names: string[]) {
+  return {
+    data: {
+      team: {
+        projects: {
+          pageInfo: { hasNextPage: false },
+          nodes: names.map((name, index) => ({ id: `project-${index}`, name, status: null })),
+        },
+      },
+    },
+  };
+}
+
 function polled(...nodes: unknown[]) {
   return { data: { issues: { pageInfo: { hasNextPage: false }, nodes } } };
 }
@@ -371,6 +414,7 @@ describe('a tick that runs', () => {
   it('emits one JSON run request per dispatch on stdout, carrying no credential', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(issueNode('ENG-1', 'in progress'), issueNode('ENG-2', 'in review')) },
     );
     const result = await jenRun([], ENV, session);
@@ -385,10 +429,10 @@ describe('a tick that runs', () => {
   });
 
   it('asks the tracker only for statuses that map to a stage', async () => {
-    const session = script({ body: TEAM }, { body: polled() });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled() });
     await jenRun([], ENV, session);
 
-    const states = session.requests[1]!.variables.states as string[];
+    const states = session.requests[2]!.variables.states as string[];
     expect(states).toEqual(['in design', 'in progress', 'in review', 'in testing', 'in delivery']);
     for (const excluded of ['todo', 'Pending', 'backlog', 'done']) expect(states).not.toContain(excluded);
   });
@@ -396,6 +440,7 @@ describe('a tick that runs', () => {
   it('declines a task a session is working, and says so in the report', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(issueNode('ENG-1', 'in progress', newestFirst(announcement('implement-task', 'start')))) },
     );
     const result = await jenRun([], ENV, session);
@@ -408,6 +453,7 @@ describe('a tick that runs', () => {
   it('honours the concurrency cap', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       {
         body: polled(
           issueNode('ENG-1', 'in design'),
@@ -423,7 +469,7 @@ describe('a tick that runs', () => {
   });
 
   it('reports a tick with nothing to do, and exits successfully', async () => {
-    const session = script({ body: TEAM }, { body: polled() });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled() });
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
@@ -434,7 +480,7 @@ describe('a tick that runs', () => {
   // Two ticks over identical state reach identical conclusions, which is what lets two
   // runners share one ceiling without knowing about each other.
   it('reaches the same conclusion twice over unchanged state', async () => {
-    const state = [{ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress')) }] as const;
+    const state = [{ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress')) }] as const;
     const first = await jenRun([], ENV, script(...state));
     const second = await jenRun([], ENV, script(...state));
     expect(second.out).toEqual(first.out);
@@ -448,11 +494,12 @@ describe('establishing the most recent announcement from a bounded page', () => 
   it('treats a page with nothing behind it as the whole record, and reads no further', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(issueNode('ENG-1', 'in progress', [announcement('implement-task', 'start')])) },
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests, 'one comment, nothing behind it — there is nothing to page for').toHaveLength(2);
+    expect(session.requests, 'one comment, nothing behind it — there is nothing to page for').toHaveLength(3);
     expect(result.out).toEqual([]);
   });
 
@@ -464,14 +511,15 @@ describe('establishing the most recent announcement from a bounded page', () => 
 
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(...discussion))) },
       commentPage([started], true, 'cursor-2'),
       commentPage([comment('older still')]),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests, 'the walk stops at the marker rather than draining the record').toHaveLength(3);
-    expect(session.requests[2]!.variables).toEqual({ issue: 'id-ENG-1', comments: 10, after: 'cursor-1' });
+    expect(session.requests, 'the walk stops at the marker rather than draining the record').toHaveLength(4);
+    expect(session.requests[3]!.variables).toEqual({ issue: 'id-ENG-1', comments: 10, after: 'cursor-1' });
     expect(result.out, 'the marker found by paging still gates the task').toEqual([]);
   });
 
@@ -485,12 +533,13 @@ describe('establishing the most recent announcement from a bounded page', () => 
 
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in review'), [started, note])) },
       commentPage([ended]),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests).toHaveLength(3);
+    expect(session.requests).toHaveLength(4);
     expect(
       result.out.map((line) => JSON.parse(line)),
       'the newest marker is the `end` behind the bound, so the task is a candidate again',
@@ -506,13 +555,14 @@ describe('establishing the most recent announcement from a bounded page', () => 
 
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in testing'), [first, started])) },
       commentPage([ended, since], true, 'cursor-2'),
       commentPage([latest]),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests, 'every remaining page is read, because each one is newer').toHaveLength(4);
+    expect(session.requests, 'every remaining page is read, because each one is newer').toHaveLength(5);
     expect(result.out.map((line) => JSON.parse(line))).toEqual([
       { task: 'ENG-1', skill: 'test-task', role: 'deliver', branch: 'eng-1-a-task' },
     ]);
@@ -534,13 +584,14 @@ describe('the ceiling on how far the fallback will read', () => {
   it('stops the backward walk at the budget and declines rather than reporting it idle', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(comment('b'), comment('a')))) },
       ...endless(COMMENT_PAGE_BUDGET + 3),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests, 'the team, the poll, and the budget — and not one page more').toHaveLength(
-      2 + COMMENT_PAGE_BUDGET,
+    expect(session.requests, 'the team, the project, the poll, and the budget — not one page more').toHaveLength(
+      3 + COMMENT_PAGE_BUDGET,
     );
     expect(result.out, 'an unread record is not evidence that nothing is working the task').toEqual([]);
     expect(result.err.join('\n')).toContain('unproven');
@@ -552,12 +603,13 @@ describe('the ceiling on how far the fallback will read', () => {
   it('stops the forward walk at the budget too, where there is no early exit to rely on', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in review'), [comment('oldest'), comment('newer')])) },
       ...endless(COMMENT_PAGE_BUDGET + 3),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests).toHaveLength(2 + COMMENT_PAGE_BUDGET);
+    expect(session.requests).toHaveLength(3 + COMMENT_PAGE_BUDGET);
     expect(result.out).toEqual([]);
     expect(result.err.join('\n')).toContain('oldest-first');
   });
@@ -567,13 +619,14 @@ describe('the ceiling on how far the fallback will read', () => {
   it('reads a record that fits inside the budget without declining it', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-1', 'in progress'), newestFirst(comment('b'), comment('a')))) },
       commentPage([comment('still nothing marked')], true, 'cursor-2'),
       commentPage([announcement('implement-task', 'end')]),
     );
     const result = await jenRun([], ENV, session);
 
-    expect(session.requests).toHaveLength(4);
+    expect(session.requests).toHaveLength(5);
     expect(result.out.map((line) => JSON.parse(line))).toEqual([
       { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
     ]);
@@ -584,7 +637,7 @@ describe('the ceiling on how far the fallback will read', () => {
 // out: a page that came back short is indistinguishable from a pipeline with nothing in it.
 describe('a bound that cut the answer short', () => {
   it('names the issues it did not examine rather than exiting 0 over them', async () => {
-    const session = script({ body: TEAM }, { body: truncated(issueNode('ENG-1', 'in progress')) });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: truncated(issueNode('ENG-1', 'in progress')) });
     const result = await jenRun([], ENV, session);
 
     expect(result.code, 'the tick cannot act on this, and it is not an error').toBe(0);
@@ -597,7 +650,7 @@ describe('a bound that cut the answer short', () => {
   });
 
   it('says nothing about a bound that did not truncate', async () => {
-    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress')) });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress')) });
     const result = await jenRun([], ENV, session);
     expect(result.err.join('\n')).not.toContain('--issue-page');
   });
@@ -620,7 +673,7 @@ describe('a bound that cut the answer short', () => {
     bounded.data.teams.nodes[0]!.states.nodes = [{ name: 'in progress' }, { name: 'Pending' }];
     bounded.data.teams.nodes[0]!.states.pageInfo.hasNextPage = true;
 
-    const result = await jenRun([], ENV, script({ body: bounded }, { body: polled() }));
+    const result = await jenRun([], ENV, script({ body: bounded }, { body: PROJECT }, { body: polled() }));
     const report = result.err.join('\n');
 
     expect(result.code).toBe(0);
@@ -630,7 +683,7 @@ describe('a bound that cut the answer short', () => {
   });
 
   it('declines an issue whose label page was cut short without claiming nothing refined it', async () => {
-    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-9', 'in design', [], ['urgent'], true)) });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-9', 'in design', [], ['urgent'], true)) });
     const result = await jenRun([], ENV, session);
 
     expect(result.out).toEqual([]);
@@ -649,19 +702,20 @@ describe('an issue in a stage status that is not a task', () => {
   it('declines an epic, names it, and does not read its comments to do so', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       { body: polled(withCommentPage(issueNode('ENG-136', 'in progress', [], ['epic']), [comment('epic chatter')])) },
     );
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
     expect(result.out, 'an epic has no change and no PR — a stage against one finds nothing to do').toEqual([]);
-    expect(session.requests, 'the gate runs before the comment read, so the fallback never fires').toHaveLength(2);
+    expect(session.requests, 'the gate runs before the comment read, so the fallback never fires').toHaveLength(3);
     expect(result.err.join('\n')).toContain('ENG-136');
     expect(result.err.join('\n')).toContain('an epic, not a task');
   });
 
   it('declines an issue carrying neither label, and says something different about it', async () => {
-    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-9', 'in design', [], [])) });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-9', 'in design', [], [])) });
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
@@ -675,6 +729,7 @@ describe('an issue in a stage status that is not a task', () => {
   it('accounts for the non-tasks alongside the candidates in one report', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       {
         body: polled(
           issueNode('ENG-163', 'in progress'),
@@ -697,6 +752,7 @@ describe('an issue in a stage status that is not a task', () => {
   it('spends no concurrency on an issue it declined for not being a task', async () => {
     const session = script(
       { body: TEAM },
+      { body: PROJECT },
       {
         body: polled(
           issueNode('ENG-136', 'in progress', [], ['epic']),
@@ -713,9 +769,96 @@ describe('an issue in a stage status that is not a task', () => {
   });
 });
 
+/**
+ * The pipeline's halt, and the ambiguity the lookup it needs also closes.
+ *
+ * The halt is the tracker's own project status rather than anything jen invented, which is
+ * what makes it reach both runners with nothing added to either: it is read where every
+ * runner already looks, and un-pausing resumes the pipeline with nothing restarted.
+ */
+describe('a project that is not being worked', () => {
+  for (const type of ['paused', 'completed', 'canceled']) {
+    it(`halts before polling when the project is ${type}`, async () => {
+      const session = script({ body: TEAM }, { body: project(type, 'On hold') });
+      const result = await jenRun([], ENV, session);
+
+      expect(result.code, 'a deliberate pause is not a failed tick').toBe(0);
+      expect(result.err.join('\n')).toContain('On hold');
+      expect(result.out, 'nothing is dispatched').toEqual([]);
+      expect(session.requests, 'the halt comes before the poll').toHaveLength(2);
+    });
+  }
+
+  // Read by type rather than by name, so a workspace that renamed its paused status still
+  // halts — and so a status jen has never heard of is understood by its category.
+  it('halts on a renamed status, because it matches the type', async () => {
+    const session = script({ body: TEAM }, { body: project('paused', 'Parked until Q3') });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(0);
+    expect(result.err.join('\n')).toContain('Parked until Q3');
+  });
+
+  // A deny list over three named types, not an allow list over `started`. jen's own project
+  // sits in `Backlog` while its pipeline runs, and an allow list would have halted it.
+  it('polls normally from a backlog or planned project', async () => {
+    for (const type of ['backlog', 'planned', 'started']) {
+      const session = script({ body: TEAM }, { body: project(type) }, { body: polled(issueNode('ENG-1', 'in progress')) });
+      const result = await jenRun([], ENV, session);
+
+      expect(result.code, type).toBe(0);
+      expect(result.out.map((line) => JSON.parse(line)), type).toHaveLength(1);
+    }
+  });
+
+  it('polls a project carrying no status at all', async () => {
+    const session = script({ body: TEAM }, { body: projects('jen') }, { body: polled(issueNode('ENG-1', 'in progress')) });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code, result.err.join('\n')).toBe(0);
+    expect(result.out).toHaveLength(1);
+  });
+
+  it('leaves the tracker untouched while halted, and launches nothing', async () => {
+    const session = script({ body: TEAM }, { body: project('paused') });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.launched, 'a session already running is not stopped by a halt — none is started').toEqual([]);
+    for (const { query } of session.requests) expect(query.trimStart()).toMatch(/^query /);
+  });
+});
+
+describe('resolving the project the tick was told to act on', () => {
+  it('refuses when the name matches more than one project', async () => {
+    const session = script({ body: TEAM }, { body: projects('jen', 'jen') });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('matches 2 projects');
+    expect(result.out).toEqual([]);
+    expect(session.requests, 'the refusal comes before the poll').toHaveLength(2);
+  });
+
+  it('refuses when the name matches none, rather than reporting a quiet pipeline', async () => {
+    const session = script({ body: TEAM }, { body: projects() });
+    const result = await jenRun([], ENV, session);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('no project named `jen`');
+    expect(result.err.join('\n')).toContain('Nothing was polled');
+  });
+
+  it('asks the team for the project by the name it was given', async () => {
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled() });
+    await jenRun([], ENV, session);
+
+    expect(session.requests[1]!.variables).toEqual({ team: 'team-1', project: 'jen', projects: 2 });
+  });
+});
+
 describe('the tick writes nothing', () => {
   it('sends the tracker queries and never a mutation', async () => {
-    const session = script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress')) });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress')) });
     await jenRun([], ENV, session);
 
     expect(session.requests.length).toBeGreaterThan(0);
@@ -764,7 +907,7 @@ describe('the tick writes nothing', () => {
  * is worse than no preview, because it is trusted.
  */
 describe('a tick that acts on what it decided', () => {
-  const two = () => script({ body: TEAM }, { body: polled(issueNode('ENG-1', 'in progress'), issueNode('ENG-2', 'in review')) });
+  const two = () => script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress'), issueNode('ENG-2', 'in review')) });
 
   it('launches exactly what it dispatched, and nothing it declined', async () => {
     const result = await jenRun([], ENV, two());
@@ -845,7 +988,7 @@ describe('a tick that acts on what it decided', () => {
   });
 
   it('launches nothing when nothing passed the gate', async () => {
-    const session = script({ body: TEAM }, { body: polled() });
+    const session = script({ body: TEAM }, { body: PROJECT }, { body: polled() });
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
