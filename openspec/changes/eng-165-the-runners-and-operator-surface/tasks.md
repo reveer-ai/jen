@@ -1,18 +1,18 @@
 ## 1. Substitution in the payload engine
 
-- [ ] 1.1 Promote `yaml` from a devDependency to a dependency, and add a registry reader that returns the tracker team and project from the single `kind: project-management` resource — resolving to nothing when the file is absent, unparseable, or names zero or several such resources, and never throwing on a malformed file.
-- [ ] 1.2 Declare substitution as data on a managed file in `payload.ts`: a closed set of names (`team`, `project`), the `{{jen:name}}` placeholder form, and no way for a payload file to express anything else.
-- [ ] 1.3 Resolve substitutions in `plan.ts` so the planner still only reads, carry the rendered bytes and the unresolved names on the plan, and have `apply.ts` write what the plan already resolved. No filesystem write moves into the planner.
-- [ ] 1.4 Report unresolved values from `init` and `update`, naming each one and why it did not resolve — no registry, no tracker resource, or several.
-- [ ] 1.5 Tests in `test/plan.test.ts` and `test/install.test.ts`: a value resolves; an absent value renders empty and never leaves the placeholder in the output; a re-run after the registry changes rewrites the file; substitution does not change what paths are written, refreshed, or reconciled.
+- [x] 1.1 Promote `yaml` from a devDependency to a dependency, and add a registry reader that returns the tracker team and project from the single `kind: project-management` resource — resolving to nothing when the file is absent, unparseable, or names zero or several such resources, and never throwing on a malformed file.
+- [x] 1.2 Declare substitution as data on a managed file in `payload.ts`: a closed set of names (`team`, `project`), the `{{jen:name}}` placeholder form, and no way for a payload file to express anything else.
+- [x] 1.3 Resolve substitutions in `plan.ts` so the planner still only reads, carry the rendered bytes and the unresolved names on the plan, and have `apply.ts` write what the plan already resolved. No filesystem write moves into the planner.
+- [x] 1.4 Report unresolved values from `init` and `update`, naming each one and why it did not resolve — no registry, no tracker resource, or several.
+- [x] 1.5 Tests in `test/plan.test.ts` and `test/install.test.ts`: a value resolves; an absent value renders empty and never leaves the placeholder in the output; a re-run after the registry changes rewrites the file; substitution does not change what paths are written, refreshed, or reconciled.
 
 ## 2. The scheduled workflow as a managed file
 
-- [ ] 2.1 Write the workflow template: `schedule` and `workflow_dispatch` triggers, a 30-minute cron, a `concurrency` group with `cancel-in-progress: false`, `timeout-minutes: 120`, no `actions/checkout`, and a job that installs the published CLI and runs `jen run`.
-- [ ] 2.2 Wire the environment: the substituted team and project, `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, and the nine `JEN_GH_*` secrets — app id, installation id, and private key for each of `DESIGN`, `DEV`, and `DELIVER`.
-- [ ] 2.3 Declare the workflow in `payload.ts` as a fixed path at `.github/workflows/jen.yml`, carrying substitution and no ownership stamp.
-- [ ] 2.4 Update `test/payload.test.ts` and `test/package.test.ts` for the new declared path and for its presence in the staged payload and the tarball.
-- [ ] 2.5 Tests that the shipped workflow parses as YAML, names only environment variables the CLI actually reads, and performs no checkout — the last as a source-level assertion, since it is the property that keeps the poll cheap.
+- [x] 2.1 Write the workflow template: `schedule` and `workflow_dispatch` triggers, a 30-minute cron, a `concurrency` group with `cancel-in-progress: false`, `timeout-minutes: 120`, no `actions/checkout`, and a job that installs the published CLI and runs `jen run`.
+- [x] 2.2 Wire the environment: the substituted team and project, `LINEAR_API_KEY`, `ANTHROPIC_API_KEY`, and the nine `JEN_GH_*` secrets — app id, installation id, and private key for each of `DESIGN`, `DEV`, and `DELIVER`.
+- [x] 2.3 Declare the workflow in `payload.ts` as a fixed path at `.github/workflows/jen.yml`, carrying substitution and no ownership stamp.
+- [x] 2.4 Update `test/payload.test.ts` and `test/package.test.ts` for the new declared path and for its presence in the staged payload and the tarball.
+- [x] 2.5 Tests that the shipped workflow parses as YAML, names only environment variables the CLI actually reads, and performs no checkout — the last as a source-level assertion, since it is the property that keeps the poll cheap.
 
 ## 3. The halt, and the project it halts
 

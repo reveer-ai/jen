@@ -1,9 +1,16 @@
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { apply } from '../cli/apply.js';
-import { PAYLOAD, SKILLS, STAMP_FRONTMATTER, memberShape, type VariableSet } from '../cli/payload.js';
+import {
+  PAYLOAD,
+  SKILLS,
+  STAMP_FRONTMATTER,
+  memberShape,
+  payloadFiles,
+  type VariableSet,
+} from '../cli/payload.js';
 import { planInstall, reconcileCandidates, stagedPayloadDir, touchedPaths, type Plan } from '../cli/plan.js';
 import { changed, link, messyProject, neighbours, project, snapshot, stamped } from './fixture.js';
 import { stageInto } from './helpers.js';
@@ -91,13 +98,13 @@ describe('the planner', () => {
     const root = messyProject(staged);
     const plan = planInstall(root, { scaffold: false, templates: staged });
 
-    // the hand-edited skill and the project's own AGENTS.md differ; every other shipped
-    // skill is absent, which is also a write
+    // the hand-edited skill and the project's own AGENTS.md differ; every other managed
+    // path is absent, which is also a write
     expect(plan.writes.filter((write) => write.replaces).map((write) => write.target)).toEqual([
       'AGENTS.md',
       '.claude/skills/design-task/SKILL.md',
     ]);
-    expect(plan.writes).toHaveLength(SKILLS.length + 1);
+    expect(plan.writes).toHaveLength(payloadFiles().length);
     expect(plan.current).toEqual([]);
   });
 
@@ -108,7 +115,7 @@ describe('the planner', () => {
     const plan = planInstall(root, { scaffold: false, templates: staged });
     expect(plan.writes).toEqual([]);
     expect(plan.deletions).toEqual([]);
-    expect(plan.current).toHaveLength(SKILLS.length + 1);
+    expect(plan.current).toHaveLength(payloadFiles().length);
   });
 
   it('plans the deletion of a stamped file this version no longer ships, and only that', () => {
@@ -198,7 +205,7 @@ describe('the planner', () => {
       '.claude/settings.json',
     ]);
     expect(plan.obstructions.every(({ ancestor }) => ancestor === '.claude')).toBe(true);
-    expect(touchedPaths(plan)).toEqual(['AGENTS.md', 'registry.yaml']);
+    expect(touchedPaths(plan)).toEqual(['AGENTS.md', '.github/workflows/jen.yml', 'registry.yaml']);
   });
 
   it('plans the scaffold only for absent paths, and only when asked', () => {
@@ -211,6 +218,115 @@ describe('the planner', () => {
 
     const filled = messyProject(staged);
     expect(planInstall(filled, { scaffold: true, templates: staged }).scaffold).toEqual([]);
+  });
+});
+
+/**
+ * A managed file carrying values the project owns, resolved when it is written.
+ *
+ * The substituted file is the pipeline's scheduled workflow, and what makes these worth
+ * asserting is the failure they exclude: a value that did not resolve must come out *empty*
+ * rather than as its own placeholder, because a literal `{{jen:team}}` in a runner's
+ * configuration is a wrong project name that reads as a configured one.
+ */
+describe('substitution', () => {
+  const workflow = payloadFiles().find(({ file }) => file.substituted)!.file;
+
+  const BOUND = [
+    'resources:',
+    '  - name: acme-web',
+    '    kind: repository',
+    '  - name: acme-web-tracker',
+    '    kind: project-management',
+    '    provider: linear',
+    '    team: ENG',
+    '    project: Acme Web',
+    '',
+  ].join('\n');
+
+  function written(root: string): string {
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+    return readFileSync(join(root, workflow.target), 'utf8');
+  }
+
+  it("carries the registry's values into the file, and leaves the registry itself alone", () => {
+    const root = project({ 'registry.yaml': BOUND }, 'bound');
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+
+    expect(plan.unresolved).toEqual([]);
+    apply(plan);
+
+    const contents = readFileSync(join(root, workflow.target), 'utf8');
+    expect(contents).toContain('JEN_TEAM: "ENG"');
+    expect(contents).toContain('JEN_PROJECT: "Acme Web"');
+    expect(readFileSync(join(root, 'registry.yaml'), 'utf8'), 'the registry is read, never written').toBe(BOUND);
+  });
+
+  // Four ways to supply nothing, and the report has to tell them apart: a person fixes each
+  // one differently, and the file looks identical in all four.
+  it('resolves to nothing rather than throwing, and says which nothing it was', () => {
+    const cases: [string, Record<string, string>, RegExp][] = [
+      ['absent', {}, /has no registry\.yaml/],
+      ['unparseable', { 'registry.yaml': 'resources:\n  - name: [unclosed\n' }, /could not be parsed/],
+      ['no tracker', { 'registry.yaml': 'resources:\n  - name: acme\n    kind: repository\n' }, /names no/],
+      [
+        'two trackers',
+        { 'registry.yaml': `${BOUND}  - name: other\n    kind: project-management\n    team: OPS\n    project: Ops\n` },
+        /names 2 /,
+      ],
+    ];
+
+    for (const [label, files, why] of cases) {
+      const root = project(files, `unresolved-${label.replace(/ /g, '-')}`);
+      const plan = planInstall(root, { scaffold: false, templates: staged });
+
+      expect(plan.unresolved.map((entry) => entry.name), label).toEqual(['team', 'project']);
+      for (const entry of plan.unresolved) expect(entry.why, label).toMatch(why);
+
+      const contents = written(root);
+      expect(contents, label).not.toContain('{{jen:');
+      expect(contents, label).toContain('JEN_TEAM: ""');
+    }
+  });
+
+  it('names the field a tracker resource is missing, rather than the file', () => {
+    const root = project(
+      { 'registry.yaml': 'resources:\n  - name: acme-web-tracker\n    kind: project-management\n    team: ENG\n' },
+      'half-bound',
+    );
+    const plan = planInstall(root, { scaffold: false, templates: staged });
+
+    expect(plan.unresolved.map((entry) => entry.name)).toEqual(['project']);
+    expect(plan.unresolved[0]!.why).toMatch(/names no `project`/);
+    expect(written(root)).toContain('JEN_TEAM: "ENG"');
+  });
+
+  it('rewrites the file when the registry changes, and only that file', () => {
+    const root = project({ 'registry.yaml': BOUND }, 'rebound');
+    apply(planInstall(root, { scaffold: false, templates: staged }));
+
+    writeFileSync(join(root, 'registry.yaml'), BOUND.replace('Acme Web', 'Acme API'));
+    const second = planInstall(root, { scaffold: false, templates: staged });
+
+    expect(second.writes.map((write) => write.target)).toEqual([workflow.target]);
+    apply(second);
+    expect(readFileSync(join(root, workflow.target), 'utf8')).toContain('JEN_PROJECT: "Acme API"');
+  });
+
+  // Substitution changes what a managed file says and nothing about which paths a run
+  // touches: same writes, same refreshes, same reconciliation, bound or not.
+  it('changes what a file says and not which paths a run touches', () => {
+    const unbound = messyProject(staged);
+    const bound = messyProject(staged);
+    writeFileSync(join(bound, 'registry.yaml'), BOUND);
+
+    const one = planInstall(unbound, { scaffold: true, templates: staged });
+    const two = planInstall(bound, { scaffold: true, templates: staged });
+
+    expect(touchedPaths(two)).toEqual(touchedPaths(one));
+    expect(two.deletions).toEqual(one.deletions);
+    expect(two.current).toEqual(one.current);
+    expect(two.conflicts).toEqual(one.conflicts);
   });
 });
 
@@ -275,6 +391,7 @@ function handBuilt(projectRoot: string, target: string): Plan {
     deletions: [],
     scaffold: [],
     conflicts: [],
+    unresolved: [],
     obstructions: [],
   };
 }

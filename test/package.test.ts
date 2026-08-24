@@ -114,6 +114,14 @@ describe('the packed tarball', () => {
     expect(contents).toContain('LICENSE');
   });
 
+  // Staged under a tool-neutral name and unstamped, like every fixed path. Named here as
+  // well as in the loop above because it is the one managed file that lands outside
+  // `.claude/` and the root, and a `files` or staging change that dropped it would leave
+  // an adopter with a pipeline that never polls and nothing saying so.
+  it('carries the scheduled workflow the pipeline runs on', () => {
+    expect(contents).toContain('dist/templates/workflows/jen.yml');
+  });
+
   it('names no assistant in the staged tree it ships', () => {
     const assistantDirs = ['.claude', '.github', '.codex', '.opencode', '.cursor', '.agents'];
     for (const path of contents.filter((entry) => entry.startsWith('dist/templates/'))) {
