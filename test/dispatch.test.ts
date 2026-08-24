@@ -247,6 +247,23 @@ function recorder(result: Partial<LaunchResult> = {}): { launch: Launch; launche
   };
 }
 
+/** Every run request on stdout, in dispatch order, without the records interleaved with them. */
+function requestsIn(out: string[]): unknown[] {
+  return out.map((line) => JSON.parse(line) as { event: string }).filter((emitted) => emitted.event === 'dispatch');
+}
+
+/** Every run record on stdout, in the order the sessions were seen through. */
+function recordsIn(out: string[]): Record<string, unknown>[] {
+  return out
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((emitted) => emitted.event === 'outcome');
+}
+
+/** A run request as it appears on the stream, discriminator included. */
+function dispatchOf(task: string, skill: string, role: string) {
+  return { event: 'dispatch', task, skill, role, branch: `${task.toLowerCase()}-a-task` };
+}
+
 async function jenRun(
   args: string[],
   env: Record<string, string | undefined>,
@@ -388,6 +405,13 @@ describe('the tick refuses before it polls', () => {
     expect(withoutProject.err.join('\n')).toContain('no tracker project was given');
   });
 
+  it('rejects a flag given without its value rather than acting on a default', async () => {
+    const result = await jenRun(['--transcripts'], ENV);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toContain('--transcripts takes a value');
+  });
+
   it('refuses a team carrying no `Pending`, and dispatches nothing', async () => {
     const withoutPending = structuredClone(TEAM);
     withoutPending.data.teams.nodes[0]!.states.nodes = [{ name: 'in progress' }, { name: 'done' }];
@@ -397,7 +421,7 @@ describe('the tick refuses before it polls', () => {
 
     expect(result.code).toBe(1);
     expect(result.err.join('\n')).toContain('carries no `Pending` status');
-    expect(result.out, 'nothing may be dispatched').toEqual([]);
+    expect(requestsIn(result.out), 'nothing may be dispatched').toEqual([]);
     expect(session.requests, 'the refusal comes before the poll').toHaveLength(1);
   });
 
@@ -420,9 +444,9 @@ describe('a tick that runs', () => {
     const result = await jenRun([], ENV, session);
 
     expect(result.code, result.err.join('\n')).toBe(0);
-    expect(result.out.map((line) => JSON.parse(line))).toEqual([
-      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
-      { task: 'ENG-2', skill: 'review-task', role: 'deliver', branch: 'eng-2-a-task' },
+    expect(requestsIn(result.out)).toEqual([
+      dispatchOf('ENG-1', 'implement-task', 'dev'),
+      dispatchOf('ENG-2', 'review-task', 'deliver'),
     ]);
     expect(result.out.join('\n')).not.toContain('lin_api_recorded');
     expect(result.err.join('\n')).not.toContain('lin_api_recorded');
@@ -446,7 +470,7 @@ describe('a tick that runs', () => {
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
-    expect(result.out, 'a task in flight is not dispatched').toEqual([]);
+    expect(requestsIn(result.out), 'a task in flight is not dispatched').toEqual([]);
     expect(result.err.join('\n')).toContain('a session has announced itself and not yet reported');
   });
 
@@ -464,7 +488,7 @@ describe('a tick that runs', () => {
     );
     const result = await jenRun(['--concurrency', '1'], ENV, session);
 
-    expect(result.out).toHaveLength(1);
+    expect(requestsIn(result.out)).toHaveLength(1);
     expect(result.err.join('\n')).toContain('the cap is 1');
   });
 
@@ -520,7 +544,7 @@ describe('establishing the most recent announcement from a bounded page', () => 
 
     expect(session.requests, 'the walk stops at the marker rather than draining the record').toHaveLength(4);
     expect(session.requests[3]!.variables).toEqual({ issue: 'id-ENG-1', comments: 10, after: 'cursor-1' });
-    expect(result.out, 'the marker found by paging still gates the task').toEqual([]);
+    expect(requestsIn(result.out), 'the marker found by paging still gates the task').toEqual([]);
   });
 
   // The failure the evidence exists for. The bounded page holds the *oldest* comments, so
@@ -541,9 +565,9 @@ describe('establishing the most recent announcement from a bounded page', () => 
 
     expect(session.requests).toHaveLength(4);
     expect(
-      result.out.map((line) => JSON.parse(line)),
+      requestsIn(result.out),
       'the newest marker is the `end` behind the bound, so the task is a candidate again',
-    ).toEqual([{ task: 'ENG-1', skill: 'review-task', role: 'deliver', branch: 'eng-1-a-task' }]);
+    ).toEqual([dispatchOf('ENG-1', 'review-task', 'deliver')]);
   });
 
   it('reaches the end before deciding, rather than stopping at the first marker it passes', async () => {
@@ -563,8 +587,8 @@ describe('establishing the most recent announcement from a bounded page', () => 
     const result = await jenRun([], ENV, session);
 
     expect(session.requests, 'every remaining page is read, because each one is newer').toHaveLength(5);
-    expect(result.out.map((line) => JSON.parse(line))).toEqual([
-      { task: 'ENG-1', skill: 'test-task', role: 'deliver', branch: 'eng-1-a-task' },
+    expect(requestsIn(result.out)).toEqual([
+      dispatchOf('ENG-1', 'test-task', 'deliver'),
     ]);
   });
 });
@@ -593,7 +617,7 @@ describe('the ceiling on how far the fallback will read', () => {
     expect(session.requests, 'the team, the project, the poll, and the budget — not one page more').toHaveLength(
       3 + COMMENT_PAGE_BUDGET,
     );
-    expect(result.out, 'an unread record is not evidence that nothing is working the task').toEqual([]);
+    expect(requestsIn(result.out), 'an unread record is not evidence that nothing is working the task').toEqual([]);
     expect(result.err.join('\n')).toContain('unproven');
     expect(result.err.join('\n'), 'the operator needs the lever named').toContain('--comment-page');
   });
@@ -627,8 +651,8 @@ describe('the ceiling on how far the fallback will read', () => {
     const result = await jenRun([], ENV, session);
 
     expect(session.requests).toHaveLength(5);
-    expect(result.out.map((line) => JSON.parse(line))).toEqual([
-      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+    expect(requestsIn(result.out)).toEqual([
+      dispatchOf('ENG-1', 'implement-task', 'dev'),
     ]);
   });
 });
@@ -641,8 +665,8 @@ describe('a bound that cut the answer short', () => {
     const result = await jenRun([], ENV, session);
 
     expect(result.code, 'the tick cannot act on this, and it is not an error').toBe(0);
-    expect(result.out.map((line) => JSON.parse(line)), 'what it did see is still dispatched').toEqual([
-      { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
+    expect(requestsIn(result.out), 'what it did see is still dispatched').toEqual([
+      dispatchOf('ENG-1', 'implement-task', 'dev'),
     ]);
     const report = result.err.join('\n');
     expect(report).toContain('more issues are sitting in a stage status than the page bound of 50');
@@ -708,7 +732,7 @@ describe('an issue in a stage status that is not a task', () => {
     const result = await jenRun([], ENV, session);
 
     expect(result.code).toBe(0);
-    expect(result.out, 'an epic has no change and no PR — a stage against one finds nothing to do').toEqual([]);
+    expect(requestsIn(result.out), 'an epic has no change and no PR — a stage against one finds nothing to do').toEqual([]);
     expect(session.requests, 'the gate runs before the comment read, so the fallback never fires').toHaveLength(3);
     expect(result.err.join('\n')).toContain('ENG-136');
     expect(result.err.join('\n')).toContain('an epic, not a task');
@@ -740,8 +764,8 @@ describe('an issue in a stage status that is not a task', () => {
     );
     const result = await jenRun([], ENV, session);
 
-    expect(result.out.map((line) => JSON.parse(line)), 'only the task runs').toEqual([
-      { task: 'ENG-163', skill: 'implement-task', role: 'dev', branch: 'eng-163-a-task' },
+    expect(requestsIn(result.out), 'only the task runs').toEqual([
+      dispatchOf('ENG-163', 'implement-task', 'dev'),
     ]);
     const report = result.err.join('\n');
     for (const identifier of ['ENG-163', 'ENG-136', 'ENG-133']) expect(report, identifier).toContain(identifier);
@@ -763,8 +787,8 @@ describe('an issue in a stage status that is not a task', () => {
     );
     const result = await jenRun(['--concurrency', '1'], ENV, session);
 
-    expect(result.out.map((line) => JSON.parse(line))).toEqual([
-      { task: 'ENG-163', skill: 'test-task', role: 'deliver', branch: 'eng-163-a-task' },
+    expect(requestsIn(result.out)).toEqual([
+      dispatchOf('ENG-163', 'test-task', 'deliver'),
     ]);
   });
 });
@@ -784,7 +808,7 @@ describe('a project that is not being worked', () => {
 
       expect(result.code, 'a deliberate pause is not a failed tick').toBe(0);
       expect(result.err.join('\n')).toContain('On hold');
-      expect(result.out, 'nothing is dispatched').toEqual([]);
+      expect(result.out, 'nothing is dispatched, so nothing is emitted at all').toEqual([]);
       expect(session.requests, 'the halt comes before the poll').toHaveLength(2);
     });
   }
@@ -807,7 +831,7 @@ describe('a project that is not being worked', () => {
       const result = await jenRun([], ENV, session);
 
       expect(result.code, type).toBe(0);
-      expect(result.out.map((line) => JSON.parse(line)), type).toHaveLength(1);
+      expect(requestsIn(result.out), type).toHaveLength(1);
     }
   });
 
@@ -816,7 +840,7 @@ describe('a project that is not being worked', () => {
     const result = await jenRun([], ENV, session);
 
     expect(result.code, result.err.join('\n')).toBe(0);
-    expect(result.out).toHaveLength(1);
+    expect(requestsIn(result.out)).toHaveLength(1);
   });
 
   it('leaves the tracker untouched while halted, and launches nothing', async () => {
@@ -853,6 +877,98 @@ describe('resolving the project the tick was told to act on', () => {
     await jenRun([], ENV, session);
 
     expect(session.requests[1]!.variables).toEqual({ team: 'team-1', project: 'jen', projects: 2 });
+  });
+});
+
+/**
+ * What an operator has afterwards, under either runner and with nothing added to either.
+ *
+ * The record is the dispatcher's, which is the whole reason it reads identically whether a
+ * scheduled job or a local process drove the tick: neither contributed anything to it.
+ */
+describe('the record of what a tick did', () => {
+  const one = () => script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress')) });
+
+  it('emits a record per finished dispatch, distinguishable from the request', async () => {
+    const result = await jenRun([], ENV, one(), recorder({ cost: 1.5, sessionId: 'session-1' }));
+
+    expect(requestsIn(result.out)).toHaveLength(1);
+    expect(recordsIn(result.out)).toEqual([
+      {
+        event: 'outcome',
+        task: 'ENG-1',
+        skill: 'implement-task',
+        role: 'dev',
+        ok: true,
+        cost: 1.5,
+        sessionId: 'session-1',
+        terminated: false,
+        sessionStarted: true,
+        transcript: null,
+      },
+    ]);
+  });
+
+  it('carries the cost beside the outcome in the report a person reads', async () => {
+    const result = await jenRun([], ENV, one(), recorder({ cost: 1.5 }));
+    expect(result.err.join('\n')).toContain('$1.5000');
+  });
+
+  // Zero is a cost; nothing is not. An operator reading a column of `$0.0000` cannot tell
+  // the two apart unless the absence says so in words.
+  it('tells a session that reported no cost from one that reported zero', async () => {
+    const silent = await jenRun([], ENV, one(), recorder({}));
+    expect(recordsIn(silent.out)[0]!.cost, 'nothing reported').toBeNull();
+    expect(silent.err.join('\n')).toContain('no cost reported');
+
+    const free = await jenRun([], ENV, one(), recorder({ cost: 0 }));
+    expect(recordsIn(free.out)[0]!.cost).toBe(0);
+    expect(free.err.join('\n')).toContain('$0.0000');
+  });
+
+  it('records a failed session, a stopped one, and one that never started', async () => {
+    const failed = await jenRun([], ENV, one(), recorder({ ok: false, failures: ['the session exited 1.'] }));
+    expect(recordsIn(failed.out)[0]).toMatchObject({ ok: false, terminated: false, sessionStarted: true });
+
+    const stopped = await jenRun([], ENV, one(), recorder({ ok: false, failures: [], terminated: true }));
+    expect(recordsIn(stopped.out)[0]).toMatchObject({ ok: false, terminated: true, sessionStarted: true });
+
+    const never = await jenRun([], ENV, one(), recorder({ ok: false, terminated: true, sessionStarted: false }));
+    expect(recordsIn(never.out)[0]).toMatchObject({ terminated: true, sessionStarted: false });
+  });
+
+  it('names where a transcript went, or says none was kept', async () => {
+    const kept = await jenRun([], ENV, one(), recorder({ transcriptPath: '/var/log/jen/ENG-1.jsonl' }));
+    expect(recordsIn(kept.out)[0]!.transcript).toBe('/var/log/jen/ENG-1.jsonl');
+
+    const discarded = await jenRun([], ENV, one(), recorder({}));
+    expect(recordsIn(discarded.out)[0]!.transcript, 'unstated is not an option').toBeNull();
+  });
+
+  it('carries no credential, on the same terms as a run request', async () => {
+    const result = await jenRun([], ENV, one(), recorder({ cost: 1.5, sessionId: 'session-1' }));
+    expect(result.out.join('\n')).not.toContain('lin_api_recorded');
+    expect(result.err.join('\n')).not.toContain('lin_api_recorded');
+  });
+
+  // Emitting a record is not a tracker write and must not become one: what a stage did to
+  // its task is the session's own to report, and a dead session's task stays in flight.
+  it('writes nothing to the tracker to record anything', async () => {
+    const session = one();
+    await jenRun([], ENV, session, recorder({ ok: false, failures: ['it failed'] }));
+
+    for (const { query } of session.requests) expect(query.trimStart()).toMatch(/^query /);
+    expect(session.requests, 'the team, the project, and the poll — nothing added by recording').toHaveLength(3);
+  });
+
+  // A run that succeeded can still have something to say. Reporting failures only under the
+  // failing branch would put a transcript that could not be kept nowhere at all.
+  it('reports what a successful run could not do, without calling the run failed', async () => {
+    const result = await jenRun([], ENV, one(), recorder({ ok: true, failures: ['the transcript could not be written'] }));
+
+    expect(result.code, 'the session itself succeeded').toBe(0);
+    expect(result.err.join('\n')).toContain('the transcript could not be written');
+    expect(recordsIn(result.out)[0]!.ok).toBe(true);
   });
 });
 
@@ -913,7 +1029,7 @@ describe('a tick that acts on what it decided', () => {
     const result = await jenRun([], ENV, two());
 
     expect(result.code, result.err.join('\n')).toBe(0);
-    expect(result.launched).toEqual([
+    expect(result.launched, 'the executor is handed the request, not the line it was emitted as').toEqual([
       { task: 'ENG-1', skill: 'implement-task', role: 'dev', branch: 'eng-1-a-task' },
       { task: 'ENG-2', skill: 'review-task', role: 'deliver', branch: 'eng-2-a-task' },
     ]);
@@ -924,7 +1040,7 @@ describe('a tick that acts on what it decided', () => {
 
     expect(result.code).toBe(0);
     expect(result.launched).toEqual([]);
-    expect(result.out.map((line) => JSON.parse(line))).toHaveLength(2);
+    expect(requestsIn(result.out)).toHaveLength(2);
     expect(result.err.join('\n')).toContain('dispatched');
   });
 
@@ -933,10 +1049,11 @@ describe('a tick that acts on what it decided', () => {
     const previewed = await jenRun(['--dry-run'], ENV, two());
     const acted = await jenRun([], ENV, two());
 
-    expect(previewed.out).toEqual(acted.out);
+    expect(requestsIn(previewed.out)).toEqual(requestsIn(acted.out));
     expect(acted.launched.map((request) => request.task)).toEqual(
-      previewed.out.map((line) => (JSON.parse(line) as RunRequest).task),
+      requestsIn(previewed.out).map((emitted) => (emitted as RunRequest).task),
     );
+    expect(recordsIn(previewed.out), 'a preview sees no session through, so it records none').toEqual([]);
   });
 
   it('honours the cap when it launches, because the cap is already on the dispatched set', async () => {

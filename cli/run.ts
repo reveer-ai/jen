@@ -102,6 +102,58 @@ export interface RunRequest {
   branch: string;
 }
 
+/**
+ * What each kind of object on stdout calls itself.
+ *
+ * Requests and records share the stream, and a consumer that cannot tell them apart cannot
+ * record either one reliably. A second file descriptor would have been the alternative, and
+ * it is worse for the invocation this is built around: `jen run | recorder`.
+ *
+ * The discriminator is added at emission rather than carried on {@link RunRequest}, because
+ * a request names what the executor needs and the executor has no use for this.
+ */
+export const EVENTS = { dispatch: 'dispatch', outcome: 'outcome' } as const;
+
+/**
+ * What the tick emits about a session it saw through: one line per finished dispatch,
+ * readable by a person and by a program, on the same stream under either runner.
+ *
+ * Carries no credential, on the same terms as a run request — it may be logged, printed, or
+ * piped anywhere. Emitting one is not a tracker write and nothing about it reaches the task:
+ * what a stage did to its task is the session's own to report.
+ *
+ * `cost` and `transcript` are `null` rather than absent where there is nothing to say. A
+ * session that reported no cost has to be distinguishable from one that reported zero, and a
+ * run that kept no transcript has to say so rather than leave it unstated.
+ */
+export interface RunRecord {
+  event: typeof EVENTS.outcome;
+  task: string;
+  skill: string;
+  role: string;
+  ok: boolean;
+  cost: number | null;
+  sessionId: string | null;
+  terminated: boolean;
+  sessionStarted: boolean;
+  transcript: string | null;
+}
+
+export function runRecord(request: RunRequest, result: LaunchResult): RunRecord {
+  return {
+    event: EVENTS.outcome,
+    task: request.task,
+    skill: request.skill,
+    role: request.role,
+    ok: result.ok,
+    cost: result.cost ?? null,
+    sessionId: result.sessionId ?? null,
+    terminated: result.terminated,
+    sessionStarted: result.sessionStarted,
+    transcript: result.transcriptPath ?? null,
+  };
+}
+
 export type Verdict = { dispatch: RunRequest } | { declined: string };
 
 /**
@@ -125,6 +177,12 @@ export interface LaunchResult {
    * had got to — so the report says which.
    */
   sessionStarted: boolean;
+  /** What the session reported it cost, where it reported anything. */
+  cost?: number;
+  /** The session's own identifier, where it emitted one. */
+  sessionId?: string;
+  /** Where this session's transcript was kept, where one was kept at all. */
+  transcriptPath?: string;
 }
 
 /** How the tick acts, without knowing anything about what acting involves. */
@@ -257,6 +315,17 @@ function line(label: string, detail: string): string {
 }
 
 /**
+ * What a run cost, beside its outcome — or that it did not say.
+ *
+ * A session that reported nothing and a session that reported zero are different facts, and
+ * an operator reading a column of `$0.0000` has no way to tell which one they are looking at
+ * unless the absence says so in words.
+ */
+function spent(result: LaunchResult): string {
+  return result.cost === undefined ? '  (no cost reported)' : `  $${result.cost.toFixed(4)}`;
+}
+
+/**
  * The most recent announcement on an issue, paging that one issue's comments where the
  * nested page cannot answer it.
  *
@@ -386,24 +455,32 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
   let failed = 0;
   results.forEach((result, index) => {
     const request = dispatched[index]!;
+
+    // The record goes out for every finished dispatch, whatever became of it — a session
+    // that failed, one that was stopped, and one that never started are each something an
+    // operator has to be able to account for afterwards.
+    io.out(JSON.stringify(runRecord(request, result)));
+
     if (result.terminated) {
       failed += 1;
       io.err(
         line(
           'terminated',
           result.sessionStarted
-            ? `${request.task}  ${request.skill} — stopped mid-session; the task is left as the session left it`
+            ? `${request.task}  ${request.skill} — stopped mid-session; the task is left as the session left it${spent(result)}`
             : `${request.task}  ${request.skill} — stopped before its session started; nothing was run`,
         ),
       );
-      return;
+    } else if (result.ok) {
+      io.err(line('ran', `${request.task}  ${request.skill} as ${request.role}${spent(result)}`));
+    } else {
+      failed += 1;
+      io.err(line('failed', `${request.task}  ${request.skill} as ${request.role}${spent(result)}`));
     }
-    if (result.ok) {
-      io.err(line('ran', `${request.task}  ${request.skill} as ${request.role}`));
-      return;
-    }
-    failed += 1;
-    io.err(line('failed', `${request.task}  ${request.skill} as ${request.role}`));
+
+    // Read on every branch rather than only on the failing one. A run can succeed and still
+    // have something to say — a transcript it could not keep does not change what the
+    // session did, and saying it only under `failed` would be saying it nowhere.
     for (const failure of result.failures) io.err(`${' '.repeat(13)}${failure}`);
   });
 
@@ -576,7 +653,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
       if ('dispatch' in outcome.verdict) {
         const request = outcome.verdict.dispatch;
         dispatched.push(request);
-        io.out(JSON.stringify(request));
+        io.out(JSON.stringify({ event: EVENTS.dispatch, ...request }));
         io.err(line('dispatched', `${outcome.identifier}  ${request.skill} as ${request.role}  ${request.branch}`));
       } else {
         io.err(line('declined', `${outcome.identifier}  ${outcome.status} — ${outcome.verdict.declined}`));

@@ -23,15 +23,15 @@
 
 ## 4. Run records
 
-- [ ] 4.1 Add an `event` discriminator to the run request emitted on stdout, and emit a run record per finished dispatch carrying task, skill, role, outcome, cost, session id, terminated, whether the session started, and the transcript's disposition.
-- [ ] 4.2 Carry each run's cost into the human-readable report on stderr, beside its outcome line, distinguishing a session that reported no cost from one that reported zero.
-- [ ] 4.3 Tests: both kinds of line are emitted and distinguishable; neither carries a credential; a record is emitted for a failed, a terminated, and a never-started session; emitting a record writes nothing to the tracker.
+- [x] 4.1 Add an `event` discriminator to the run request emitted on stdout, and emit a run record per finished dispatch carrying task, skill, role, outcome, cost, session id, terminated, whether the session started, and the transcript's disposition.
+- [x] 4.2 Carry each run's cost into the human-readable report on stderr, beside its outcome line, distinguishing a session that reported no cost from one that reported zero.
+- [x] 4.3 Tests: both kinds of line are emitted and distinguishable; neither carries a credential; a record is emitted for a failed, a terminated, and a never-started session; emitting a record writes nothing to the tracker.
 
 ## 5. Transcripts
 
-- [ ] 5.1 Add `--transcripts <dir>` to `jen run`, and write each session's stream there when it is set, outside the run directory that gets swept and never into the clone.
-- [ ] 5.2 Report a transcript that could not be written among the run's failures rather than over them, on the same terms as a failed cleanup, and never turn a successful session into a failed one.
-- [ ] 5.3 Tests in `test/exec.test.ts`: unset discards and the record says so; set writes the file and the record names it; the file outlives the swept run directory; an unwritable directory is reported without changing the outcome.
+- [x] 5.1 Add `--transcripts <dir>` to `jen run`, and write each session's stream there when it is set, outside the run directory that gets swept and never into the clone.
+- [x] 5.2 Report a transcript that could not be written among the run's failures rather than over them, on the same terms as a failed cleanup, and never turn a successful session into a failed one.
+- [x] 5.3 Tests in `test/exec.test.ts`: unset discards and the record says so; set writes the file and the record names it; the file outlives the swept run directory; an unwritable directory is reported without changing the outcome.
 
 ## 6. `jen watch`
 

@@ -42,6 +42,7 @@ Options:
       --concurrency    on run, simultaneous runs to allow (default ${DEFAULTS.concurrency})
       --issue-page     on run, issues to read in one poll (default ${DEFAULTS.issuePageSize})
       --comment-page   on run, comments to read per issue at a time (default ${DEFAULTS.commentPageSize})
+      --transcripts    on run, a directory to keep each session's transcript in
   -h, --help           show this message
   -v, --version        show the installed version
 
@@ -61,7 +62,11 @@ the pipeline do right now", and what an operator reaches for to stop it acting w
 redeploying anything.
 
 Every page \`run\` reads is bounded, and the report says so wherever a bound cut the answer
-short — \`--issue-page\` and \`--comment-page\` are what you raise when it does.`;
+short — \`--issue-page\` and \`--comment-page\` are what you raise when it does.
+
+A session's transcript is discarded with the run unless \`--transcripts\` names somewhere to
+keep it. It is the session's entire stream — repository content, tool output, everything the
+stage read — so keeping a durable copy is yours to ask for rather than jen's to assume.`;
 
 export interface Io {
   out(line: string): void;
@@ -113,6 +118,8 @@ function version(): string {
 /** What `jen run` was asked to do: the tick's input, and whether it may act on it. */
 interface Invoked {
   input: TickInput;
+  /** Where to keep each session's transcript. Not the tick's — it decides, it does not write. */
+  transcripts?: string;
   /**
    * Whether to stop after deciding. Carried beside {@link TickInput} rather than in it,
    * because the tick has no such setting — acting is the presence of a launcher and
@@ -124,6 +131,7 @@ interface Invoked {
 /** `jen run`'s flags, each falling back to the environment the runner supplies. */
 function parseTick(args: string[], env: Environment): Invoked {
   let dryRun = false;
+  let transcripts: string | undefined;
   const input: TickInput = {
     team: env.JEN_TEAM,
     project: env.JEN_PROJECT,
@@ -144,10 +152,11 @@ function parseTick(args: string[], env: Environment): Invoked {
 
     if (arg === '--dry-run') {
       dryRun = true;
-    } else if (arg === '--team' || arg === '--project') {
+    } else if (arg === '--team' || arg === '--project' || arg === '--transcripts') {
       if (value === undefined || value.startsWith('-')) throw new UsageError(`${arg} takes a value`);
       if (arg === '--team') input.team = value;
-      else input.project = value;
+      else if (arg === '--project') input.project = value;
+      else transcripts = value;
       index += 1;
     } else if (arg in numbers) {
       if (value === undefined) throw new UsageError(`${arg} takes a value`);
@@ -165,7 +174,7 @@ function parseTick(args: string[], env: Environment): Invoked {
     }
   }
 
-  return { input, dryRun };
+  return { input, dryRun, transcripts };
 }
 
 function parse(command: InstallCommand, args: string[], cwd: string): Invocation {
@@ -336,10 +345,11 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
  * send it. Forwarding it to the sessions is what lets each one abort its turn, kill its
  * process tree, and run its `SessionEnd` hooks, rather than being orphaned or hard-killed.
  */
-async function dispatch(input: TickInput, io: Io, env: Environment, options: RunOptions): Promise<number> {
+async function dispatch(invoked: Invoked, io: Io, env: Environment, options: RunOptions): Promise<number> {
+  const { input, transcripts } = invoked;
   if (options.launch) return tick(input, io, env, { transport: options.transport, launch: options.launch });
 
-  const sessions = executor({ env, ...options.exec });
+  const sessions = executor({ env, ...options.exec, transcripts: transcripts ?? options.exec?.transcripts });
   const stop = (signal: NodeJS.Signals) => () => {
     io.err(`jen run: ${signal} received — stopping the sessions in flight and writing nothing for them.`);
     sessions.terminate(signal);
@@ -396,9 +406,9 @@ export function run(argv: string[], io: Io, options: RunOptions = {}): number | 
           return 0;
         }
         const env = options.env ?? process.env;
-        const { input, dryRun } = parseTick(rest, env);
-        if (dryRun) return tick(input, io, env, { transport: options.transport });
-        return dispatch(input, io, env, options);
+        const invoked = parseTick(rest, env);
+        if (invoked.dryRun) return tick(invoked.input, io, env, { transport: options.transport });
+        return dispatch(invoked, io, env, options);
       }
 
       default:

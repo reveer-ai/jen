@@ -67,6 +67,14 @@ export interface RunOutcome {
   sessionId?: string;
   /** The session's own stream, line-delimited, as it was emitted. */
   transcript: string;
+  /**
+   * Where {@link transcript} was kept, where the operator named somewhere to keep it.
+   *
+   * Absent by default, and that is the default deliberately: a transcript is the session's
+   * entire stream — the repository's content, every tool result, whatever the stage read —
+   * so a durable copy of it is a disclosure the operator makes, not one jen makes for them.
+   */
+  transcriptPath?: string;
   /** Whether the run ended because it was stopped rather than because the session did. */
   terminated: boolean;
   /**
@@ -145,6 +153,13 @@ export interface ExecOptions {
   github?: GitHub;
   /** Kept after the run rather than removed. Never set outside a test that inspects it. */
   keepDirectory?: boolean;
+  /**
+   * Where to keep each session's transcript. Unset discards it with the run's directory.
+   *
+   * Deliberately outside the run's own directory, which is removed when the run ends, and
+   * never the clone, which is discarded with it.
+   */
+  transcripts?: string;
 }
 
 /** One event off the session's `stream-json` stream, as much of it as the run reads. */
@@ -376,6 +391,11 @@ function childEnvironment(
   return env;
 }
 
+/** Anything a path can hold, from a value that arrived in a run request. */
+function safeName(value: string): string {
+  return value.replace(/[^A-Za-z0-9._-]+/g, '-');
+}
+
 class ExecError extends Error {}
 
 /**
@@ -498,6 +518,15 @@ export class Executor {
       };
     }
 
+    // The transcript is written before the sweep and outside the run's directory, so it
+    // outlives the credentials that directory held. A failure to keep one is added to the
+    // run's failures and changes nothing else: the session's own result is what the report
+    // exists to carry, and a run that succeeded did not stop succeeding because a file
+    // could not be written beside it.
+    const kept = await this.#keep(outcome);
+    if (kept.path !== undefined) outcome = { ...outcome, transcriptPath: kept.path };
+    if (kept.failure !== undefined) outcome = { ...outcome, failures: [...outcome.failures, kept.failure] };
+
     // Cleanup is the whole of how `stage-execution`'s "no credential remains on the host" is
     // satisfied — `config/mcp.json` holds the tracker's, live until someone rotates it — so
     // the one case that violates the requirement must not also be the one case nothing
@@ -506,6 +535,34 @@ export class Executor {
     const left = await this.#sweep(directory);
     return left ? { ...outcome, ok: false, failures: [...outcome.failures, left] } : outcome;
   };
+
+  /**
+   * Keep this session's transcript where the operator asked for one.
+   *
+   * Named for the task, the stage, and the moment, so a directory of them reads in order
+   * and two runs of the same stage against the same task never land on one file. Every
+   * component is reduced to characters a path can hold, because the task identifier and the
+   * skill name both arrive from a run request rather than from this module.
+   */
+  async #keep(outcome: RunOutcome): Promise<{ path?: string; failure?: string }> {
+    const directory = this.#options.transcripts;
+    if (!directory || !outcome.sessionStarted) return {};
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const path = join(directory, `${[outcome.task, outcome.skill, stamp].map(safeName).join('-')}.jsonl`);
+
+    try {
+      await mkdir(directory, { recursive: true });
+      await writeFile(path, outcome.transcript, { mode: 0o600 });
+      return { path };
+    } catch (error) {
+      return {
+        failure:
+          `this session's transcript could not be written to ${path}, and was discarded with the run: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
 
   /** Remove the run's directory. Returns what to report where it could not be removed. */
   async #sweep(directory: string | undefined): Promise<string | undefined> {
