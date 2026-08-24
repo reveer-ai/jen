@@ -488,6 +488,31 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
 }
 
 /**
+ * Why this tick cannot run at all, or nothing.
+ *
+ * Everything here is settled before a single request is made, and none of it can change
+ * while a process is running: the environment a tick reads is fixed for the length of one,
+ * and so are the values a runner resolved before it started looping. That is what makes this
+ * separable from the failures a tick can have — a tracker that was briefly unreachable is
+ * answered by the next tick, and one of these would only print the same message forever.
+ *
+ * Exported so a runner can ask before it starts, rather than inferring the difference from
+ * an exit code that cannot express it.
+ */
+export function impossible(input: TickInput, env: Environment): string | undefined {
+  if (!env[TOKEN_VARIABLE]) {
+    return (
+      `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
+      'of use, and never from a file.'
+    );
+  }
+  if (!input.team) return 'no tracker team was given. Pass --team, or set JEN_TEAM.';
+  if (!input.project) return 'no tracker project was given. Pass --project, or set JEN_PROJECT.';
+  if (input.concurrency < 1) return `--concurrency must be at least 1, and was ${input.concurrency}.`;
+  return undefined;
+}
+
+/**
  * One tick.
  *
  * Every refusal happens before anything is polled, so a misconfigured run fails naming
@@ -497,19 +522,16 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
 export async function tick(input: TickInput, io: Io, env: Environment, options: TickOptions = {}): Promise<number> {
   const { transport, launch } = options;
   try {
-    const token = env[TOKEN_VARIABLE];
-    if (!token) {
-      throw new Refusal(
-        `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
-          'of use, and never from a file.',
-      );
-    }
-    if (!input.team) throw new Refusal('no tracker team was given. Pass --team, or set JEN_TEAM.');
-    if (!input.project) throw new Refusal('no tracker project was given. Pass --project, or set JEN_PROJECT.');
-    if (input.concurrency < 1) throw new Refusal(`--concurrency must be at least 1, and was ${input.concurrency}.`);
+    const refusal = impossible(input, env);
+    if (refusal) throw new Refusal(refusal);
+
+    // Narrowed by the check above, which is exactly what refused when either was absent.
+    const token = env[TOKEN_VARIABLE]!;
+    const wantedTeam = input.team!;
+    const wantedProject = input.project!;
 
     const tracker = new Tracker({ token, transport });
-    const team = await tracker.team(input.team);
+    const team = await tracker.team(wantedTeam);
 
     // `Pending` is where every stage puts a task that needs a person. A team without it has
     // stages that can pick a task up and then have nowhere to put it, which leaves the task
@@ -518,7 +540,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
     const carried = new Map(team.statuses.map((status) => [fold(status), status]));
     if (!carried.has(fold(PENDING))) {
       throw new Refusal(
-        `the team \`${input.team}\` carries no \`${PENDING}\` status, so no stage could park a task that needs ` +
+        `the team \`${wantedTeam}\` carries no \`${PENDING}\` status, so no stage could park a task that needs ` +
           'a person. Add it in the tracker and re-run.' +
           (team.moreStatuses
             ? ` This read was bounded at ${STATE_PAGE_SIZE} statuses and the team carries more, so \`${PENDING}\` ` +
@@ -531,17 +553,17 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
     // was given, which cannot tell one project from two sharing it — and the failure is
     // silent in the direction that matters, since an unrelated project's issues would be
     // polled, mapped, and dispatched as though they were the pipeline's.
-    const { projects, moreProjects } = await tracker.project(team.id, input.project);
+    const { projects, moreProjects } = await tracker.project(team.id, wantedProject);
     if (projects.length === 0) {
       throw new Refusal(
-        `the team \`${input.team}\` has no project named \`${input.project}\`. Refusing rather than polling ` +
+        `the team \`${wantedTeam}\` has no project named \`${wantedProject}\`. Refusing rather than polling ` +
           'nothing, which would report a quiet pipeline.',
       );
     }
     if (projects.length > 1) {
       throw new Refusal(
-        `\`${input.project}\` matches ${moreProjects ? `at least ${PROJECT_PAGE_SIZE}` : projects.length} projects ` +
-          `in the team \`${input.team}\`, and the tick acts on one. Rename one of them, or point the runner at a ` +
+        `\`${wantedProject}\` matches ${moreProjects ? `at least ${PROJECT_PAGE_SIZE}` : projects.length} projects ` +
+          `in the team \`${wantedTeam}\`, and the tick acts on one. Rename one of them, or point the runner at a ` +
           'name that picks out exactly the project the pipeline runs.',
       );
     }
@@ -553,13 +575,13 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
       // same conclusion from the tracker with nothing configured on either of them. Sessions
       // already running are left alone — the halt governs dispatch, and a session that has
       // announced itself owns its task until it reports.
-      io.err(`jen run — ${input.team}/${project.name}`);
+      io.err(`jen run — ${wantedTeam}/${project.name}`);
       io.err('');
       io.err(line('halted', `the project is \`${halted.name}\` — nothing is dispatched until that changes`));
       return 0;
     }
 
-    io.err(`jen run — ${input.team}/${input.project}`);
+    io.err(`jen run — ${wantedTeam}/${wantedProject}`);
     io.err('');
 
     // The poll filters on the team's own status names rather than the workflow's, resolved
@@ -595,7 +617,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
 
     const { issues, moreIssues } = await tracker.issues(
       team.id,
-      input.project,
+      wantedProject,
       wanted.map((entry) => entry.name),
       input.issuePageSize,
       input.commentPageSize,

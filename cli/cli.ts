@@ -23,6 +23,7 @@ import { payloadFiles, placeholderFor, SCAFFOLD, SKILLS } from './payload.js';
 import { TOKEN_VARIABLE } from './linear.js';
 import { executor, type ExecOptions } from './exec.js';
 import { DEFAULTS, tick, type Environment, type Launch, type TickInput } from './run.js';
+import { DEFAULT_INTERVAL_SECONDS, resolveIdentity, watch, type WatchInput } from './watch.js';
 
 const USAGE = `jen — the workflow layer for automated, agentic software development
 
@@ -33,6 +34,7 @@ Commands:
   init      install the workflow into a project and initialize OpenSpec
   update    refresh the managed files and remove the ones jen no longer ships
   run       one dispatch pass over the tracker: poll, map, gate, then run what passed
+  watch     drive that pass on an interval, in this process, until it is stopped
 
 Options:
       --force          on init, overwrite a file jen owns wholesale that the project already has
@@ -43,6 +45,7 @@ Options:
       --issue-page     on run, issues to read in one poll (default ${DEFAULTS.issuePageSize})
       --comment-page   on run, comments to read per issue at a time (default ${DEFAULTS.commentPageSize})
       --transcripts    on run, a directory to keep each session's transcript in
+      --interval       on watch, seconds between the end of a tick and the next (default ${DEFAULT_INTERVAL_SECONDS})
   -h, --help           show this message
   -v, --version        show the installed version
 
@@ -66,7 +69,24 @@ short — \`--issue-page\` and \`--comment-page\` are what you raise when it doe
 
 A session's transcript is discarded with the run unless \`--transcripts\` names somewhere to
 keep it. It is the session's entire stream — repository content, tool output, everything the
-stage read — so keeping a durable copy is yours to ask for rather than jen's to assume.`;
+stage read — so keeping a durable copy is yours to ask for rather than jen's to assume.
+
+\`watch\` is the other runner jen ships, and a peer of the scheduled workflow rather than a
+fallback from it: the same tick, driven from a process you own instead of from a schedule the
+git host runs. It takes a project path, reads the tracker team and project from that
+checkout's \`registry.yaml\` unless \`--team\`/\`--project\` say otherwise, and accepts every flag
+\`run\` does. It still opens pull requests, submits review verdicts, and depends on the merge
+gate, so the pipeline's registered git-host identities are as necessary here as there.
+
+Its interval defaults to ${DEFAULT_INTERVAL_SECONDS} seconds where the shipped workflow's cron defaults to 30 minutes,
+and the difference is not the runners diverging: a local tick costs a handful of tracker
+requests, while a scheduled one is billed by the git host in whole minutes. Under both, the
+interval is a floor between the end of one tick and the start of the next — never a promise
+of when a poll happens, because a tick waits for the sessions it launched.
+
+The halt is neither runner's: move the tracker project to a paused, completed, or cancelled
+status and every tick stops dispatching, with no schedule deleted, no process stopped, and no
+task's status touched.`;
 
 export interface Io {
   out(line: string): void;
@@ -96,9 +116,11 @@ export interface RunOptions {
    * one that runs unattended, and the second is the worse of the two.
    */
   launch?: Launch;
+  /** How `watch` waits between ticks. Injected by tests; nothing else replaces it. */
+  wait?: (ms: number) => Promise<void>;
 }
 
-type Command = 'init' | 'update' | 'run';
+type Command = 'init' | 'update' | 'run' | 'watch';
 type InstallCommand = 'init' | 'update';
 
 interface Invocation {
@@ -175,6 +197,59 @@ function parseTick(args: string[], env: Environment): Invoked {
   }
 
   return { input, dryRun, transcripts };
+}
+
+/**
+ * `jen watch`'s flags: every one `jen run` takes, plus the interval and a project path.
+ *
+ * The path is what separates this from `run`, and it is the runner's own business: it is the
+ * checkout whose registry says which project to poll, and it never reaches the tick.
+ */
+function parseWatch(args: string[], env: Environment, cwd: string): WatchInput & { transcripts?: string } {
+  let intervalSeconds = DEFAULT_INTERVAL_SECONDS;
+  let path: string | undefined;
+
+  const rest: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === '--interval') {
+      const value = args[index + 1];
+      if (value === undefined) throw new UsageError('--interval takes a value');
+      const parsed = Number(value);
+      if (!Number.isInteger(parsed) || parsed < 1) throw new UsageError('--interval takes a positive whole number');
+      intervalSeconds = parsed;
+      index += 1;
+    } else if (arg === '--dry-run') {
+      throw new UsageError(
+        'jen watch has no --dry-run: a loop that decides forever and never acts is `jen run --dry-run` repeated, ' +
+          'and that is the invocation to reach for.',
+      );
+    } else if (arg.startsWith('-')) {
+      rest.push(arg);
+      const value = args[index + 1];
+      if (value !== undefined && !value.startsWith('-')) {
+        rest.push(value);
+        index += 1;
+      }
+    } else if (path === undefined) {
+      path = arg;
+    } else {
+      throw new UsageError(`jen watch takes one project path, and was given two: ${path} and ${arg}`);
+    }
+  }
+
+  // Parsed with the tick's own parser, so a flag `run` accepts and `watch` silently ignored
+  // is not a thing that can happen. The environment is deliberately *not* consulted for the
+  // team and project here — resolving those is the runner's, below.
+  const { input, transcripts } = parseTick(rest, {});
+  const projectRoot = resolve(cwd, path ?? '.');
+  const { team, project, sources } = resolveIdentity(
+    { team: input.team, project: input.project },
+    env,
+    projectRoot,
+  );
+
+  return { input: { ...input, team, project }, intervalSeconds, projectRoot, sources, transcripts };
 }
 
 function parse(command: InstallCommand, args: string[], cwd: string): Invocation {
@@ -409,6 +484,21 @@ export function run(argv: string[], io: Io, options: RunOptions = {}): number | 
         const invoked = parseTick(rest, env);
         if (invoked.dryRun) return tick(invoked.input, io, env, { transport: options.transport });
         return dispatch(invoked, io, env, options);
+      }
+
+      case 'watch': {
+        if (rest.includes('--help') || rest.includes('-h')) {
+          io.out(USAGE);
+          return 0;
+        }
+        const env = options.env ?? process.env;
+        const invoked = parseWatch(rest, env, options.cwd ?? process.cwd());
+        // A launcher given by a test replaces execution outright, exactly as it does for
+        // `run` — the loop is what is under test there, not what a session involves.
+        const sessions = options.launch
+          ? { launch: options.launch, terminate: () => {} }
+          : executor({ env, ...options.exec, transcripts: invoked.transcripts ?? options.exec?.transcripts });
+        return watch(invoked, io, env, sessions, { transport: options.transport, wait: options.wait });
       }
 
       default:

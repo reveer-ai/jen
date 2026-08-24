@@ -35,12 +35,12 @@
 
 ## 6. `jen watch`
 
-- [ ] 6.1 Add the `watch` command: a project path, `--interval` defaulting to 60 seconds, and `--team`/`--project` overriding what the registry says. It resolves the project identity from the checkout and passes it into the tick; `jen run` still reads no file.
-- [ ] 6.2 Loop: await the tick, then wait the interval, so the interval is a floor between ticks and two ticks never overlap.
-- [ ] 6.3 Continue after a tick that failed or halted, and exit non-zero on a refusal that cannot change while the process runs — a missing credential, or a team and project that could not be resolved.
-- [ ] 6.4 Own the signal handlers for the length of the process: stop scheduling, forward to the sessions in flight, wait, exit. Ensure `jen run`'s per-invocation handlers are not installed twice.
-- [ ] 6.5 Extend the usage text for `watch` and its flags, and state that the two runners' default intervals differ and why.
-- [ ] 6.6 Tests in `test/cli.test.ts`: the loop ticks repeatedly and stops on signal; the interval is honoured from the end of a tick; a failing tick does not end the loop; a missing credential does; the registry's values reach the tick and an override beats them; no lock file or state file is written anywhere.
+- [x] 6.1 Add the `watch` command: a project path, `--interval` defaulting to 60 seconds, and `--team`/`--project` overriding what the registry says. It resolves the project identity from the checkout and passes it into the tick; `jen run` still reads no file.
+- [x] 6.2 Loop: await the tick, then wait the interval, so the interval is a floor between ticks and two ticks never overlap.
+- [x] 6.3 Continue after a tick that failed or halted, and exit non-zero on a refusal that cannot change while the process runs — a missing credential, or a team and project that could not be resolved.
+- [x] 6.4 Own the signal handlers for the length of the process: stop scheduling, forward to the sessions in flight, wait, exit. Ensure `jen run`'s per-invocation handlers are not installed twice.
+- [x] 6.5 Extend the usage text for `watch` and its flags, and state that the two runners' default intervals differ and why.
+- [x] 6.6 Tests in `test/cli.test.ts`: the loop ticks repeatedly and stops on signal; the interval is honoured from the end of a tick; a failing tick does not end the loop; a missing credential does; the registry's values reach the tick and an override beats them; no lock file or state file is written anywhere.
 
 ## 7. Binding
 
