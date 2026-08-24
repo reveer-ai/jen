@@ -20,6 +20,36 @@ export function isStampable(format: ManagedFileFormat): boolean {
   return (STAMPABLE_FORMATS as readonly ManagedFileFormat[]).includes(format);
 }
 
+/**
+ * Every value a managed file may carry from the project's registry, and the whole of what
+ * substitution can express.
+ *
+ * A closed set, declared here as data: there is no way for a payload file to reach a name
+ * jen has not listed, and no conditional, loop, or expression anywhere in the form. This is
+ * not a template language and must not grow into one — what a managed file is allowed to say
+ * about a project is a decision that belongs in this list, not in the file.
+ */
+export const SUBSTITUTIONS = ['team', 'project'] as const;
+
+export type SubstitutionName = (typeof SUBSTITUTIONS)[number];
+
+/**
+ * The placeholder, as a managed file writes it.
+ *
+ * `{{jen:name}}` collides with neither Actions' `${{ }}` nor shell expansion, so a file
+ * carrying both reads unambiguously to a person and to every consumer of it. It also greps:
+ * one form, one prefix, and every occurrence findable from the name alone.
+ *
+ * Takes any name rather than only a declared one, because the caller that most needs to
+ * render a placeholder is the one reporting a name that resolved to nothing.
+ */
+export function placeholderFor(name: string): string {
+  return `{{jen:${name}}}`;
+}
+
+/** Every placeholder in a file, whatever it names — an undeclared name is still matched. */
+export const PLACEHOLDER = /\{\{jen:([A-Za-z0-9_-]+)\}\}/g;
+
 /** One file, at its three locations: jen's checkout, the staged payload, the project. */
 export interface ManagedFile {
   /** Path in jen's own repository, relative to the repository root. */
@@ -29,6 +59,37 @@ export interface ManagedFile {
   /** Path in a managed project, relative to the project root. */
   target: string;
   format: ManagedFileFormat;
+  /**
+   * Whether this file carries {@link SUBSTITUTIONS}, resolved when it is written.
+   *
+   * Declared per file rather than inferred from the content, so what a run has to read the
+   * registry for is answerable from this declaration alone.
+   */
+  substituted?: boolean;
+}
+
+/**
+ * A managed file's bytes with its placeholders resolved, and every name it referenced.
+ *
+ * **An unresolved name renders empty and never as the placeholder.** A literal
+ * `{{jen:team}}` surviving into a file its consumer reads is a wrong value that looks like a
+ * configured one — a runner would poll a project by that name — where an empty value fails
+ * exactly the way an absent one does. The referenced names come back so the caller can
+ * report what did not resolve at the moment it is written, which is the only moment anybody
+ * is looking.
+ */
+export function substitute(
+  contents: Buffer,
+  values: Partial<Record<SubstitutionName, string>>,
+): { contents: Buffer; referenced: string[] } {
+  const referenced = new Set<string>();
+
+  const rendered = contents.toString('utf8').replace(PLACEHOLDER, (_placeholder, name: string) => {
+    referenced.add(name);
+    return values[name as SubstitutionName] ?? '';
+  });
+
+  return { contents: Buffer.from(rendered, 'utf8'), referenced: [...referenced] };
 }
 
 /**
@@ -103,6 +164,20 @@ function skill(name: string): ManagedFile {
   };
 }
 
+/**
+ * Where the pipeline's scheduled workflow lands, which the git host fixes.
+ *
+ * Declared individually rather than by claiming `.github/workflows/` — jen owns this one
+ * path in that directory and nothing else in it, and a project's own workflows sit beside
+ * it untouched.
+ *
+ * Its source is `payload/`, not `.github/workflows/`, and that is deliberate rather than
+ * tidiness: a template lying at its own target path in jen's repository *is* a live
+ * scheduled workflow here, polling a project named by an unresolved placeholder every half
+ * hour. jen is not an installation of itself, so nothing would ever render it.
+ */
+const WORKFLOW_TARGET = '.github/workflows/jen.yml';
+
 export const PAYLOAD: readonly PayloadGroup[] = [
   {
     kind: 'fixed',
@@ -111,6 +186,16 @@ export const PAYLOAD: readonly PayloadGroup[] = [
       staged: 'AGENTS.md',
       target: 'AGENTS.md',
       format: 'markdown',
+    },
+  },
+  {
+    kind: 'fixed',
+    file: {
+      source: 'payload/jen.yml',
+      staged: 'workflows/jen.yml',
+      target: WORKFLOW_TARGET,
+      format: 'yaml',
+      substituted: true,
     },
   },
   {

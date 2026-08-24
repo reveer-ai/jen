@@ -16,10 +16,12 @@ import {
   PAYLOAD,
   payloadFiles,
   SCAFFOLD,
+  substitute,
   type ManagedFile,
   type PayloadGroup,
   type VariableSet,
 } from './payload.js';
+import { resolveFromRegistry, type Resolution, type Unresolved } from './registry.js';
 import { hasStamp } from './stamp.js';
 
 /** One file to put on disk, with the bytes already read out of the staged payload. */
@@ -60,6 +62,12 @@ export interface Plan {
    * caller decides whether that is a refusal or an overwrite.
    */
   conflicts: string[];
+  /**
+   * Substituted values a managed file referenced and the registry did not supply, each
+   * with why. The file was still written — with the value empty — so this is a report
+   * rather than a failure.
+   */
+  unresolved: Unresolved[];
   /**
    * Managed paths that lie behind a symlinked directory. Not a conflict — no amount of
    * forcing makes writing outside the project the right answer — so the caller's only
@@ -231,6 +239,36 @@ function isVariableSet(group: PayloadGroup): group is VariableSet {
 }
 
 /**
+ * A managed file's bytes as they will be written, recording anything that did not resolve.
+ *
+ * Rendering happens here, in the half that only reads, so the executor writes bytes the
+ * plan already settled and `jen init`'s refusal path is untouched: a refused plan is still
+ * never written, whatever it rendered.
+ *
+ * A name the file references that jen does not declare is reported like any other
+ * unresolved value rather than passed through — the placeholder must not survive into the
+ * output on any path, and an authoring mistake should be visible in the run's report.
+ */
+function render(plan: Plan, substitution: Resolution | undefined, file: ManagedFile, staged: Buffer): Buffer {
+  if (!file.substituted || !substitution) return staged;
+
+  const { contents, referenced } = substitute(staged, substitution.values);
+
+  for (const name of referenced) {
+    if (name in substitution.values) continue;
+    if (plan.unresolved.some((entry) => entry.name === name)) continue;
+    plan.unresolved.push({
+      name,
+      why:
+        substitution.unresolved.find((entry) => entry.name === name)?.why ??
+        `jen declares no value named \`${name}\``,
+    });
+  }
+
+  return contents;
+}
+
+/**
  * Reads the project and the staged payload and returns what would change. Touches
  * nothing.
  */
@@ -243,11 +281,18 @@ export function planInstall(projectRoot: string, options: PlanOptions): Plan {
     deletions: [],
     scaffold: [],
     conflicts: [],
+    unresolved: [],
     obstructions: [],
   };
 
+  // Read once, and only where something is actually substituted, so a payload that carries
+  // no values never opens the project's registry at all.
+  const substitution = payloadFiles().some(({ file }) => file.substituted)
+    ? resolveFromRegistry(projectRoot)
+    : undefined;
+
   for (const { file } of payloadFiles()) {
-    const contents = stagedContents(templates, file);
+    const contents = render(plan, substitution, file, stagedContents(templates, file));
     const path = resolveInProject(projectRoot, file.target);
 
     const ancestor = symlinkedAncestor(projectRoot, file.target);

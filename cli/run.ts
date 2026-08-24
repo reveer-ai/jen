@@ -23,8 +23,11 @@
  */
 import { EPIC_LABEL, fold, PENDING, stageFor, TASK_LABEL, type Stage } from './stages.js';
 import {
+  HALTING_STATUS_TYPES,
   LABEL_PAGE_SIZE,
+  PAUSED_STATUS_NAME,
   newestFirst,
+  PROJECT_PAGE_SIZE,
   RateLimited,
   STATE_PAGE_SIZE,
   Tracker,
@@ -32,6 +35,7 @@ import {
   TOKEN_VARIABLE,
   type TrackerComment,
   type TrackerIssue,
+  type TrackerProject,
 } from './linear.js';
 
 import type { Io } from './cli.js';
@@ -99,6 +103,58 @@ export interface RunRequest {
   branch: string;
 }
 
+/**
+ * What each kind of object on stdout calls itself.
+ *
+ * Requests and records share the stream, and a consumer that cannot tell them apart cannot
+ * record either one reliably. A second file descriptor would have been the alternative, and
+ * it is worse for the invocation this is built around: `jen run | recorder`.
+ *
+ * The discriminator is added at emission rather than carried on {@link RunRequest}, because
+ * a request names what the executor needs and the executor has no use for this.
+ */
+export const EVENTS = { dispatch: 'dispatch', outcome: 'outcome' } as const;
+
+/**
+ * What the tick emits about a session it saw through: one line per finished dispatch,
+ * readable by a person and by a program, on the same stream under either runner.
+ *
+ * Carries no credential, on the same terms as a run request — it may be logged, printed, or
+ * piped anywhere. Emitting one is not a tracker write and nothing about it reaches the task:
+ * what a stage did to its task is the session's own to report.
+ *
+ * `cost` and `transcript` are `null` rather than absent where there is nothing to say. A
+ * session that reported no cost has to be distinguishable from one that reported zero, and a
+ * run that kept no transcript has to say so rather than leave it unstated.
+ */
+export interface RunRecord {
+  event: typeof EVENTS.outcome;
+  task: string;
+  skill: string;
+  role: string;
+  ok: boolean;
+  cost: number | null;
+  sessionId: string | null;
+  terminated: boolean;
+  sessionStarted: boolean;
+  transcript: string | null;
+}
+
+export function runRecord(request: RunRequest, result: LaunchResult): RunRecord {
+  return {
+    event: EVENTS.outcome,
+    task: request.task,
+    skill: request.skill,
+    role: request.role,
+    ok: result.ok,
+    cost: result.cost ?? null,
+    sessionId: result.sessionId ?? null,
+    terminated: result.terminated,
+    sessionStarted: result.sessionStarted,
+    transcript: result.transcriptPath ?? null,
+  };
+}
+
 export type Verdict = { dispatch: RunRequest } | { declined: string };
 
 /**
@@ -122,6 +178,12 @@ export interface LaunchResult {
    * had got to — so the report says which.
    */
   sessionStarted: boolean;
+  /** What the session reported it cost, where it reported anything. */
+  cost?: number;
+  /** The session's own identifier, where it emitted one. */
+  sessionId?: string;
+  /** Where this session's transcript was kept, where one was kept at all. */
+  transcriptPath?: string;
 }
 
 /** How the tick acts, without knowing anything about what acting involves. */
@@ -233,11 +295,41 @@ export function decide(examined: Examined[], concurrency: number): Outcome[] {
   });
 }
 
+/**
+ * The project's status where it means the project is not being worked, or nothing.
+ *
+ * Two matches rather than one, and which of them applies is decided by whose name the status
+ * is. A status the *workspace* named is matched on its `type`, so a workspace that renamed
+ * `Completed` or added a status of its own is still understood by the category the tracker
+ * files it under. The pause is matched on its name, because jen prescribes that name and its
+ * category — `started` — is one that must never halt on its own.
+ *
+ * The single seam both runners reach the halt through. A tick asks this once, before it
+ * polls, and neither runner carries a switch of its own.
+ */
+export function haltingStatus(project: TrackerProject): { name: string; type: string } | undefined {
+  const status = project.status;
+  if (!status) return undefined;
+  if (fold(status.name) === fold(PAUSED_STATUS_NAME)) return status;
+  return (HALTING_STATUS_TYPES as readonly string[]).includes(fold(status.type)) ? status : undefined;
+}
+
 /** A refusal: the tick declines to run at all, naming what is missing. */
 class Refusal extends Error {}
 
 function line(label: string, detail: string): string {
   return `  ${label.padEnd(11)}${detail}`;
+}
+
+/**
+ * What a run cost, beside its outcome — or that it did not say.
+ *
+ * A session that reported nothing and a session that reported zero are different facts, and
+ * an operator reading a column of `$0.0000` has no way to tell which one they are looking at
+ * unless the absence says so in words.
+ */
+function spent(result: LaunchResult): string {
+  return result.cost === undefined ? '  (no cost reported)' : `  $${result.cost.toFixed(4)}`;
 }
 
 /**
@@ -370,28 +462,95 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
   let failed = 0;
   results.forEach((result, index) => {
     const request = dispatched[index]!;
+
+    // The record goes out for every finished dispatch, whatever became of it — a session
+    // that failed, one that was stopped, and one that never started are each something an
+    // operator has to be able to account for afterwards.
+    io.out(JSON.stringify(runRecord(request, result)));
+
     if (result.terminated) {
       failed += 1;
       io.err(
         line(
           'terminated',
           result.sessionStarted
-            ? `${request.task}  ${request.skill} — stopped mid-session; the task is left as the session left it`
+            ? `${request.task}  ${request.skill} — stopped mid-session; the task is left as the session left it${spent(result)}`
             : `${request.task}  ${request.skill} — stopped before its session started; nothing was run`,
         ),
       );
-      return;
+    } else if (result.ok) {
+      io.err(line('ran', `${request.task}  ${request.skill} as ${request.role}${spent(result)}`));
+    } else {
+      failed += 1;
+      io.err(line('failed', `${request.task}  ${request.skill} as ${request.role}${spent(result)}`));
     }
-    if (result.ok) {
-      io.err(line('ran', `${request.task}  ${request.skill} as ${request.role}`));
-      return;
-    }
-    failed += 1;
-    io.err(line('failed', `${request.task}  ${request.skill} as ${request.role}`));
+
+    // Read on every branch rather than only on the failing one. A run can succeed and still
+    // have something to say — a transcript it could not keep does not change what the
+    // session did, and saying it only under `failed` would be saying it nowhere.
     for (const failure of result.failures) io.err(`${' '.repeat(13)}${failure}`);
   });
 
   return failed === 0 ? 0 : 1;
+}
+
+/** Which of the tick's inputs a refusal is about. */
+export type Refused = 'credential' | 'team' | 'project' | 'concurrency';
+
+/** A refusal, and the input it is a refusal over. */
+export interface Impossible {
+  /**
+   * The value this refusal is about.
+   *
+   * Said rather than left to be inferred. A caller with more to offer about one of these
+   * values — a runner that looked somewhere this function has never heard of — needs to know
+   * whether *that* value is what stopped the tick, and the only other way to work it out is
+   * to re-derive the order of the checks below from outside. That inference reads as correct
+   * and is not: it is a claim about which check fired, written as a claim about which values
+   * happen to be present, and the next check inserted ahead of another one breaks it without
+   * breaking anything that would fail.
+   */
+  refused: Refused;
+  /** What the operator is told, with `jen run: ` or `jen watch: ` in front of it. */
+  why: string;
+}
+
+/**
+ * Why this tick cannot run at all, or nothing.
+ *
+ * Everything here is settled before a single request is made, and none of it can change
+ * while a process is running: the environment a tick reads is fixed for the length of one,
+ * and so are the values a runner resolved before it started looping. That is what makes this
+ * separable from the failures a tick can have — a tracker that was briefly unreachable is
+ * answered by the next tick, and one of these would only print the same message forever.
+ *
+ * Exported so a runner can ask before it starts, rather than inferring the difference from
+ * an exit code that cannot express it.
+ *
+ * The messages name a flag and a variable and nothing else, because those are the two places
+ * every runner has. A runner with a third says so itself; this function must never learn
+ * that a checkout or a registry exists, or the two runners diverge here rather than in the
+ * wrapper where the difference is harmless.
+ */
+export function impossible(input: TickInput, env: Environment): Impossible | undefined {
+  if (!env[TOKEN_VARIABLE]) {
+    return {
+      refused: 'credential',
+      why:
+        `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
+        'of use, and never from a file.',
+    };
+  }
+  if (!input.team) {
+    return { refused: 'team', why: 'no tracker team was given. Pass --team, or set JEN_TEAM.' };
+  }
+  if (!input.project) {
+    return { refused: 'project', why: 'no tracker project was given. Pass --project, or set JEN_PROJECT.' };
+  }
+  if (input.concurrency < 1) {
+    return { refused: 'concurrency', why: `--concurrency must be at least 1, and was ${input.concurrency}.` };
+  }
+  return undefined;
 }
 
 /**
@@ -404,19 +563,16 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
 export async function tick(input: TickInput, io: Io, env: Environment, options: TickOptions = {}): Promise<number> {
   const { transport, launch } = options;
   try {
-    const token = env[TOKEN_VARIABLE];
-    if (!token) {
-      throw new Refusal(
-        `${TOKEN_VARIABLE} is not set. The tick reads its tracker credential from the environment at the point ` +
-          'of use, and never from a file.',
-      );
-    }
-    if (!input.team) throw new Refusal('no tracker team was given. Pass --team, or set JEN_TEAM.');
-    if (!input.project) throw new Refusal('no tracker project was given. Pass --project, or set JEN_PROJECT.');
-    if (input.concurrency < 1) throw new Refusal(`--concurrency must be at least 1, and was ${input.concurrency}.`);
+    const refusal = impossible(input, env);
+    if (refusal) throw new Refusal(refusal.why);
+
+    // Narrowed by the check above, which is exactly what refused when either was absent.
+    const token = env[TOKEN_VARIABLE]!;
+    const wantedTeam = input.team!;
+    const wantedProject = input.project!;
 
     const tracker = new Tracker({ token, transport });
-    const team = await tracker.team(input.team);
+    const team = await tracker.team(wantedTeam);
 
     // `Pending` is where every stage puts a task that needs a person. A team without it has
     // stages that can pick a task up and then have nowhere to put it, which leaves the task
@@ -425,7 +581,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
     const carried = new Map(team.statuses.map((status) => [fold(status), status]));
     if (!carried.has(fold(PENDING))) {
       throw new Refusal(
-        `the team \`${input.team}\` carries no \`${PENDING}\` status, so no stage could park a task that needs ` +
+        `the team \`${wantedTeam}\` carries no \`${PENDING}\` status, so no stage could park a task that needs ` +
           'a person. Add it in the tracker and re-run.' +
           (team.moreStatuses
             ? ` This read was bounded at ${STATE_PAGE_SIZE} statuses and the team carries more, so \`${PENDING}\` ` +
@@ -434,7 +590,39 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
       );
     }
 
-    io.err(`jen run — ${input.team}/${input.project}`);
+    // The project as an entity rather than as a name. The poll filters issues by the name it
+    // was given, which cannot tell one project from two sharing it — and the failure is
+    // silent in the direction that matters, since an unrelated project's issues would be
+    // polled, mapped, and dispatched as though they were the pipeline's.
+    const { projects, moreProjects } = await tracker.project(team.id, wantedProject);
+    if (projects.length === 0) {
+      throw new Refusal(
+        `the team \`${wantedTeam}\` has no project named \`${wantedProject}\`. Refusing rather than polling ` +
+          'nothing, which would report a quiet pipeline.',
+      );
+    }
+    if (projects.length > 1) {
+      throw new Refusal(
+        `\`${wantedProject}\` matches ${moreProjects ? `at least ${PROJECT_PAGE_SIZE}` : projects.length} projects ` +
+          `in the team \`${wantedTeam}\`, and the tick acts on one. Rename one of them, or point the runner at a ` +
+          'name that picks out exactly the project the pipeline runs.',
+      );
+    }
+
+    const project = projects[0]!;
+    const halted = haltingStatus(project);
+    if (halted) {
+      // Not a failure: the pause is somebody's deliberate act, and every runner reaches this
+      // same conclusion from the tracker with nothing configured on either of them. Sessions
+      // already running are left alone — the halt governs dispatch, and a session that has
+      // announced itself owns its task until it reports.
+      io.err(`jen run — ${wantedTeam}/${project.name}`);
+      io.err('');
+      io.err(line('halted', `the project is \`${halted.name}\` — nothing is dispatched until that changes`));
+      return 0;
+    }
+
+    io.err(`jen run — ${wantedTeam}/${wantedProject}`);
     io.err('');
 
     // The poll filters on the team's own status names rather than the workflow's, resolved
@@ -470,7 +658,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
 
     const { issues, moreIssues } = await tracker.issues(
       team.id,
-      input.project,
+      wantedProject,
       wanted.map((entry) => entry.name),
       input.issuePageSize,
       input.commentPageSize,
@@ -528,7 +716,7 @@ export async function tick(input: TickInput, io: Io, env: Environment, options: 
       if ('dispatch' in outcome.verdict) {
         const request = outcome.verdict.dispatch;
         dispatched.push(request);
-        io.out(JSON.stringify(request));
+        io.out(JSON.stringify({ event: EVENTS.dispatch, ...request }));
         io.err(line('dispatched', `${outcome.identifier}  ${request.skill} as ${request.role}  ${request.branch}`));
       } else {
         io.err(line('declined', `${outcome.identifier}  ${outcome.status} — ${outcome.verdict.declined}`));

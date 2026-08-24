@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { run, type Io } from '../cli/cli.js';
-import { payloadFiles, SCAFFOLD, SKILLS } from '../cli/payload.js';
+import { payloadFiles, PLACEHOLDER, SCAFFOLD, SKILLS } from '../cli/payload.js';
 import { hasStamp } from '../cli/stamp.js';
 import { changed, link, messyProject, neighbours, project, snapshot, stamped, touched, writeProject } from './fixture.js';
 import { stageInto } from './helpers.js';
@@ -56,8 +56,23 @@ describe('jen init on an empty project', () => {
 
   it('writes every managed file, byte-identical to what the package staged', () => {
     for (const { file } of payloadFiles()) {
+      if (file.substituted) continue;
       expect(readFileSync(join(root, file.target), 'utf8'), file.target).toBe(shipped(file.staged));
     }
+  });
+
+  // The one exception to the line above, and the reason it has one. A fresh project has no
+  // registry to resolve from — this same run writes the stub — so every value comes out
+  // empty. Empty is the point: the runner then refuses naming what is missing, where a
+  // surviving `{{jen:team}}` would have it poll a project by that literal name.
+  it('renders a substituted file with nothing left of the placeholders', () => {
+    const workflow = payloadFiles().find(({ file }) => file.substituted);
+    expect(workflow, 'the payload must declare a substituted file for this to mean anything').toBeDefined();
+
+    const written = readFileSync(join(root, workflow!.file.target), 'utf8');
+    expect(written).not.toContain('{{jen:');
+    expect(written).toBe(shipped(workflow!.file.staged).replace(PLACEHOLDER, ''));
+    expect(result.out.join('\n'), 'the report names what did not resolve').toContain('did not resolve');
   });
 
   it('writes each shipped skill stamped, into .claude/skills/', () => {

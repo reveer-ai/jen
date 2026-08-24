@@ -449,3 +449,103 @@ already-started child can be handed a new one. Anything real here is a design de
 askpass reading a file the run refreshes, a `gh` credential helper, or a run that declares a
 ceiling on session length and fails *at* it rather than past it. ENG-167 carries the observation
 that settles which: how long a real stage session actually takes against the hour it has.
+
+## The shipped workflow's source is `payload/`, not `.github/workflows/`
+
+Every other managed file's `source` is its own target path, because jen's working copies *are*
+the thing it ships. The pipeline's scheduled workflow cannot be: a file at
+`.github/workflows/jen.yml` in this repository is a live scheduled workflow *here*, firing
+every half hour against a project named by an unresolved `{{jen:team}}`. jen is not an
+installation of itself — `prepack` stages from the working copies and nothing ever renders
+them — so there is no run in which that file would become correct.
+
+It lives at `payload/jen.yml` and stages to `workflows/jen.yml`, tool-neutral like every other
+staged path. Moving it "next to where it lands" is the change to not make.
+
+## Substitution renders empty, never the placeholder
+
+`substitute()` replaces every `{{jen:name}}` it finds, whether or not the name resolved and
+whether or not jen even declares it. That looks over-eager until you name the failure: a
+literal `{{jen:team}}` surviving into `.github/workflows/jen.yml` makes the runner poll a
+tracker project called `{{jen:team}}` — a wrong value that reads as a configured one, on a
+file whose whole job is to say which project this is. An empty value fails the way an absent
+one does, which is to say `jen run` refuses naming the missing team.
+
+So an unresolved name is not an error, and the planner does not refuse over one. It renders
+empty, and `plan.unresolved` carries the name and *why* into the run's report — the moment the
+state is created is the only moment anybody is looking at it. `project-binding` closes the
+window: binding finishes by running `jen update`, which is what fills the values in.
+
+Resolution reads `registry.yaml` through `plan.ts`, which reads and never writes, so `jen
+init`'s refusal path is untouched — a refused plan is still not written, whatever it rendered.
+`registry.ts` never throws: a registry that is absent, unparseable, or names zero or several
+tracker resources all come back as no values and a reason.
+
+## A job-level `if` cannot read the `env` context
+
+The obvious shape for an unbound project's scheduled poll is a guard — skip the job when the
+team is empty, rather than failing it. It cannot be written. A job-level `if` sees only
+`github`, `needs`, `vars`, and `inputs`; `env` is not among them, so the condition would have
+to be a step inside a job that has already started and already billed its minute.
+
+Identical cost, quieter failure, more machinery — which is why the shipped workflow simply
+fails, naming the missing team. GitHub reports a failed scheduled run to the repository's
+owner, and a poll that quietly did nothing is indistinguishable from a pipeline with nothing to
+do. That is the one state this pipeline must never be confused with.
+
+## The local runner holds no lock, deliberately
+
+`jen watch` keeps no lock file, no pidfile, no ledger, and no memory of what it launched.
+This is not an omission to be tidied up the first time someone runs two of them.
+
+A lock is pipeline state one runner has and the other cannot see. The scheduled runner has no
+host to hold one on, so the moment `watch` consults a lock the two runners stop being wrappers
+over one tick and start being two implementations that can reach different conclusions from the
+same tracker. What actually stops a task being dispatched twice is the announcement on the task
+— which both runners read, and which a restart re-establishes for free.
+
+Two instances on one project are therefore governed by exactly what two runners are: the
+in-flight test and the concurrency cap, both derived from the tracker. `test/watch.test.ts`
+asserts the negative by snapshotting the checkout across ticks.
+
+Signals are the loop's rather than any tick's. `cli.ts`'s `dispatch()` installs handlers per
+invocation and removes them on the way out; `watch()` installs its own for the length of the
+process and calls `tick()` directly rather than routing through `dispatch()`, which is what
+keeps the two from ever both being installed.
+
+## The halt matches two ways, and which one applies depends on whose name the status is
+
+`haltingStatus()` in `run.ts` is the single seam, and it asks two questions. A status the
+*workspace* named is matched on its `type` — `HALTING_STATUS_TYPES` is `completed`, `canceled`
+— so a workspace that renamed `Completed` or added a status of its own is still understood by
+the category the tracker files it under. A deny list rather than an allow list over `started`,
+because jen's own project sits in `Backlog` while its pipeline runs and an allow list would
+have halted it silently.
+
+The pause is matched on its **name**, `PAUSED_STATUS_NAME` — `On Pause` — folded exactly as
+the stage statuses are. That is not the type rule being abandoned; it is the type rule running
+out of signal. Verified live against this workspace: `ProjectStatus.type` is the *category*,
+and there are exactly five — `backlog`, `planned`, `started`, `completed`, `canceled` (one
+`l`). There is no `paused`. The pause the API's older project `state` field carried became a
+status *named* `Paused` filed under `planned`, and `planned` is precisely the category that
+must not halt, since ordinary planning projects share it. So the pause is filed under
+`In Progress` (`type: started`) where it reads truthfully, and a category every working
+project shares can carry no signal at all.
+
+**The rule to keep, when the next status question comes up:** match by name only what jen
+prescribes and `setup-jen` tells the operator to create, the way `stages.ts` already matches
+`In Design` and `Pending`. Match by type anything the workspace chose for its own reasons.
+Inferring a workspace's meaning from a name it picked itself is the thing that stays banned.
+
+Two traps worth naming, both found the expensive way:
+
+- `save_project`'s `state` is not a probe. A name that resolves to no status is answered by
+  the project's status simply not changing, with no error — so a failed set is not evidence
+  the status is absent, and a set that appears to work is the only thing that means anything.
+- `list_projects`' `state` filter does not validate its argument either. A nonsense value
+  returns an empty list, identically to a real-but-unused one. An empty result there is not
+  evidence about the schema.
+
+Together those are why `setup-jen` reports this status rather than verifying it: the tracker's
+tool surface has no call that lists project statuses and none that creates one, and neither of
+the two above can be bent into standing in for the missing read.

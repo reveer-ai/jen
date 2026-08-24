@@ -120,9 +120,14 @@ and the credential itself.
 
 ## Running a stage from a workflow
 
-Nothing here does this yet — ENG-165 is where a stage first runs on Actions. Both of these
-fail silently when they are got wrong, which is why they are written down before the code
-that can trip on them exists.
+The workflow that does this is not in this directory. jen ships the pipeline's scheduled
+runner to adopters at `.github/workflows/jen.yml`, and its template lives at `payload/jen.yml`
+— deliberately not at its own target path, because a file there would be a live scheduled
+workflow in *this* repository polling an unresolved placeholder every half hour. See
+`cli/AGENTS.md`. The two workflows here are jen's own CI and release, and neither runs a stage.
+
+Both of the rules below fail silently when they are got wrong, which is why they were written
+down before the code that could trip on them existed.
 
 **The review verdict must never be submitted under `GITHUB_TOKEN`.** A review submitted
 with the default workflow credential is recorded and rendered exactly like any other, and

@@ -683,4 +683,87 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(invoked.cwd.startsWith(root)).toBe(true);
     rmSync(root, { recursive: true, force: true });
   });
+  /**
+   * A durable copy of a session's stream is a disclosure — it holds the repository's
+   * content, every tool result, and whatever the stage read — so it happens where the
+   * operator asked for one and nowhere else.
+   */
+  describe('a session’s transcript', () => {
+    it('is discarded with the run unless somewhere was named for it', async () => {
+      const { outcome } = await launched();
+
+      expect(outcome.transcriptPath, 'nothing was kept, and the record has to be able to say so').toBeUndefined();
+      expect(outcome.transcript, 'the stream itself is still read — it is what the verdict rests on').toContain('result');
+    });
+
+    it('is written where it was asked for, and the outcome names the file', async () => {
+      const kept = join(scratch, 'transcripts');
+      const outcome = await build({}, false, { transcripts: kept }).launch(REQUEST);
+
+      expect(outcome.transcriptPath, outcome.failures.join('\n')).toBeDefined();
+      expect(outcome.transcriptPath!.startsWith(kept)).toBe(true);
+      expect(outcome.transcriptPath).toContain('ENG-1');
+      expect(readFileSync(outcome.transcriptPath!, 'utf8')).toBe(outcome.transcript);
+      expect(outcome.ok).toBe(true);
+    });
+
+    // The run's own directory is removed on every exit path, holding the tracker credential
+    // with it. A transcript kept inside it would be swept along with the thing it is for.
+    it('outlives the run directory it was streamed from', async () => {
+      const kept = join(scratch, 'outlives');
+      const outcome = await build({}, false, { transcripts: kept }).launch(REQUEST);
+
+      const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+      expect(existsSync(invoked.cwd), 'the clone is gone').toBe(false);
+      expect(existsSync(outcome.transcriptPath!), 'the transcript is not').toBe(true);
+    });
+
+    // Reported with the run's other failures rather than raised over them, and — unlike a
+    // failed sweep — it does not make a successful session a failed one. Nothing about the
+    // session changed; a file beside it could not be written.
+    it('is reported when it cannot be written, without changing what the session did', async () => {
+      const occupied = join(scratch, 'not-a-directory');
+      writeFileSync(occupied, 'a file sitting where a directory was named\n');
+
+      const outcome = await build({}, false, { transcripts: occupied }).launch(REQUEST);
+
+      expect(outcome.ok, 'the session itself succeeded').toBe(true);
+      expect(outcome.transcriptPath).toBeUndefined();
+      expect(outcome.failures.at(-1)).toContain('transcript could not be written');
+      expect(outcome.cost, 'the session’s own result is untouched').toBe(0.5);
+    });
+
+    // `sessionStarted` and "there is a transcript" are different questions, and this is
+    // where they come apart: the flag is set the instant the child exists, before its exit
+    // is awaited, so a `claude` that isn't on `PATH` reaches the catch with the flag true
+    // and the stream still empty. A zero-byte file is worse than no file — the run record
+    // names it as a transcript that was kept, and reading it says nothing about why.
+    it('keeps nothing for a session that started and then produced no stream', async () => {
+      const kept = join(scratch, 'no-stream');
+      const failsToRun: Spawner = (spec) =>
+        spec.command === process.execPath
+          ? { exited: Promise.reject(new Error('spawn claude ENOENT')), kill: () => {} }
+          : spawner(spec);
+
+      const outcome = await build({}, false, { transcripts: kept, spawn: failsToRun }).launch(REQUEST);
+
+      expect(outcome.sessionStarted, 'the child existed, so the run really did get this far').toBe(true);
+      expect(outcome.ok).toBe(false);
+      expect(outcome.transcript, 'and nothing came back from it').toBe('');
+      expect(outcome.transcriptPath, 'so the record names no transcript').toBeUndefined();
+      expect(existsSync(kept), 'and no directory is made to hold an empty one').toBe(false);
+    });
+
+    it('keeps nothing for a run whose session never started', async () => {
+      const kept = join(scratch, 'never-started');
+      const executor = build({}, false, { transcripts: kept });
+      executor.terminate('SIGTERM');
+
+      const outcome = await executor.launch(REQUEST);
+
+      expect(outcome.sessionStarted).toBe(false);
+      expect(outcome.transcriptPath).toBeUndefined();
+      expect(existsSync(kept), 'no directory is made for a transcript that does not exist').toBe(false);
+    });
+  });
 });

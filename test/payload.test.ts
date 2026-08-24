@@ -5,11 +5,14 @@ import {
   memberShape,
   PAYLOAD,
   payloadFiles,
+  placeholderFor,
   SCAFFOLD,
   stagedFiles,
   SKILLS,
   STAMP,
   STAMP_FRONTMATTER,
+  substitute,
+  SUBSTITUTIONS,
   type VariableSet,
 } from '../cli/payload.js';
 import { readRepoFile } from './helpers.js';
@@ -55,6 +58,50 @@ describe('the payload declaration', () => {
     });
   });
 
+  // Configuration its consumer reads from a path the git host fixes, rather than an
+  // instruction with somewhere else it could have gone. Its source is not its target
+  // path: a template lying at `.github/workflows/` in this repository would be a live
+  // scheduled workflow here, polling whatever an unresolved placeholder names.
+  it('declares the pipeline workflow at the path its consumer requires', () => {
+    expect(payloadFiles().find((entry) => entry.file.target === '.github/workflows/jen.yml')).toEqual({
+      file: {
+        source: 'payload/jen.yml',
+        staged: 'workflows/jen.yml',
+        target: '.github/workflows/jen.yml',
+        format: 'yaml',
+        substituted: true,
+      },
+      stamped: false,
+    });
+  });
+
+  // The instructions jen ships — the workflow document and the skills — go to `.claude/`
+  // and to declared root paths, and to no other assistant's directory. What the rule does
+  // not cover is a file that is not an instruction, which is declared one path at a time.
+  it('writes instructions to .claude/ and the root, and claims no directory beyond it', () => {
+    for (const { file } of payloadFiles()) {
+      if (file.target.startsWith('.claude/') || !file.target.includes('/')) continue;
+      expect(file.format, `${file.target} sits outside .claude/ and must not be an instruction`).not.toBe('markdown');
+    }
+    for (const set of variableSets) {
+      expect(set.targetDir.startsWith('.claude/'), `${set.targetDir} is claimed wholesale`).toBe(true);
+    }
+  });
+
+  // A closed set, declared as data. Anything that made substitution able to express a
+  // condition, a loop, or a name jen has not listed would be a template language, and a
+  // template language in a managed file is a project editing a file jen owns.
+  it('substitutes a closed set of names and nothing else', () => {
+    expect(SUBSTITUTIONS).toEqual(['team', 'project']);
+    expect(placeholderFor('team')).toBe('{{jen:team}}');
+
+    const values = { team: 'ENG' } as const;
+    const rendered = substitute(Buffer.from('a {{jen:team}} b {{jen:project}} c {{jen:nonsense}}'), values);
+    expect(rendered.contents.toString()).toBe('a ENG b  c ');
+    expect(rendered.referenced).toEqual(['team', 'project', 'nonsense']);
+    expect(rendered.contents.toString(), 'a placeholder never survives into the output').not.toContain('{{jen:');
+  });
+
   // Two sets over one directory would derive the same member shape and search the same
   // locations, so a single stamped orphan would land in `plan.deletions` once per set:
   // a duplicated line in the report and a second `unlink` of a path already gone.
@@ -86,6 +133,7 @@ describe('the payload declaration', () => {
     expect(stamped).toHaveLength(SKILLS.length);
     expect(payloadFiles().filter((entry) => !entry.stamped).map((entry) => entry.file.target)).toEqual([
       'AGENTS.md',
+      '.github/workflows/jen.yml',
     ]);
   });
 
