@@ -2,10 +2,10 @@ Three of these tasks are a person's and cannot be done by any pipeline role. Rai
 
 ## 1. The tree
 
-- [ ] 1.1 Update the gate section of `.claude/skills/setup-jen/SKILL.md` to read the class of settings that raise the effective approving-review requirement rather than the two it names today. Keep the two settings and their reasoning — they are why the bound exists — and add the unattributed-changes setting beside them, including that it is on by default on new and existing rulesets and inert at a count of zero, which is why a project can carry it unnoticed.
-- [ ] 1.2 Add to the same section that a setting bearing on the requirement whose reach binding cannot establish is reported as undetermined, and that the gate is not reported satisfied on the strength of the configured count alone.
-- [ ] 1.3 Confirm `.claude/skills/setup-jen/SKILL.md`'s permission table already lists `Statuses: read` for `deliver` and leave it alone if so. The table is correct; jen's own installation is what diverges from it.
-- [ ] 1.4 `npx openspec validate eng-173-raise-the-merge-gate-once-a-verdict-can-count --strict` passes.
+- [x] 1.1 Update the gate section of `.claude/skills/setup-jen/SKILL.md` to read the class of settings that raise the effective approving-review requirement rather than the two it names today. Keep the two settings and their reasoning — they are why the bound exists — and add the unattributed-changes setting beside them, including that it is on by default on new and existing rulesets and inert at a count of zero, which is why a project can carry it unnoticed.
+- [x] 1.2 Add to the same section that a setting bearing on the requirement whose reach binding cannot establish is reported as undetermined, and that the gate is not reported satisfied on the strength of the configured count alone.
+- [x] 1.3 Confirm `.claude/skills/setup-jen/SKILL.md`'s permission table already lists `Statuses: read` for `deliver` and leave it alone if so. The table is correct; jen's own installation is what diverges from it.
+- [x] 1.4 `npx openspec validate eng-173-raise-the-merge-gate-once-a-verdict-can-count --strict` passes.
 
 ## 2. The permission
 
