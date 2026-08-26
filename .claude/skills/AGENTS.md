@@ -41,7 +41,10 @@ What works under an ordinary token with organization access is
 `/orgs/{org}/installations`, which returns every installation with its `permissions` and
 `repository_selection` — the two fields the verification step compares against the table.
 Select the one whose `app_id` matches the registry rather than the one whose name looks
-right.
+right. `{org}` is the organization that owns the **repository**, which `setup-jen` holds
+apart from the one that owns the applications precisely because they can differ: an
+installation lives on the organization it was installed *into*, so listing the app-owning
+organization returns rows that cannot contain this repository's installation at all.
 
 The 401 is worth naming because of how it reads: it arrives as an authentication failure,
 so the first guess is a bad token or a missing scope, and the actual answer is that the

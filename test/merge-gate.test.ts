@@ -229,6 +229,26 @@ describe('attributing a bypass actor', () => {
     );
   });
 
+  // Which organization `{org}` stands for. The skill establishes three sections up that the
+  // organization owning a repository is not always the one owning its automation, so a bare
+  // `{org}` has two candidates and no rule. The wrong one fails in the direction that looks
+  // right: installations live on the organization they were installed into, so listing the
+  // app-owning organization returns rows that cannot contain this repository's installation
+  // and every actor resolves to nothing — the gate held open on a false reason, with nothing
+  // the user can do to the actor that clears it. jen's own registry has one organization
+  // owning both, which is why nothing here would catch it in use.
+  it('names the repository as the organization the listing is read on', () => {
+    expect(bypass, 'the organization is the repository\'s').toMatch(
+      /organization that owns \*\*this repository\*\*/i,
+    );
+    expect(bypass, 'and explicitly not the one owning the applications').toMatch(
+      /not the one that owns the applications/i,
+    );
+    expect(bypass, 'with the reason the wrong one cannot answer').toMatch(
+      /cannot contain this repository's installation/i,
+    );
+  });
+
   // Three answers, not two. Collapsing them is the likely drift and the direction matters,
   // which is why the next two tests split the third answer out from this one.
   it('keeps all three answers, and names the application that is not a role', () => {
@@ -246,10 +266,23 @@ describe('attributing a bypass actor', () => {
   // wording that reports the actor as harmless and withholds the gate for some other reason
   // — and reporting an unattributed actor as not-a-role is the specific misreading this
   // change exists to remove.
+  //
+  // The naming obligation is held here for a different reason: it is the kind of clause a
+  // later tightening pass drops as wordy. Without it, a listing that came back without the
+  // application and a listing that never came back produce the same line — and they are
+  // cleared by different things, so the report would name an outstanding item with no way
+  // to act on it. The precedent it inherits from, *Where you cannot establish a setting's
+  // reach*, carries the same pairing: name it, and say what could not be established.
   it('does not let an unattributed actor leave the gate satisfied, or read as not-a-role', () => {
     expect(bypass, 'unattributed is the report').toMatch(/\*\*unattributed\*\*/i);
     expect(bypass, 'and it names the identifier it could not resolve').toMatch(
       /name the identifier you could not resolve/i,
+    );
+    expect(bypass, 'and says what it could not establish, not only which identifier').toMatch(
+      /say what you could not establish about it/i,
+    );
+    expect(bypass, 'the two causes are distinguished, since they clear differently').toMatch(
+      /absent from a listing you read and a listing you could not read/i,
     );
     expect(bypass, 'the gate does not stay satisfied while one stands').toMatch(
       /do not report the gate as satisfied while one stands/i,

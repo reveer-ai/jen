@@ -16,7 +16,7 @@ Binding SHALL attribute a bypass actor to the application it names before judgin
 
 Binding SHALL attribute such an actor by resolving its identifier against the applications installed on the repository's organization, and SHALL compare what that resolves to against the applications `registry.yaml` records for the three roles. Resolving before comparing SHALL yield the application's name, so that binding reports which application holds a bypass rather than only whether one does — a bypass held by an application that is not a pipeline role is a fact the user needs stated, not suppressed. Resolution SHALL match an identifier against every identifier the organization's listing carries for an installation, so that attribution does not depend on which of the host's identifier spaces a bypass list reports in.
 
-Binding SHALL report an actor it cannot attribute as unattributed, SHALL name it, and SHALL NOT report the gate as satisfied while one stands. An application absent from the organization's listing, or a listing binding could not read, leaves the question unanswered rather than answered in the safe direction, and reporting an unattributed actor as not a role is the reading that produces green checks over an inert requirement. This obligation SHALL arise only where the bypass list carries an application at all: a list carrying no application has nothing to attribute, and binding SHALL NOT withhold the gate on the strength of a resolution it never needed to make.
+Binding SHALL report an actor it cannot attribute as unattributed, SHALL name it, SHALL state what it could not establish about it, and SHALL NOT report the gate as satisfied while one stands. An application absent from the organization's listing, or a listing binding could not read, leaves the question unanswered rather than answered in the safe direction, and reporting an unattributed actor as not a role is the reading that produces green checks over an inert requirement. Those two causes reach the same dead end and are cleared by different things — one by identifying the application, the other by granting binding access to the listing — so a report naming only the identifier tells the user an actor is unresolved without telling them what would resolve it. This obligation SHALL arise only where the bypass list carries an application at all: a list carrying no application has nothing to attribute, and binding SHALL NOT withhold the gate on the strength of a resolution it never needed to make.
 
 Where a mechanism reports its bypass actors already named, binding SHALL take that name and SHALL NOT resolve it a second time. The attribution step answers a question only an unnamed actor poses.
 
@@ -110,6 +110,7 @@ Binding SHALL NOT alter protection the repository already carries beyond what th
 
 - **WHEN** an actor's identifier resolves to no installation on the organization
 - **THEN** binding reports that actor as unattributed and names it
+- **AND** reports that the organization's listing carries no installation matching it
 - **AND** does not report the gate as satisfied
 - **AND** does not report the actor as not a pipeline role
 
@@ -117,6 +118,7 @@ Binding SHALL NOT alter protection the repository already carries beyond what th
 
 - **WHEN** the bypass list carries an application and binding cannot read the organization's installations
 - **THEN** binding reports that actor as unattributed
+- **AND** reports that it could not read the organization's installations, rather than that the application was absent from them
 - **AND** does not report the gate as satisfied
 
 #### Scenario: Nothing on the bypass list needs attributing

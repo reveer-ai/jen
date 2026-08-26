@@ -14,7 +14,7 @@ The tests in section 3 are not a verification pass on sections 1 and 2; they are
 
 ## 2. The spec
 
-- [x] 2.1 Apply the delta in `specs/project-binding/spec.md` to `openspec/specs/project-binding/spec.md` — the four added paragraphs on the merge-gate requirement and the seven added scenarios. This is `deliver-task`'s sync, not implementation's; the task is here so implementation confirms the delta is a clean MODIFIED block that will apply, not so it applies it early.
+- [x] 2.1 Apply the delta in `specs/project-binding/spec.md` to `openspec/specs/project-binding/spec.md` — the five added paragraphs on the merge-gate requirement and the eight added scenarios. This is `deliver-task`'s sync, not implementation's; the task is here so implementation confirms the delta is a clean MODIFIED block that will apply, not so it applies it early.
 - [x] 2.2 Verify the modified requirement's header text still matches the one in `openspec/specs/project-binding/spec.md` exactly. A MODIFIED block whose header has drifted loses the whole requirement at archive time, silently.
 - [x] 2.3 `npx openspec validate eng-175-attribute-a-bypass-actor-so-binding-can-say-whose-bypass-it --strict` passes.
 
