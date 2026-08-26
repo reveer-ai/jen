@@ -17,6 +17,19 @@ import { readRepoFile } from './helpers.js';
 const skill = readRepoFile('.claude/skills/setup-jen/SKILL.md');
 const gate = skill.slice(skill.indexOf('## The merge gate'));
 
+// The unattributed-changes bullet and the instruction beneath the list, sliced out so the
+// assertions below land on them rather than anywhere in the section. The contradiction this
+// guards against was two agreeing greps apart: the bullet asserted a reach the observation
+// three paragraphs down refutes, and both matched a search of the whole section.
+const unattributed = gate.slice(
+  gate.indexOf('- **Requiring an extra approval'),
+  gate.indexOf('- **Naming required reviewers'),
+);
+const breachInstruction = gate.slice(
+  gate.indexOf('Report a branch carrying any of them'),
+  gate.indexOf('### Where you cannot establish'),
+);
+
 describe('the gate requirement', () => {
   // The defect this change exists to fix. An enumeration of another party's settings is
   // correct when written and silently incomplete afterward — every later reading stays
@@ -47,9 +60,35 @@ describe('the gate requirement', () => {
   // inert at zero is why no repository holds evidence about it until the count goes up. A
   // reader told only that it exists will look for it, find it off, and conclude wrongly.
   it('names the unattributed-changes setting with both reasons it goes unnoticed', () => {
-    expect(gate, 'the setting').toMatch(/unattributed/i);
-    expect(gate, 'on by default').toMatch(/on by default/i);
-    expect(gate, 'inert at a count of zero').toMatch(/inert at an approving-review count of zero/i);
+    expect(unattributed, 'the setting').toMatch(/unattributed/i);
+    expect(unattributed, 'on by default').toMatch(/on by default/i);
+    expect(unattributed, 'inert at a count of zero').toMatch(/inert at an approving-review count of zero/i);
+  });
+
+  // It is listed here as an instance of the bound, and whether it breaches *your* branch
+  // turns on a reach this section cannot read — which is exactly what the observation two
+  // sections down settles, the other way. A bullet that asserts the reach instead of
+  // conditioning on it contradicts the same page: the taxonomy there defines Breaching as
+  // reach established *and* the bound exceeded, and this setting fails the second half.
+  it('conditions the unattributed setting on a reach it does not assert', () => {
+    expect(unattributed, 'its effect is conditional on reach').toMatch(/wherever it applies/i);
+    expect(unattributed, 'and the reach is named as the unreadable part').toMatch(/cannot read off the setting/i);
+  });
+
+  // The instruction under the list is what a run acts on, and it is reached before the
+  // observation is. Unqualified it tells every adopter — the setting is on by default, so
+  // that is all of them — to report the gate unsatisfied and propose turning off a setting
+  // this repository deliberately left on, on the strength of the bullet above it.
+  it('does not tell a run to turn off a setting an observation has settled', () => {
+    expect(breachInstruction, 'the instruction is on the breach, not on the name').toMatch(
+      /on the breach, not on the name/i,
+    );
+    expect(breachInstruction, 'finding this one is not yet finding a breach').toMatch(
+      /not yet finding a breach/i,
+    );
+    expect(breachInstruction, 'and a setting settled as not reaching stays on').toMatch(
+      /leave the setting on and say so/i,
+    );
   });
 
   // An application cannot join a team, so a team-scoped requirement is unsatisfiable by
