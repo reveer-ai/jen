@@ -31,8 +31,10 @@ Three of these tasks are a person's and cannot be done by any pipeline role. Rai
 
 Evidence, not configuration. Each of these is a fact about a real pull request, and each names the identity that produced it — an approval submitted by a person satisfies the branch and proves nothing about the pipeline.
 
-- [ ] 5.1 `deliver` submits an approving review on this change's own pull request, under `deliver`'s installation token rather than under whoever launched the session. Requires `JEN_GH_PRIVATE_KEY_DELIVER` and the rest of `credentialsFor`'s environment (`cli/github.ts:41`).
-- [ ] 5.2 Confirm the approval **counts**: the pull request reports its approval requirement satisfied, not merely that a review was recorded. `reviewDecision: APPROVED` with `mergeStateStatus` no longer blocked on review is the reading; a recorded review sitting beside an unsatisfied requirement is the failure this task is named for.
+- [x] 5.1 `deliver` submits an approving review on this change's own pull request, under `deliver`'s installation token rather than under whoever launched the session. Requires `JEN_GH_PRIVATE_KEY_DELIVER` and the rest of `credentialsFor`'s environment (`cli/github.ts:41`).
+  - Done in the review-task round that resumed with `deliver`'s credentials: `gh auth status` confirmed as `reveer-jen-deliver[bot]`, approving review submitted on PR #17 at `2026-08-26T01:43:28Z` (author is `joshtgi` — non-author).
+- [x] 5.2 Confirm the approval **counts**: the pull request reports its approval requirement satisfied, not merely that a review was recorded. `reviewDecision: APPROVED` with `mergeStateStatus` no longer blocked on review is the reading; a recorded review sitting beside an unsatisfied requirement is the failure this task is named for.
+  - Confirmed live at delivery: `gh pr view 17` reports `reviewDecision: APPROVED`, `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`.
 - [ ] 5.3 `deliver` pushes the spec sync and the archive, then confirm the approval still stands and the pull request is still mergeable. This is the deadlock the eased settings exist to avoid and the one check that would have caught the original design.
 - [x] 5.4 Confirm the human bypass still opens, since it is the only way to break the glass on an unattended pipeline. Read it off the ruleset rather than exercising it.
   - Read after the raise: `bypass_actors` is `[{actor_id: 314685034, actor_type: "User", bypass_mode: "always"}]` — the same single human, unchanged by the raise, and no `Integration` beside it.
