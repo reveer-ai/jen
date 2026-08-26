@@ -549,3 +549,52 @@ Two traps worth naming, both found the expensive way:
 Together those are why `setup-jen` reports this status rather than verifying it: the tracker's
 tool surface has no call that lists project statuses and none that creates one, and neither of
 the two above can be bent into standing in for the missing read.
+
+## The extra-approval setting does not reach an application's pull request, and it can only be observed
+
+`require_extra_approval_for_unattributed_changes` sits on a ruleset's `pull_request` rule
+beside the count and the two settings delivery's own push walks into. It is **on by default**,
+on new rulesets and existing ones alike, so a project carries it without anyone choosing it,
+and where it applies it raises the effective requirement to one *more* than configured. That
+is above the bound `pipeline-identity` states — one approval from `deliver` is the ceiling of
+what the pipeline can produce — so if it reached the pipeline's pull requests, every task
+would park in delivery on an approval nothing can give.
+
+It is **inert at an approving-review count of zero**, which is the state of every branch that
+has not yet been through `setup-jen`'s gate section. So a repository that has never raised its
+count holds no evidence about this either way, and raising the count is the act that makes the
+setting live for the first time. That is why it went unnoticed here through ENG-141 and two
+rounds of ENG-173's own gate wording.
+
+**Observed on this repository, 25 Aug 2026**, immediately after `primary` (ruleset `20589957`)
+went to `required_approving_review_count: 1` with the setting left `true`: PR #12
+(`Version Packages`, authored by `app/reveer-release` — an application acting as itself, not on
+behalf of a person) went from `reviewDecision: REVIEW_REQUIRED` / `mergeStateStatus: BLOCKED`
+at zero approvals to `APPROVED` / `CLEAN` on **one** approval. So the setting is scoped as
+GitHub documents it — to the host's own assistant — and does not reach an ordinary
+application's pull request. It stays `true` on `primary`, and nothing in the pipeline is
+affected by it.
+
+**The part that cost the time: the requirement cannot be read, only observed.** There is no
+per-pull-request effective approval count anywhere on the API. `PullRequest.reviewRequirements`
+does not exist on the GraphQL type; `/repos/{owner}/{repo}/rules/branch/{branch}` answers `404`
+for a token without administration access; and `reviewDecision` is `REVIEW_REQUIRED` at zero
+approvals whether the branch wants one approval or two. The two cases are indistinguishable
+until an approval exists, so the only instrument is to put **exactly one** approving review on
+an application-authored pull request and read whether the decision flips. A session that plans
+to "read the requirement" will find nothing to read and should budget for the approval instead.
+
+Two things to keep straight if this is re-derived. The vehicle has to be **application-authored**
+— a human-authored pull request is outside the setting however the host scopes it, so approving
+one demonstrates nothing while looking exactly as though it had. And this observation is
+evidence about an application acting as itself, which is what the three pipeline roles are; it
+is not evidence about any other setting in the family, each of which needs its own vehicle.
+
+**This observation also ships**, in the gate section of `.claude/skills/setup-jen/SKILL.md`, and
+it has to: an adopter's project has never opened a pipeline pull request, so without it every
+first binding meets this setting, reports it undetermined, and reports the gate unsatisfied with
+no move available. The shipped copy is the observation with its provenance — host, date, vehicle,
+repository state — and the instruction to cite rather than conclude, which is what keeps it from
+ageing into an assumption. **Two copies, and they must not drift**: whatever re-derives or
+supersedes what is written here updates the skill in the same change, and `test/merge-gate.test.ts`
+holds the shipped one to carrying its date and its vehicle.

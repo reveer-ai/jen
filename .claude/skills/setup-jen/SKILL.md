@@ -177,18 +177,52 @@ The default branch needs one thing: **at least one approving review** before a p
 
 Report a branch that requires a pull request but zero approving reviews as **insufficient**, not as present. It is the most misleading state on this list, because protection is visibly configured and admits unreviewed changes anyway.
 
-### Two settings must stay off, and they are the ones that look like the next step
+### Nothing may raise the effective requirement above one approval, and the settings that do look like the next step
 
-Neither of these tightens the gate. Each makes it unsatisfiable by any role the pipeline has:
+What the branch may ask for is bounded at **one approving review from an identity other than the pull request's author**, because one approval from `deliver` is the most the pipeline can produce. A configuration that raises the *effective* requirement above that bound does not tighten the gate — it makes the gate unsatisfiable by any role the pipeline has. Every task parks in delivery waiting for an approval no stage can give, and the human bypass becomes the only way anything merges: a pipeline that looks like it is running while a person does all of the finishing.
+
+Read that as the check. Not a list of setting names — the bound. The settings belong to the git host and the host adds to them, so any list written here is accurate when written and silently incomplete afterward, and every later reading of it stays perfectly correct about the settings it names while the branch has moved past them. A setting the host ships next year raises the effective count exactly as the ones below do, and breaches this on the same terms whether or not it is named here.
+
+Four are known to breach it:
 
 - **Requiring the approval to postdate the most recent push.** It removes the last pusher from the eligible set. `deliver-task` is a pusher and *then* a merger — it syncs the delta specs, moves the change under `openspec/changes/archive/`, pushes that, and only then merges — so `deliver` is the last pusher on every pull request the pipeline completes, and cannot approve its own push. `design` authored the pull request and the host refuses its review outright. `dev` is not running by then. Nothing is left that can approve.
 - **Dismissing stale reviews on push.** The same dead end by another route: delivery's own archive push would dismiss the approval it is about to merge on.
+- **Requiring an extra approval for a pull request the host treats as unattributed.** It raises the effective count to one *more* than configured **wherever it applies** — and whether *wherever it applies* reaches a pull request opened by an application acting as itself, which every pipeline pull request is, is the one thing about it you cannot read off the setting. It breaches the bound wherever it does reach them. Two things make this one easy to miss where the other three are not. It is **on by default**, on new rulesets and existing ones alike, so a project carries it without anyone choosing it. And it is **inert at an approving-review count of zero** — which is the state of every branch that has not yet been through this section, so a repository that has never raised its count holds no evidence about it either way, and raising the count is the act that makes it live for the first time.
+- **Naming required reviewers by team.** An application cannot join a team, so every pipeline role sits outside a team-scoped requirement and nothing the pipeline has can satisfy it.
 
-Under either one, every task parks in delivery waiting for an approval no stage can give, and the human bypass becomes the only way anything merges — a pipeline that looks like it is running while a person does all of the finishing. Read both settings, and report a branch carrying either as not satisfying the gate: present turning it off as part of the change you propose, with what it does to delivery, and apply nothing until the user agrees. Never turn one on.
+Report a branch carrying any of them as not satisfying the gate: present turning it off as part of the change you propose, with what it does to delivery, and apply nothing until the user agrees. Never turn one on.
 
-### One approval from anyone is all the branch can be asked for
+That instruction is **on the breach, not on the name**. The two that delivery's own push walks into and the team-scoped one breach on sight: their reach is not in question, and a branch carrying any of the three is a branch the pipeline cannot merge on. The unattributed-changes setting is the one where finding it is not yet finding a breach, because its reach is the open question and *Breaching* below means reach established **and** the bound exceeded — so settle it by the two sections that follow before you report it. Where an observation settles it as not reaching the pipeline's pull requests, leave the setting on and say so. Proposing that a user turn off a setting that is not in fact holding their gate shut is the same class of error as reporting satisfied a gate that is: in both the report does not match the branch.
 
-The host's exclusions are subtractive — they take the author, and optionally the last pusher, out of the eligible set — and never name an approver. Its required-reviewer setting names teams, and an application cannot join a team. So there is no configuration in which the reviewing role is the one that has to approve, and nothing here to check for it: what you are verifying is one approval from anyone with write access.
+### Where you cannot establish a setting's reach, say undetermined
+
+A setting's documentation is evidence about the setting, not about your branch. The unattributed-changes one is the live example: the host documents it as scoped to its own assistant opening a pull request under its own app identity, while the API field is named for unattributed *changes* with no mention of that assistant, and the host calls the feature preview and subject to change. A setting documented for one application may be implemented against any application acting as itself — and the pipeline's three are exactly that.
+
+So when you meet a setting that bears on the approving-review requirement and you cannot establish whether it reaches the pipeline's own pull requests, **report it as undetermined**, and do not report the gate as satisfied on the strength of the configured count alone. Undetermined is a third answer, not a soft yes: name the setting, say what you could not establish about it, and put it on the outstanding list with the rest.
+
+What settles it is observation rather than reading — a pull request the pipeline itself opened, passing the gate on one approval. Where the user wants it settled, that is what to tell them it takes. Reporting a gate satisfied on a branch where delivery cannot merge is the one failure the pipeline cannot see from the inside: every check reads green, every task parks, and nothing in the output names why.
+
+### One observation is already recorded, and it is why a first binding is not stuck
+
+Undetermined has no exit on its own. The unattributed-changes setting is on by default, its reach cannot be read off the API, and what settles it is a pull request the pipeline itself opened — which a project *being bound* has never had, binding being the prerequisite for having one. On the rule above alone, every adopter's first run reports the gate unsatisfied and the project not ready, with no move available that changes it.
+
+So the observation is recorded here rather than left for each adopter to buy:
+
+> **GitHub, 25 August 2026.** On `reveer-ai/jen`, with `require_extra_approval_for_unattributed_changes` left `true` on the ruleset governing the default branch and the approving-review count raised from `0` to `1`, a pull request authored by `app/reveer-release` — an application acting as itself rather than on behalf of a person — went from `reviewDecision: REVIEW_REQUIRED` / `mergeStateStatus: BLOCKED` at zero approvals to `APPROVED` / `CLEAN` on **one** approving review. The setting is scoped as GitHub documents it and did not reach an application's pull request, on that host, on that date.
+
+**Cite it; never restate it as a conclusion.** "That setting is fine" is exactly the assumption this section exists to refuse, and a conclusion cannot be told from an assumption once it is separated from what produced it. What carries is the observation with its host, its date, its vehicle, and the repository state it was made against, so the user can weigh whether it still holds. Documentation is evidence about a setting; an observation is evidence about an implementation at a moment — and the host calls this feature preview and subject to change.
+
+That gives the report three shapes rather than two, and which one applies turns on whether an observation covers the setting in front of you:
+
+- **Settled by observation.** The setting matches one recorded above — same host, same behaviour under test. Report it settled, quote the date, and say that the project's own first pipeline pull request re-settles it against their repository if they want it established there rather than borrowed from jen's. This does not hold the gate unsatisfied.
+- **Undetermined.** A setting bearing on the requirement with no observation behind it — one the host has added since, or one whose behaviour differs from anything recorded here. This is the case the rule above is written for, and it does hold the gate unsatisfied.
+- **Breaching.** Its reach is established and it raises the effective requirement above the bound. Report it as the section before this one says.
+
+A different git host is a different implementation, and nothing recorded here transfers to one.
+
+### The branch cannot be asked to name *which* role approves
+
+The bound is one approval from a non-author, and it is not one approval from a *particular* non-author. The host's exclusions are subtractive — they take the author, and optionally the last pusher, out of the eligible set — and never name an approver; the one setting that comes close names teams, which is why it appears above as a breach rather than as an option. So there is no configuration in which the reviewing role is the one that has to approve, and nothing here to check for it: what you are verifying is one approval from anyone with write access.
 
 Say that plainly when you report the gate. Which role approves and which merges is workflow convention, stated once in the workflow document (`AGENTS.md`) and honoured by the stages — not something the branch enforces. A user who believes otherwise will never look at the pull request timeline, and the timeline is the only place a breach is visible: the roles are distinct identities, so the approving identity is on the record even though nothing rejects the wrong one.
 
@@ -196,7 +230,7 @@ Say that plainly when you report the gate. Which role approves and which merges 
 
 The git host guards a branch two independent ways — a **ruleset** targeting it, and **classic branch protection** on it — and a branch may carry either, both, or neither. Read both. The classic endpoint is the one you reach for first, and on a branch governed only by a ruleset it returns `404 Branch not protected`: a successful read whose answer is *no gate*, on a branch that is actively gated. jen's own repository is in exactly that state. Reporting a gate absent off one of two endpoints is the same failure as the application registered with no permissions two sections up — the call succeeds and the conclusion is wrong.
 
-Either mechanism carrying the approval requirement satisfies the gate; you need one of them, not both. The two settings that must stay off are read the same way — on whichever mechanism is in force, and on both when both are.
+Either mechanism carrying the approval requirement satisfies the gate; you need one of them, not both. The configuration that raises the effective requirement is read the same way — on whichever mechanism is in force, and on both when both are.
 
 Confirm any ruleset you read actually **targets the default branch**. The repository's ruleset list returns every ruleset it has, including ones targeting other branches or tags, so an active ruleset in that list is not evidence that this branch is governed by it — the same shape of mistake as the `404`, arriving from the opposite direction. Asking the host which rules apply to the branch answers directly; reading the list and assuming answers something else.
 
@@ -206,9 +240,9 @@ When you apply, **extend the ruleset already governing the branch** rather than 
 
 A gate the pipeline's own roles can step around is not a gate, and the requirement is absolute: no role may hold a bypass, while a human may keep one. That distinction is the whole rule.
 
-So read the bypass list as part of reading the gate — and where it lives depends on which mechanism is in force. Classic protection hands it back on the read you have already made: `bypass_pull_request_allowances.apps`, nested inside `required_pull_request_reviews` beside the count and the two settings. A ruleset does not. Asking the host which rules apply to the branch answers the count and both settings and carries no bypass actors at all — those live on the ruleset itself, so follow the `ruleset_id` that the pull-request rule already carries and read `/repos/{owner}/{repo}/rulesets/{id}`, where an application appears in `bypass_actors` with `actor_type: "Integration"`. The ruleset path costs that second read and the classic path does not, and a run that skips it finds no bypass field, reads the absence as nobody, and reports the gate satisfied on a branch that hands a role the key. Read both when both govern the branch.
+So read the bypass list as part of reading the gate — and where it lives depends on which mechanism is in force. Classic protection hands it back on the read you have already made: `bypass_pull_request_allowances.apps`, nested inside `required_pull_request_reviews` beside the count and the settings that bear on it. A ruleset does not. Asking the host which rules apply to the branch answers the count and the settings beside it and carries no bypass actors at all — those live on the ruleset itself, so follow the `ruleset_id` that the pull-request rule already carries and read `/repos/{owner}/{repo}/rulesets/{id}`, where an application appears in `bypass_actors` with `actor_type: "Integration"`. The ruleset path costs that second read and the classic path does not, and a run that skips it finds no bypass field, reads the absence as nobody, and reports the gate satisfied on a branch that hands a role the key. Read both when both govern the branch.
 
-**One of the three roles on a bypass list means the gate is not satisfied**, however correct the count is. Report it the way you report a branch carrying one of the two forbidden settings: say what you found, present removing that actor as part of the change you propose, and apply nothing until the user agrees. This is worse than either of those settings rather than comparable — they make the gate unsatisfiable, which at least stops a pipeline visibly, while a bypassing role leaves every check reading green and the requirement inert.
+**One of the three roles on a bypass list means the gate is not satisfied**, however correct the count is. Report it the way you report a branch that raises the effective requirement above the bound: say what you found, present removing that actor as part of the change you propose, and apply nothing until the user agrees. This is worse than any of those settings rather than comparable — they make the gate unsatisfiable, which at least stops a pipeline visibly, while a bypassing role leaves every check reading green and the requirement inert.
 
 A team that adds its bot to the bypass list is not doing anything strange: it is what you do the first time your own protection blocks your automation, and it is a checkbox in the ruleset's UI. Expect to find it.
 
@@ -216,7 +250,7 @@ A team that adds its bot to the bypass list is not doing anything strange: it is
 
 ### Changing it is the user's call, every time
 
-Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review, carries neither of the two settings above, and lists none of the three roles as a bypass actor, say so and change nothing. All three have to hold: the count alone is the condition that looks sufficient and is not.
+Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review, carries nothing that raises the effective requirement above one approval from a non-author, and lists none of the three roles as a bypass actor, say so and change nothing. All three have to hold: the count alone is the condition that looks sufficient and is not. A setting you had to report as undetermined leaves the gate unsatisfied for this purpose — it is not one of the three holding. A setting settled by the recorded observation above is not that, and does not hold the gate open.
 
 If it does not, present the **exact** change you would make — the settings and the values, not "tighten the branch protection" — and apply it only after the user explicitly agrees. A merge policy governs a repository jen does not own; the user may have reasons you cannot see, and a silent tightening is an intrusion whichever way it turns out.
 
