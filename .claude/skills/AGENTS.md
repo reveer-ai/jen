@@ -49,3 +49,19 @@ endpoint was never reachable this way at all. It also matters that the org listi
 *everything* installed — `reveer-ai` carries five, of which two are not pipeline roles —
 so matching by `app_id` is the difference between verifying a role and verifying whatever
 was installed next to it.
+
+The same listing is also the decoder ring for a ruleset's **bypass actors**, which is the
+other place a bare integer has to be turned into a role. `bypass_actors` carries `actor_id`
+and `actor_type` and no name, so an application on a bypass list is indistinguishable from
+`dev` at the moment binding has to judge it. The listing resolves it — and because each row
+carries *both* `app_id` and the installation `id`, matching an actor against both fields
+attributes it without anyone having to establish which of the two spaces a ruleset reports
+in. That question is deliberately left open rather than answered; see ENG-175.
+
+It is left open because **jen's own `primary` ruleset carries no `Integration` bypass
+actor** — one human, and nothing else — so this repository cannot exercise the path its own
+skill now instructs. Nothing here has been observed against a real application on a bypass
+list, and nothing in the gate section should be read as though it had. Settling it would
+mean adding an application to the live ruleset that gates every task in this repository,
+reading it back, and removing it; if a future task genuinely needs the answer, make that
+observation on a scratch repository with its own ruleset instead.

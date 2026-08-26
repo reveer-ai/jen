@@ -30,6 +30,22 @@ const breachInstruction = gate.slice(
   gate.indexOf('### Where you cannot establish'),
 );
 
+// The bypass subsection, sliced for the same reason: its claims are about who may step
+// around the gate, and a match anywhere in `gate` would let an assertion pass on the
+// approving-review prose two subsections up.
+const bypass = gate.slice(
+  gate.indexOf('### Read who is allowed to bypass it'),
+  gate.indexOf("### Changing it is the user's call"),
+);
+
+// The paragraph a run acts on when it decides whether to change anything. It is reached
+// after the subsection above and states the satisfied case as three conditions holding, so
+// it is where an attribution rule stated correctly upstream gets quietly undone.
+const decision = gate.slice(
+  gate.indexOf("### Changing it is the user's call"),
+  gate.indexOf('If it does not, present the'),
+);
+
 describe('the gate requirement', () => {
   // The defect this change exists to fix. An enumeration of another party's settings is
   // correct when written and silently incomplete afterward — every later reading stays
@@ -170,6 +186,128 @@ describe('the recorded observation the section ships', () => {
   // the same promotion of evidence into assumption, one level out.
   it('does not transfer to a different git host', () => {
     expect(observed, 'a different host is a different implementation').toMatch(/different git host is a different implementation/i);
+  });
+});
+
+describe('attributing a bypass actor', () => {
+  // Why the step exists at all. A ruleset hands back an identifier and a type, and the type
+  // says only that the actor is *an* application — so a run that judges on the type is
+  // deciding the question on the one field that cannot answer it. A reader who loses this
+  // reads everything below as defensive ceremony and simplifies it away.
+  it('says the actor arrives unnamed, so its type cannot decide it', () => {
+    expect(bypass, 'the entry carries an identifier and no name').toMatch(/and nothing more/i);
+    expect(bypass, 'the type says an application, never which one').toMatch(/never tells you \*which\*/i);
+    expect(bypass, 'so the type alone never settles it').toMatch(/never settle it on `actor_type` alone/i);
+  });
+
+  // Both misreadings are named because they fail in opposite directions and only one of
+  // them is visible: too strict stops the pipeline where someone can see it, too loose
+  // leaves every check green over a requirement that no longer binds.
+  it('names both misreadings and which one is graver', () => {
+    expect(bypass, 'reading every Integration as a role is an intrusion').toMatch(
+      /never a hazard/i,
+    );
+    expect(bypass, 'reading none of them as a role hands a role the key').toMatch(
+      /reports the gate \*\*satisfied\*\* on a branch that hands a role the key/i,
+    );
+    expect(bypass, 'and the silent one is the graver').toMatch(/the graver one/i);
+  });
+
+  // The resolution itself. Both identifier fields are load-bearing: the ruleset's identifier
+  // space is not established here, and matching one field is an assumption that fails in the
+  // direction nothing catches. The reason has to travel with the instruction, because
+  // without it the two-field match reads as redundancy and gets collapsed.
+  it('resolves through the org listing on both identifier fields, with the reason attached', () => {
+    expect(bypass, 'the endpoint that answers a session').toMatch(/\/orgs\/\{org\}\/installations/);
+    expect(bypass, 'matched against both fields, not one').toMatch(
+      /\*\*both\*\*[^.]{0,60}`app_id`[^.]{0,60}installation `id`/i,
+    );
+    expect(bypass, 'then compared against the roles the registry records').toMatch(/registry\.yaml/);
+    expect(bypass, 'why both: the identifier space is unverified').toMatch(/not established here/i);
+    expect(bypass, 'and why one field is the regression, not a tidy-up').toMatch(
+      /unverified assumption in the direction that fails silently/i,
+    );
+  });
+
+  // Three answers, not two. Collapsing them is the likely drift and the direction matters,
+  // which is why the next two tests split the third answer out from this one.
+  it('keeps all three answers, and names the application that is not a role', () => {
+    expect(bypass, 'three answers are stated as three').toMatch(/three answers/i);
+    expect(bypass, 'resolves to a role').toMatch(/It resolves to a role/);
+    expect(bypass, 'resolves to something that is no role').toMatch(/no role records/i);
+    expect(bypass, 'resolves to nothing').toMatch(/It resolves to nothing/);
+    // The report the task is named for. Silence here is merely unhelpful rather than
+    // dangerous, which is exactly why a later editor drops it as noise.
+    expect(bypass, 'a non-role bypass is named, not passed over').toMatch(/name it anyway/i);
+    expect(bypass, 'and why naming it is the whole point').toMatch(/is a different report from/i);
+  });
+
+  // Two assertions rather than one. A test that checked only the gate outcome would pass on
+  // wording that reports the actor as harmless and withholds the gate for some other reason
+  // — and reporting an unattributed actor as not-a-role is the specific misreading this
+  // change exists to remove.
+  it('does not let an unattributed actor leave the gate satisfied, or read as not-a-role', () => {
+    expect(bypass, 'unattributed is the report').toMatch(/\*\*unattributed\*\*/i);
+    expect(bypass, 'and it names the identifier it could not resolve').toMatch(
+      /name the identifier you could not resolve/i,
+    );
+    expect(bypass, 'the gate does not stay satisfied while one stands').toMatch(
+      /do not report the gate as satisfied while one stands/i,
+    );
+    expect(bypass, 'and not-a-role is called out as the unsafe default').toMatch(
+      /not-a-role is the unsafe default/i,
+    );
+  });
+
+  // The scoping that stops the rule from blocking every first binding. Without it the strict
+  // reading — never report the gate satisfied without resolving the list — withholds the
+  // gate on repositories whose list poses no question at all, which is most of them.
+  it('owes an attribution only where the list carries an application', () => {
+    expect(bypass, 'the obligation is scoped to a list with an application on it').toMatch(
+      /only where the list actually carries an application/i,
+    );
+    expect(bypass, 'a human-only or empty list has nothing to attribute').toMatch(
+      /carrying only humans, has nothing to attribute/i,
+    );
+    expect(bypass, 'so an unreadable listing does not withhold the gate there').toMatch(
+      /changes nothing about the report/i,
+    );
+    expect(bypass, 'never withhold over a resolution that was not needed').toMatch(
+      /never needed to make/i,
+    );
+  });
+
+  // The exemption, with its reason. Instructing a resolution here would add a host call whose
+  // answer binding already holds, and would read as though the name on the object were not
+  // to be trusted.
+  it('exempts the classic path because it hands back a name already', () => {
+    expect(bypass, 'the classic path needs no attribution').toMatch(/classic path needs none of this/i);
+    expect(bypass, 'because the objects carry a slug').toMatch(/`slug` beside `id`/);
+    expect(bypass, 'so it is judged on that name with no second resolution').toMatch(
+      /no second resolution/i,
+    );
+  });
+
+  // Without this the subsection above is contradicted three paragraphs down: the satisfied
+  // case reads "lists none of the three roles as a bypass actor", which a run reaches by
+  // never resolving anything. An unattributed actor has to hold the gate here too, or the
+  // attribution rule is stated in one place and spent in another.
+  it('does not let the decision paragraph reach not-a-role without attributing', () => {
+    expect(decision, 'an unattributed actor holds the gate open here too').toMatch(
+      /bypass actor you could not attribute/i,
+    );
+    expect(decision, 'and none-of-the-three is a conclusion, not a default').toMatch(
+      /only reached once every application on the list resolved to something/i,
+    );
+  });
+
+  // The human bypass predates this change and has to survive it: the rule turns on the actor
+  // being a human, so there is no "which human" to resolve and nothing to attribute.
+  it('leaves the human bypass needing no attribution', () => {
+    expect(bypass, 'a human bypass stays put').toMatch(/leave it exactly where it is/i);
+    expect(bypass, 'and is judged on being a human, not on which human').toMatch(
+      /not on which human/i,
+    );
   });
 });
 
