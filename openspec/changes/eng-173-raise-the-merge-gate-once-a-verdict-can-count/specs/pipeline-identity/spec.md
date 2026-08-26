@@ -15,7 +15,7 @@ Four are known to breach it:
 - **Requiring an extra approval for a pull request the host treats as unattributed.** It raises the effective count to one more than configured wherever it applies, and the pipeline's pull requests are opened by an application acting as itself rather than on behalf of a person. It SHALL be off wherever it applies to the pipeline's own pull requests.
 - **Naming required reviewers by team.** An application cannot join a team, so every pipeline role sits outside a team-scoped requirement.
 
-Whether a given setting applies to the pipeline's own pull requests SHALL be established by observing a pull request the pipeline opened, not by reading the host's documentation for it. A setting documented for the host's own assistant may be implemented against any application acting as itself, and a setting that has no effect at an approving-review count of zero leaves no evidence on a repository that has never raised the count — so the reading and the behaviour can differ with nothing on the repository to show it.
+Whether a given setting applies to the pipeline's own pull requests SHALL be established by observing a pull request the pipeline opened, not by reading the host's documentation for it. An observation already made and recorded SHALL establish it on the same terms as one made afresh, provided it is carried with the host, date, and vehicle it was made against and cited rather than restated as a conclusion — what ages is the implementation, not the record of it, and a citation lets a reader weigh whether it still holds where a bare conclusion cannot be told from an assumption. A setting documented for the host's own assistant may be implemented against any application acting as itself, and a setting that has no effect at an approving-review count of zero leaves no evidence on a repository that has never raised the count — so the reading and the behaviour can differ with nothing on the repository to show it.
 
 The requirement excludes the pull request's author, which the git host enforces on its own. It does not exclude any other role, and the host offers no setting that would: its exclusions are subtractive and cannot name an approver. Which role approves is therefore governed by the requirement below rather than by the branch.
 
@@ -57,3 +57,9 @@ No role SHALL be permitted to bypass the requirement. A human MAY retain a bypas
 - **WHEN** a setting's documentation scopes it to the host's own assistant and the setting is live on the branch
 - **THEN** that documentation alone does not establish that it leaves the pipeline's pull requests alone
 - **AND** what establishes it is a pull request the pipeline opened passing the gate on one approval
+
+#### Scenario: A recorded observation stands in for one a project cannot yet make
+
+- **WHEN** a project has never opened a pipeline pull request and a recorded observation covers the setting on the same host
+- **THEN** that observation establishes the setting's reach
+- **AND** it is cited with its provenance rather than restated as a conclusion about the setting

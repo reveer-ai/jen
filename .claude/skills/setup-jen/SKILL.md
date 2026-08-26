@@ -200,6 +200,24 @@ So when you meet a setting that bears on the approving-review requirement and yo
 
 What settles it is observation rather than reading — a pull request the pipeline itself opened, passing the gate on one approval. Where the user wants it settled, that is what to tell them it takes. Reporting a gate satisfied on a branch where delivery cannot merge is the one failure the pipeline cannot see from the inside: every check reads green, every task parks, and nothing in the output names why.
 
+### One observation is already recorded, and it is why a first binding is not stuck
+
+Undetermined has no exit on its own. The unattributed-changes setting is on by default, its reach cannot be read off the API, and what settles it is a pull request the pipeline itself opened — which a project *being bound* has never had, binding being the prerequisite for having one. On the rule above alone, every adopter's first run reports the gate unsatisfied and the project not ready, with no move available that changes it.
+
+So the observation is recorded here rather than left for each adopter to buy:
+
+> **GitHub, 25 August 2026.** On `reveer-ai/jen`, with `require_extra_approval_for_unattributed_changes` left `true` on the ruleset governing the default branch and the approving-review count raised from `0` to `1`, a pull request authored by `app/reveer-release` — an application acting as itself rather than on behalf of a person — went from `reviewDecision: REVIEW_REQUIRED` / `mergeStateStatus: BLOCKED` at zero approvals to `APPROVED` / `CLEAN` on **one** approving review. The setting is scoped as GitHub documents it and did not reach an application's pull request, on that host, on that date.
+
+**Cite it; never restate it as a conclusion.** "That setting is fine" is exactly the assumption this section exists to refuse, and a conclusion cannot be told from an assumption once it is separated from what produced it. What carries is the observation with its host, its date, its vehicle, and the repository state it was made against, so the user can weigh whether it still holds. Documentation is evidence about a setting; an observation is evidence about an implementation at a moment — and the host calls this feature preview and subject to change.
+
+That gives the report three shapes rather than two, and which one applies turns on whether an observation covers the setting in front of you:
+
+- **Settled by observation.** The setting matches one recorded above — same host, same behaviour under test. Report it settled, quote the date, and say that the project's own first pipeline pull request re-settles it against their repository if they want it established there rather than borrowed from jen's. This does not hold the gate unsatisfied.
+- **Undetermined.** A setting bearing on the requirement with no observation behind it — one the host has added since, or one whose behaviour differs from anything recorded here. This is the case the rule above is written for, and it does hold the gate unsatisfied.
+- **Breaching.** Its reach is established and it raises the effective requirement above the bound. Report it as the section before this one says.
+
+A different git host is a different implementation, and nothing recorded here transfers to one.
+
 ### The branch cannot be asked to name *which* role approves
 
 The bound is one approval from a non-author, and it is not one approval from a *particular* non-author. The host's exclusions are subtractive — they take the author, and optionally the last pusher, out of the eligible set — and never name an approver; the one setting that comes close names teams, which is why it appears above as a breach rather than as an option. So there is no configuration in which the reviewing role is the one that has to approve, and nothing here to check for it: what you are verifying is one approval from anyone with write access.
@@ -230,7 +248,7 @@ A team that adds its bot to the bypass list is not doing anything strange: it is
 
 ### Changing it is the user's call, every time
 
-Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review, carries nothing that raises the effective requirement above one approval from a non-author, and lists none of the three roles as a bypass actor, say so and change nothing. All three have to hold: the count alone is the condition that looks sufficient and is not. A setting you had to report as undetermined leaves the gate unsatisfied for this purpose — it is not one of the three holding.
+Read the default branch's protection — both mechanisms — and report what you find. If it already requires an approving review, carries nothing that raises the effective requirement above one approval from a non-author, and lists none of the three roles as a bypass actor, say so and change nothing. All three have to hold: the count alone is the condition that looks sufficient and is not. A setting you had to report as undetermined leaves the gate unsatisfied for this purpose — it is not one of the three holding. A setting settled by the recorded observation above is not that, and does not hold the gate open.
 
 If it does not, present the **exact** change you would make — the settings and the values, not "tighten the branch protection" — and apply it only after the user explicitly agrees. A merge policy governs a repository jen does not own; the user may have reasons you cannot see, and a silent tightening is an intrusion whichever way it turns out.
 

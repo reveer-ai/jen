@@ -42,3 +42,14 @@ Evidence, not configuration. Each of these is a fact about a real pull request, 
 
 - [ ] 6.1 Comment on ENG-173 with the evidence from group 5 — which identity approved, that the requirement read satisfied, that it survived delivery's push — so the observation lives on the task rather than only in a pull request timeline that later work will not read.
 - [ ] 6.2 Note on ENG-136 that the gate is live, and that ENG-167 can now consume it as an acceptance criterion rather than as an assumption.
+
+## 7. What review sent back
+
+Added by `implement-task` after review requested changes, so the record of this change carries the work rather than only the pull request thread. One finding, and one carry-over review asked to stop being a thread.
+
+- [x] 7.1 The finding: `undetermined` had no exit for a project at binding time. The chain was entirely inside this change — the unattributed setting is on by default, its reach is unreadable, what settles it is a pull request the pipeline opened, and a project *being bound* has never had one — so every adopter's first run would report the gate unsatisfied with no move available. Closed by shipping the observation this task bought as a **cited observation** in `.claude/skills/setup-jen/SKILL.md` rather than by relaxing the rule: host, date, vehicle, and the repository state it was made against, with the instruction to cite it rather than restate it as a conclusion. Undetermined stays the report for a setting no observation covers.
+- [x] 7.2 Carry the same distinction into both spec deltas, so the skill and the specs do not go out of step: `project-binding` gains the settled-by-observation report beside `undetermined` and two scenarios; `pipeline-identity` gains that a recorded observation establishes a setting's reach on the same terms as a fresh one, provided it is cited with its provenance.
+- [x] 7.3 Examine the consequence in `design.md` — *Risks*, beside the release-approval consequence it was missing next to, and refine the *Binding reports "undetermined"* decision to agree with it.
+- [x] 7.4 Extend `test/merge-gate.test.ts` to hold the shipped observation to its provenance and to the three-shaped report, since both go quiet if the wording drifts back.
+- [x] 7.5 Note in `cli/AGENTS.md` that the observation now exists in two places and that they must be updated together.
+- [x] 7.6 File the bypass-attribution carry-over as its own task, which is what review asked for — it has survived two reviews and lived in four places, none of them a task. Not taken here: it changes what binding is instructed to read, `specs/project-binding/spec.md` is silent on attribution, and settling it in the skill alone would put the two out of step in the change that is tightening how they agree.

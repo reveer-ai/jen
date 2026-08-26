@@ -589,3 +589,12 @@ Two things to keep straight if this is re-derived. The vehicle has to be **appli
 one demonstrates nothing while looking exactly as though it had. And this observation is
 evidence about an application acting as itself, which is what the three pipeline roles are; it
 is not evidence about any other setting in the family, each of which needs its own vehicle.
+
+**This observation also ships**, in the gate section of `.claude/skills/setup-jen/SKILL.md`, and
+it has to: an adopter's project has never opened a pipeline pull request, so without it every
+first binding meets this setting, reports it undetermined, and reports the gate unsatisfied with
+no move available. The shipped copy is the observation with its provenance — host, date, vehicle,
+repository state — and the instruction to cite rather than conclude, which is what keeps it from
+ageing into an assumption. **Two copies, and they must not drift**: whatever re-derives or
+supersedes what is written here updates the skill in the same change, and `test/merge-gate.test.ts`
+holds the shipped one to carrying its date and its vehicle.
