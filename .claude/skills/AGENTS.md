@@ -68,3 +68,20 @@ list, and nothing in the gate section should be read as though it had. Settling 
 mean adding an application to the live ruleset that gates every task in this repository,
 reading it back, and removing it; if a future task genuinely needs the answer, make that
 observation on a scratch repository with its own ruleset instead.
+
+Do not collapse the two-field match on the strength of the documentation. GitHub's own REST
+reference says only that `actor_id` is "the ID of the actor that can bypass a ruleset,
+required for Integration, RepositoryRole, Team, and User actor types" — it never says which
+id an `Integration` carries, so a session that goes looking for the answer before
+simplifying will find nothing and is left guessing. The question is unestablished at the
+vendor, not merely unresearched here, which is what makes matching both fields the answer
+rather than belt-and-braces.
+
+What *has* been exercised, against the real `reveer-ai` listing, is the match itself: every
+one of the five installations resolves to the right role — or to the right not-a-role — when
+its `app_id` is fed in as the actor, and again when its installation `id` is, while an id in
+neither space reports unattributed. So the instruction gives the correct answer whichever
+space a ruleset turns out to report in, and the collision that Decision 2 accepted as its
+trade-off does not arise here: the two spaces sit two orders of magnitude apart, `app_id` in
+the millions and installation `id` in the hundreds of millions. That is short of observing a
+real `Integration` actor, and no ruleset in the organization carries one to observe.
