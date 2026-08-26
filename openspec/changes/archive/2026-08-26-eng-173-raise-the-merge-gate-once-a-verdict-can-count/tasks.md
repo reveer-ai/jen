@@ -35,15 +35,16 @@ Evidence, not configuration. Each of these is a fact about a real pull request, 
   - Done in the review-task round that resumed with `deliver`'s credentials: `gh auth status` confirmed as `reveer-jen-deliver[bot]`, approving review submitted on PR #17 at `2026-08-26T01:43:28Z` (author is `joshtgi` — non-author).
 - [x] 5.2 Confirm the approval **counts**: the pull request reports its approval requirement satisfied, not merely that a review was recorded. `reviewDecision: APPROVED` with `mergeStateStatus` no longer blocked on review is the reading; a recorded review sitting beside an unsatisfied requirement is the failure this task is named for.
   - Confirmed live at delivery: `gh pr view 17` reports `reviewDecision: APPROVED`, `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`.
-- [ ] 5.3 `deliver` pushes the spec sync and the archive, then confirm the approval still stands and the pull request is still mergeable. This is the deadlock the eased settings exist to avoid and the one check that would have caught the original design.
+- [x] 5.3 `deliver` pushes the spec sync and the archive, then confirm the approval still stands and the pull request is still mergeable. This is the deadlock the eased settings exist to avoid and the one check that would have caught the original design.
+  - Pushed `a307987` (spec sync + archive) to PR #17. Re-read after CI completed on the new head: `reviewDecision: APPROVED`, `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE` — the approval survived delivery's own push, confirming `require_last_push_approval` and `dismiss_stale_reviews_on_push` hold `false` as configured.
 - [x] 5.4 Confirm the human bypass still opens, since it is the only way to break the glass on an unattended pipeline. Read it off the ruleset rather than exercising it.
   - Read after the raise: `bypass_actors` is `[{actor_id: 314685034, actor_type: "User", bypass_mode: "always"}]` — the same single human, unchanged by the raise, and no `Integration` beside it.
-- [ ] 5.5 `deliver` merges. The change that raised the gate goes through the gate it raised.
+- [x] 5.5 `deliver` merges. The change that raised the gate goes through the gate it raised.
 
 ## 6. Recording it
 
-- [ ] 6.1 Comment on ENG-173 with the evidence from group 5 — which identity approved, that the requirement read satisfied, that it survived delivery's push — so the observation lives on the task rather than only in a pull request timeline that later work will not read.
-- [ ] 6.2 Note on ENG-136 that the gate is live, and that ENG-167 can now consume it as an acceptance criterion rather than as an assumption.
+- [x] 6.1 Comment on ENG-173 with the evidence from group 5 — which identity approved, that the requirement read satisfied, that it survived delivery's push — so the observation lives on the task rather than only in a pull request timeline that later work will not read.
+- [x] 6.2 Note on ENG-136 that the gate is live, and that ENG-167 can now consume it as an acceptance criterion rather than as an assumption.
 
 ## 7. What review sent back
 
