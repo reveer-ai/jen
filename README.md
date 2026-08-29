@@ -95,7 +95,33 @@ The tracker's own tools are granted where the pipeline is invoked rather than he
 
 **This is a file you have to edit by hand, including on a project installed before this guidance existed.** `.claude/settings.json` is yours from the moment it exists — `jen update` never rewrites it, so no version you take will add these for you, and a project that predates this section will keep whatever list it was given until you change it.
 
-### 5. Take a later version
+### 5. Give the stages the configuration your commands read
+
+The permissions above settle what a session is *allowed* to run. This settles what those commands can *read*.
+
+**All of this is the local runner's today.** `jen watch` reads the environment of whatever shell you started it in, so what you export is what a session is offered. The scheduled runner cannot carry your variables at all: GitHub Actions secrets are not ambient, `jen run` is handed a closed list of names in `.github/workflows/jen.yml`, and a secret you store as `DATABASE_URL` never enters the job — so it is not withheld from a session, it was never on the runner. Adding a name to that block is not the way round it either; the file is jen's, and `jen update` rewrites it. Giving the scheduled runner a way to carry your own configuration is its own piece of work, and nothing in this section changes when it lands — a session's environment is scoped the same way however the runner's came to be filled. Until then, a project whose commands need configuration jen does not supply wants `jen watch`; *Running the pipeline* below is where the two are set against each other.
+
+**Everything you set on the runner reaches every stage's session**, under the same names you set it under. A suite that connects to `DATABASE_URL` finds `DATABASE_URL`; an integration test that reads `API_BASE_URL` finds that. This is deliberate rather than incidental: jen has no way to enumerate what your toolchain reads — `NODE_OPTIONS`, `CARGO_HOME`, `VIRTUAL_ENV`, a proxy setting, your own variables — and a list of the ones it could think of would be wrong in a way that surfaces as a stage failing at the first command that needed the name jen left out, mid-run, with nobody watching.
+
+**jen's own `JEN_*` namespace is the exception, and never reaches a session.** The nine role credentials are inside it, so the passthrough does not expose them: a session acts through a token minted for its own role, and cannot read the keys the runner holds for the other two.
+
+#### Narrowing a variable to one stage
+
+Some things should not reach every stage. A credential to a live environment belongs to the stage that tests, and not to the stage that merges. Name the variables that stage may have:
+
+```
+JEN_ENV_TEST_TASK=STAGING_SSH_KEY,SMOKE_TARGET
+```
+
+**The value is a list of variable *names*, not values.** `STAGING_SSH_KEY` and `SMOKE_TARGET` keep their own names and their own values, set on the runner as anything else is; this says only who may see them. Your secret stays written down in one place.
+
+Both named variables now reach `test-task` and no other stage. The variable is named after the skill — `JEN_ENV_DESIGN_TASK`, `JEN_ENV_IMPLEMENT_TASK`, `JEN_ENV_REVIEW_TASK`, `JEN_ENV_TEST_TASK`, `JEN_ENV_DELIVER_TASK` — under the same rule as the credentials above, upper-cased with `-` written `_`. Declare nothing and nothing changes: an unnamed variable reaches every stage, as it does today.
+
+**The narrowing is by stage, not by role.** Reviewing, testing, and delivering all act under the one `deliver` role, so nothing about the roles keeps `test-task`'s variable from `deliver-task` — the declaration is what does, and it is why this keys on the stage. A name you list under two stages reaches both.
+
+A declaration that turns out to scope nothing — a stage name misspelt, or a variable the runner never held — is reported in the run's output and does not fail it. Nothing was withheld from anyone, so there is nothing to stop the pipeline over; the note is there because a restriction you believe is in force and is not is worth knowing about.
+
+### 6. Take a later version
 
 ```bash
 npm i -D @reveer/jen@latest && npx jen update

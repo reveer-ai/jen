@@ -231,7 +231,11 @@ const env = process.env;
 writeFileSync(env.STUB_RECORD, JSON.stringify({
   argv: process.argv.slice(2),
   cwd: process.cwd(),
-  env: Object.fromEntries(Object.entries(env).filter(([k]) => k.startsWith('JEN') || k.startsWith('GH') || k.startsWith('GITHUB') || k.startsWith('GIT_') || k === 'CLAUDE_CONFIG_DIR' || k === 'LINEAR_API_KEY' || k === 'ANTHROPIC_API_KEY')),
+  // Recorded whole rather than filtered to the names jen sets. What a session inherits is
+  // itself under test now — a project's own variable arrives under the project's own name,
+  // which no filter written in terms of jen's names could ever see. The executor hands this
+  // stub a closed environment, so "whole" is the small set the test built.
+  env,
 }));
 if (env.STUB_STDERR) process.stderr.write(env.STUB_STDERR + '\\n');
 for (const line of JSON.parse(env.STUB_EVENTS ?? '[]')) process.stdout.write(JSON.stringify(line) + '\\n');
@@ -258,6 +262,12 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
       JEN_GH_INSTALLATION_DEV: '153578694',
       JEN_GH_PRIVATE_KEY_DEV: 'unused — the host is stubbed',
       JEN_GH_PRIVATE_KEY_DESIGN: 'another role’s key, which the session must not receive',
+      // The `deliver` trio, so a request naming that role can resolve its credentials. Three
+      // stages act under it, which is what makes it the role the stage-keyed scoping is
+      // tested against — a rule reading the role could not tell them apart.
+      JEN_GH_APP_ID_DELIVER: '4588653',
+      JEN_GH_INSTALLATION_DELIVER: '153578696',
+      JEN_GH_PRIVATE_KEY_DELIVER: 'a third role’s key, equally not the session’s',
       LINEAR_API_KEY: 'lin_api_recorded',
       ANTHROPIC_API_KEY: 'sk-ant-recorded',
       STUB_RECORD: record,
@@ -368,17 +378,30 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
   it('places and tracks a resumed branch when the operator disables git’s branch defaults', async () => {
     const config = join(scratch, 'hostile-gitconfig');
     writeFileSync(config, '[checkout]\n\tguess = false\n[branch]\n\tautoSetupMerge = false\n');
+    // Only the git spawns are arranged against; the session spawn goes through untouched.
+    // Layering `process.env` under it would put the host's real environment back beneath the
+    // closed one `childEnvironment` built — re-adding the very `JEN_*` keys the strip leaves
+    // out rather than sets undefined, and, now that the stub records its environment whole,
+    // writing the runner's secrets to `record.json`. That would be a spawner quietly
+    // defeating the invariant this file exists to test.
     const hostile: Spawner = (spec) =>
-      spawner({ ...spec, env: { ...process.env, ...spec.env, GIT_CONFIG_GLOBAL: config } });
+      spec.command === 'git'
+        ? spawner({ ...spec, env: { ...process.env, ...spec.env, GIT_CONFIG_GLOBAL: config } })
+        : spawner(spec);
 
     rmSync(record, { force: true });
     const outcome = await build({}, true, { spawn: hostile }).launch({ ...REQUEST, branch: 'eng-2-designed' });
     expect(outcome.ok).toBe(true);
-    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string; env: Record<string, string> };
     expect(git(['branch', '--show-current'], invoked.cwd)).toBe('eng-2-designed');
     expect(git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], invoked.cwd)).toBe(
       'origin/eng-2-designed',
     );
+    // The session still received the closed environment, not the host's: no `PATH` from the
+    // parent, and no `JEN_*` the host may hold — on a runner carrying the pipeline's own
+    // secrets, that second one is another role's private key.
+    expect(invoked.env.PATH).toBeUndefined();
+    expect(Object.keys(invoked.env).filter((key) => key.startsWith('JEN_'))).toEqual([]);
     rmSync(join(invoked.cwd, '..'), { recursive: true, force: true });
   });
 
@@ -455,6 +478,133 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(invoked!.env.LINEAR_API_KEY).toBe('lin_api_recorded');
     expect(Object.keys(invoked!.env).filter((key) => key.startsWith('JEN_GH_'))).toEqual([]);
     expect(JSON.stringify(invoked!.env)).not.toContain('another role’s key');
+  });
+
+  /**
+   * What a session inherits, and the lever that narrows it.
+   *
+   * The passthrough is the mechanism `stage-execution` requires and the code has always had:
+   * a project's checks read configuration jen cannot enumerate, so the runner's environment
+   * arrives with the commands that read it. What is new is that a name can be spoken for.
+   */
+  describe('the environment a session inherits', () => {
+    const DELIVER: RunRequest = { task: 'ENG-1', skill: 'deliver-task', role: 'deliver', branch: 'eng-1-a-task' };
+    const TEST: RunRequest = { task: 'ENG-1', skill: 'test-task', role: 'deliver', branch: 'eng-1-a-task' };
+    const project = { DATABASE_URL: 'postgres://localhost/test', SMOKE_TARGET: 'https://staging.example' };
+
+    it('hands a session the variables the operator set on the runner, under their own names', async () => {
+      const { invoked } = await launched(REQUEST, project);
+
+      expect(invoked!.env.DATABASE_URL).toBe('postgres://localhost/test');
+      expect(invoked!.env.SMOKE_TARGET).toBe('https://staging.example');
+    });
+
+    // Wider than the `JEN_GH_` strip the role requirement needs, and exhaustive for the same
+    // reason it is safe: jen defines what is in its namespace, so a prefix test over it has
+    // no unnamed member to miss. The runner's own configuration is in there and nothing
+    // inside a session reads it.
+    it('withholds every variable in jen’s namespace, not only the role credentials', async () => {
+      const { invoked } = await launched(REQUEST, { JEN_TEAM: 'eng', JEN_PROJECT: 'jen' });
+
+      expect(Object.keys(invoked!.env).filter((key) => key.startsWith('JEN_'))).toEqual([]);
+      expect(invoked!.env.JEN_REPO).toBeUndefined();
+    });
+
+    it('gives a declared variable to the stage it is declared for', async () => {
+      const { outcome, invoked } = await launched(TEST, { ...project, JEN_ENV_TEST_TASK: 'SMOKE_TARGET' });
+
+      expect(invoked!.env.SMOKE_TARGET).toBe('https://staging.example');
+      // Undeclared, so it is nobody's and reaches everyone.
+      expect(invoked!.env.DATABASE_URL).toBe('postgres://localhost/test');
+      expect(outcome.notes).toEqual([]);
+    });
+
+    /**
+     * The case a role-keyed rule gets wrong, and the reason this keys on the stage.
+     *
+     * Reviewing, testing, and delivering all act as `deliver`, so an arrangement reading the
+     * role would hand the stage that merges exactly what was meant for the stage that tests.
+     * Both requests below name that same role deliberately.
+     */
+    it('keeps a declared variable from every other stage, including one sharing its role', async () => {
+      const declared = { ...project, JEN_ENV_TEST_TASK: 'SMOKE_TARGET' };
+
+      const delivering = await launched(DELIVER, declared);
+      expect(delivering.invoked!.env.SMOKE_TARGET).toBeUndefined();
+      expect(delivering.invoked!.env.DATABASE_URL).toBe('postgres://localhost/test');
+
+      const implementing = await launched(REQUEST, declared);
+      expect(implementing.invoked!.env.SMOKE_TARGET).toBeUndefined();
+    });
+
+    // Falls out of set membership rather than needing a rule: the name is in two `mine` sets.
+    it('gives a name two stages declared to both of them', async () => {
+      const both = { ...project, JEN_ENV_TEST_TASK: 'SMOKE_TARGET', JEN_ENV_DELIVER_TASK: 'SMOKE_TARGET' };
+
+      expect((await launched(TEST, both)).invoked!.env.SMOKE_TARGET).toBe('https://staging.example');
+      expect((await launched(DELIVER, both)).invoked!.env.SMOKE_TARGET).toBe('https://staging.example');
+      expect((await launched(REQUEST, both)).invoked!.env.SMOKE_TARGET).toBeUndefined();
+    });
+
+    /**
+     * The misspelling that would otherwise be the worst outcome in the change.
+     *
+     * `JEN_ENV_TEST` reads as a declaration for a stage no request runs. Parsed rather than
+     * discarded, its names would be claimed by nobody and withheld from *everybody* — a
+     * variable the operator meant to narrow would vanish everywhere, silently. So it fails
+     * open, which is only defensible because the run says so by name.
+     */
+    it('reports a declaration naming no stage, and withholds nothing for it', async () => {
+      const { outcome, invoked } = await launched(TEST, { ...project, JEN_ENV_TEST: 'SMOKE_TARGET' });
+
+      expect(invoked!.env.SMOKE_TARGET).toBe('https://staging.example');
+      expect((await launched(DELIVER, { ...project, JEN_ENV_TEST: 'SMOKE_TARGET' })).invoked!.env.SMOKE_TARGET).toBe(
+        'https://staging.example',
+      );
+      expect(outcome.ok).toBe(true);
+      expect(outcome.failures).toEqual([]);
+      expect(outcome.notes).toEqual([expect.stringContaining('JEN_ENV_TEST names no stage')]);
+      // Named beside the valid ones, since the whole value of the note is telling the
+      // operator what they should have written.
+      expect(outcome.notes[0]).toContain('JEN_ENV_TEST_TASK');
+    });
+
+    // Nothing is at risk and no stage is short of anything it would have had, so stopping a
+    // pipeline over it would be out of all proportion to a declaration that did nothing.
+    //
+    // The list is written `A, B` here rather than `A,B`, so the names reported back are also
+    // what says the entries were trimmed: an untrimmed ` SMOKE_TARGET` is a name that could
+    // never match a variable and would silently withhold nothing while claiming to.
+    it('reports a declared variable the runner does not hold, without failing the run', async () => {
+      const { outcome } = await launched(TEST, { JEN_ENV_TEST_TASK: 'STAGING_SSH_KEY, SMOKE_TARGET' });
+
+      expect(outcome.ok).toBe(true);
+      expect(outcome.failures).toEqual([]);
+      expect(outcome.notes).toEqual([
+        expect.stringContaining('JEN_ENV_TEST_TASK restricts STAGING_SSH_KEY, which the runner does not hold'),
+        expect.stringContaining('JEN_ENV_TEST_TASK restricts SMOKE_TARGET, which the runner does not hold'),
+      ]);
+    });
+
+    // The migration promise: an operator who declares nothing sees what they saw before,
+    // less three variables nothing inside a session ever read.
+    it('changes nothing for an operator who declares no restriction', async () => {
+      const { outcome, invoked } = await launched(REQUEST, project);
+
+      expect(outcome.notes).toEqual([]);
+      expect(invoked!.env.DATABASE_URL).toBe('postgres://localhost/test');
+      expect(invoked!.env.GH_TOKEN).toBe('ghs_recorded');
+      expect(invoked!.env.CLAUDE_CONFIG_DIR).toBeDefined();
+    });
+
+    // Assigned after the copy, so a declaration cannot reach them. An operator who names one
+    // has written something inert, which is why it earns no note.
+    it('lets jen’s own variables win over a declaration naming them', async () => {
+      const { invoked } = await launched(DELIVER, { JEN_ENV_TEST_TASK: 'GH_TOKEN,LINEAR_API_KEY' });
+
+      expect(invoked!.env.GH_TOKEN).toBe('ghs_recorded');
+      expect(invoked!.env.LINEAR_API_KEY).toBe('lin_api_recorded');
+    });
   });
 
   // The same rule as the tracker payload below, on the same host: an installation token

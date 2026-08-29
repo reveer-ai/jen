@@ -32,17 +32,56 @@ export class CredentialError extends Error {}
 export class GitHubError extends Error {}
 
 /**
- * The environment a run reads, for the single role its request names.
+ * The prefix of every variable jen defines for itself, and the whole of what makes
+ * withholding them from a session exhaustive rather than a guess.
+ *
+ * `stage-execution` requires that jen's own namespace not reach a session, and a prefix test
+ * satisfies it only because the namespace is *closed*: jen defines what is in it, {@link
+ * VARIABLES} below enumerates it, and there is therefore no unnamed member for the test to
+ * miss. The same technique over a namespace jen did not define would be a heuristic.
+ */
+export const NAMESPACE = 'JEN_';
+
+/**
+ * The prefix of a declaration restricting variables to one stage: `JEN_ENV_<STAGE>`.
+ *
+ * Within {@link NAMESPACE} deliberately, which is what keeps a declaration from reaching the
+ * sessions it governs. A stage reads every stage's declarations — including its own — out of
+ * the runner's environment, never out of its session's.
+ */
+export const STAGE_SCOPE = `${NAMESPACE}ENV_`;
+
+/**
+ * How a name is spelled into a variable: upper-cased, `-` to `_`.
+ *
+ * One function for the role tokens and the stage tokens both, so `JEN_GH_APP_ID_DEV` and
+ * `JEN_ENV_TEST_TASK` cannot drift apart in how they are derived. An operator who has learnt
+ * to read one has learnt the other, and that only stays true while a single rule produces
+ * both.
+ */
+function token(name: string): string {
+  return name.toUpperCase().replaceAll('-', '_');
+}
+
+/**
+ * The environment a run reads: the single role its request names, and the declarations
+ * scoping what its session inherits.
  *
  * `<ROLE>` is the role upper-cased: `DESIGN`, `DEV`, `DELIVER`. Only the named role's
  * variables are ever read — a run that reached for a second role's could hold two
  * identities, and `pipeline-identity` requires it hold exactly one.
+ *
+ * `<STAGE>` is the stage's skill under the same rule: `test-task` is `TEST_TASK`. Unlike the
+ * credentials, every stage's declaration is read by every run, because withholding a name
+ * from a stage means knowing that some *other* stage claimed it.
  */
 export const VARIABLES = {
-  repo: 'JEN_REPO',
-  appId: (role: Role) => `JEN_GH_APP_ID_${role.toUpperCase()}`,
-  installation: (role: Role) => `JEN_GH_INSTALLATION_${role.toUpperCase()}`,
-  privateKey: (role: Role) => `JEN_GH_PRIVATE_KEY_${role.toUpperCase()}`,
+  repo: `${NAMESPACE}REPO`,
+  appId: (role: Role) => `${NAMESPACE}GH_APP_ID_${token(role)}`,
+  installation: (role: Role) => `${NAMESPACE}GH_INSTALLATION_${token(role)}`,
+  privateKey: (role: Role) => `${NAMESPACE}GH_PRIVATE_KEY_${token(role)}`,
+  /** What an operator sets to restrict named variables to the stage running `skill`. */
+  stageScope: (skill: string) => `${STAGE_SCOPE}${token(skill)}`,
   tracker: 'LINEAR_API_KEY',
   model: 'ANTHROPIC_API_KEY',
 } as const;

@@ -187,7 +187,7 @@ async function jenWatch(
     options.launch ??
     (async (request) => {
       launched.push(request);
-      return { ok: true, failures: [], terminated: false, sessionStarted: true };
+      return { ok: true, failures: [], notes: [], terminated: false, sessionStarted: true };
     });
 
   const io: Io = { out: (line) => out.push(line), err: (line) => err.push(line) };
@@ -363,7 +363,7 @@ describe('where the local runner gets the project it polls', () => {
       env: ENV,
       cwd: root,
       transport: recorded.transport,
-      launch: async () => ({ ok: true, failures: [], terminated: false, sessionStarted: true }),
+      launch: async () => ({ ok: true, failures: [], notes: [], terminated: false, sessionStarted: true }),
       wait: async (ms) => {
         waits.push(ms);
         signalRunner();
@@ -417,7 +417,7 @@ describe('what the local runner holds', () => {
     await run(['watch', root], { out: () => {}, err: () => {} }, {
       env: ENV,
       transport: recorded.transport,
-      launch: async () => ({ ok: true, failures: [], terminated: false, sessionStarted: true }),
+      launch: async () => ({ ok: true, failures: [], notes: [], terminated: false, sessionStarted: true }),
       wait: async () => {
         counts.push(process.listenerCount('SIGTERM'));
         if (counts.length >= 3) signalRunner();
@@ -450,7 +450,7 @@ describe('what the local runner holds', () => {
       // reach when it is asked to stop.
       launch: async () => {
         signalRunner();
-        return { ok: false, failures: ['stopped'], terminated: true, sessionStarted: true };
+        return { ok: false, failures: ['stopped'], notes: [], terminated: true, sessionStarted: true };
       },
       wait: async () => {
         stopped = true;

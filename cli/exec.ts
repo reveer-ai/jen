@@ -23,7 +23,8 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { credentialsFor, GitHub, remoteUrl, type Credentials, type Environment } from './github.js';
+import { credentialsFor, GitHub, NAMESPACE, remoteUrl, STAGE_SCOPE, VARIABLES, type Credentials, type Environment } from './github.js';
+import { STAGES } from './stages.js';
 
 import type { RunRequest } from './run.js';
 import type { Role } from './stages.js';
@@ -62,6 +63,16 @@ export interface RunOutcome {
   ok: boolean;
   /** Every signal that said failure, in the order they were read. Empty when {@link ok}. */
   failures: string[];
+  /**
+   * What the run has to say that is not a failure. Empty where there is nothing.
+   *
+   * Deliberately a channel of its own rather than an entry in {@link failures}, because
+   * {@link ok} is derived from that array: a misconfiguration an operator should hear about
+   * would otherwise stop a pipeline, and the declarations that earn a note here are exactly
+   * the ones that changed nothing for any stage. Read on every branch of the report, since a
+   * run that succeeded can still have something to say.
+   */
+  notes: string[];
   /** `total_cost_usd`, where the session reported one. */
   cost?: number;
   sessionId?: string;
@@ -355,29 +366,107 @@ Username*) printf '%s' 'x-access-token' ;;
 esac
 `;
 
+/** What the operator declared about which variables belong to which stage. */
+interface Declarations {
+  /** Per declaration variable — `JEN_ENV_TEST_TASK` — the variable names it claims. */
+  byStage: Map<string, Set<string>>;
+  /** Declarations naming something that is not a stage, under the names they were written. */
+  unrecognized: string[];
+}
+
 /**
- * The child's environment: this run's role and nothing of another's.
+ * Every `JEN_ENV_<STAGE>` declaration the runner holds, read whole.
  *
- * Every `JEN_GH_*` variable is stripped rather than filtered down to the running role's.
- * `pipeline-identity` requires that a session cannot obtain another role's credentials, and
- * a session inherits whatever the runner's environment held — which on a runner configured
- * for all three roles is all three private keys. The session needs none of them: it acts
- * through the minted token, which is already scoped to its own installation and expires on
- * its own.
+ * *Every* stage's, not the running one's, and that is the part which reads like a bug until
+ * the withholding case is in mind: to hand `STAGING_SSH_KEY` to `test-task` a run needs
+ * `JEN_ENV_TEST_TASK`, but to keep it from `deliver-task` that run must read
+ * `JEN_ENV_TEST_TASK` too — otherwise it has no way to know the name was spoken for.
+ *
+ * A value is a list of variable *names*, never values: comma-separated, entries trimmed,
+ * empty entries dropped, so `A, B` and `A,B` are one declaration. Names are compared
+ * case-sensitively because POSIX environment variables are — folding case would claim `Path`
+ * where the operator wrote `PATH`, and withhold something they never named.
+ */
+function declarations(base: Environment): Declarations {
+  const known = new Set(STAGES.map((stage) => VARIABLES.stageScope(stage.skill)));
+  const byStage = new Map<string, Set<string>>();
+  const unrecognized: string[] = [];
+
+  for (const [key, value] of Object.entries(base)) {
+    if (!key.startsWith(STAGE_SCOPE)) continue;
+    // Discarded rather than parsed. `JEN_ENV_TEST` — the plausible misspelling — would
+    // otherwise claim its names for a stage no request ever runs, so they would be withheld
+    // from every stage and the variable would vanish everywhere. See the note it earns below.
+    if (!known.has(key)) {
+      unrecognized.push(key);
+      continue;
+    }
+    const names = byStage.get(key) ?? new Set<string>();
+    for (const name of (value ?? '').split(',')) {
+      const trimmed = name.trim();
+      if (trimmed !== '') names.add(trimmed);
+    }
+    byStage.set(key, names);
+  }
+
+  return { byStage, unrecognized };
+}
+
+/**
+ * The child's environment: what the project's own commands need, this run's role, and
+ * nothing of another's.
+ *
+ * Three things happen to the runner's environment on the way in.
+ *
+ * **It is inherited.** A project's checks read configuration jen cannot enumerate — the
+ * database a suite connects to, the endpoint an integration test reaches — and
+ * `stage-execution` requires those variables arrive with the commands that read them. The
+ * set is deliberately not inverted into an allow list of names jen can think of: no such
+ * list is complete for an arbitrary toolchain, and every name missed would surface as a
+ * stage failing at the first command that needed it, mid-run, with nobody watching.
+ *
+ * **Everything in jen's own namespace is stripped**, rather than the role credentials being
+ * filtered down to the running role's. `pipeline-identity` requires that a session cannot
+ * obtain another role's credentials, and a runner configured for all three roles holds all
+ * three private keys. The session needs none of them: it acts through the minted token,
+ * already scoped to its own installation and expiring on its own. Stripping the whole
+ * namespace rather than `JEN_GH_` alone also takes the runner's own configuration out, which
+ * nothing inside a session reads.
+ *
+ * **A name another stage claimed is withheld.** This is the lever the spec requires, and it
+ * keys on the stage rather than the role — reviewing, testing, and delivering all act as
+ * `deliver`, so a role-keyed rule would hand the stage that merges what was meant for the
+ * stage that tests. A name claimed by two stages reaches both, which falls out of set
+ * membership rather than needing a rule of its own.
+ *
+ * Notes come back beside the environment rather than being thrown or logged: a declaration
+ * that scoped nothing is worth telling the operator about and is not worth stopping a
+ * pipeline over, and {@link RunOutcome.notes} is the channel that can say so without failing
+ * the run the way a `failures` entry would.
  */
 function childEnvironment(
   base: Environment,
+  skill: string,
   credentials: Credentials,
   token: string,
   configDir: string,
   askpass: string,
-): NodeJS.ProcessEnv {
+): { env: NodeJS.ProcessEnv; notes: string[] } {
+  const { byStage, unrecognized } = declarations(base);
+  const mine = byStage.get(VARIABLES.stageScope(skill)) ?? new Set<string>();
+  const claimed = new Set([...byStage.values()].flatMap((names) => [...names]));
+
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(base)) {
-    if (key.startsWith('JEN_GH_')) continue;
+    if (key.startsWith(NAMESPACE)) continue;
+    if (claimed.has(key) && !mine.has(key)) continue;
     env[key] = value;
   }
 
+  // Assigned after the copy, so jen's own win over anything inherited and anything withheld.
+  // An operator who lists one of these in a declaration has written something inert, and that
+  // earns no note: the channel is for a declaration that changed something silently, and this
+  // one changes nothing at all.
   env.CLAUDE_CONFIG_DIR = configDir;
   env.ANTHROPIC_API_KEY = credentials.modelKey;
   env.LINEAR_API_KEY = credentials.trackerToken;
@@ -388,7 +477,37 @@ function childEnvironment(
   // clone it cannot push, since the remote URL deliberately carries no credential.
   env.GIT_ASKPASS = askpass;
   env.GIT_TERMINAL_PROMPT = '0';
-  return env;
+
+  return { env, notes: [...unrecognized.map(unknownStage), ...unheld(byStage, base)] };
+}
+
+/**
+ * A declaration naming a stage that does not exist.
+ *
+ * Fails open, and this is the one place in the scoping that does. Fail-closed reasoning says
+ * the operator was restricting a secret and ignoring their misspelling sends it everywhere —
+ * the outcome they were preventing. Against that: it sends it exactly where it goes today,
+ * so no protection that was ever in force is lost, while withholding it instead manufactures
+ * a variable missing at the moment a stage reaches for it, unattended, which is the failure
+ * the inheritance exists to refuse. The note is what makes that defensible rather than merely
+ * convenient — the operator is told, by name, that their declaration did nothing.
+ */
+function unknownStage(declaration: string): string {
+  const valid = STAGES.map((stage) => VARIABLES.stageScope(stage.skill)).join(', ');
+  return `${declaration} names no stage, so it scoped nothing and the variables it named reached every stage. The declarations jen reads are: ${valid}.`;
+}
+
+/** Declarations restricting a variable the runner does not hold, which withhold nothing. */
+function unheld(byStage: Map<string, Set<string>>, base: Environment): string[] {
+  const notes: string[] = [];
+  for (const [declaration, names] of byStage) {
+    for (const name of names) {
+      if (base[name] === undefined) {
+        notes.push(`${declaration} restricts ${name}, which the runner does not hold, so nothing was withheld by it.`);
+      }
+    }
+  }
+  return notes;
 }
 
 /** Anything a path can hold, from a value that arrived in a run request. */
@@ -448,6 +567,7 @@ export class Executor {
       transcript: '',
       ok: false,
       failures: [],
+      notes: [],
       terminated: false,
       sessionStarted: false,
     };
@@ -486,9 +606,9 @@ export class Executor {
         mode: 0o600,
       });
 
-      const session = this.#session(repo, config, mcp, request, credentials, installation.token, script);
+      const { child, notes } = this.#session(repo, config, mcp, request, credentials, installation.token, script);
       sessionStarted = true;
-      const exit = await session.exited;
+      const exit = await child.exited;
       const report = readStream(exit.stdout);
       const failures = verdict(report, exit, exit.stderr);
 
@@ -496,6 +616,7 @@ export class Executor {
         ...base,
         ok: failures.length === 0,
         failures,
+        notes,
         cost: report.cost,
         sessionId: report.sessionId,
         transcript: exit.stdout,
@@ -735,6 +856,9 @@ export class Executor {
    * The running child is handed back rather than awaited here, so the caller can record that
    * the session started at the moment it did. `#spawn` can refuse, and a flag set before the
    * call would then claim a session that never existed.
+   *
+   * The environment's notes come back with it, because this is where the environment is
+   * built and `launch` is where the outcome carrying them is assembled.
    */
   #session(
     repo: string,
@@ -744,9 +868,10 @@ export class Executor {
     credentials: Credentials,
     token: string,
     askpass: string,
-  ): Child {
+  ): { child: Child; notes: string[] } {
     const [command, ...leading] = this.#options.claude ?? ['claude'];
-    return this.#spawn({
+    const { env, notes } = childEnvironment(this.#env, request.skill, credentials, token, config, askpass);
+    const child = this.#spawn({
       command: command!,
       args: [
         ...leading,
@@ -761,8 +886,9 @@ export class Executor {
         prompt(request),
       ],
       cwd: repo,
-      env: childEnvironment(this.#env, credentials, token, config, askpass),
+      env,
     });
+    return { child, notes };
   }
 }
 
