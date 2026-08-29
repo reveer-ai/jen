@@ -378,17 +378,30 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
   it('places and tracks a resumed branch when the operator disables git’s branch defaults', async () => {
     const config = join(scratch, 'hostile-gitconfig');
     writeFileSync(config, '[checkout]\n\tguess = false\n[branch]\n\tautoSetupMerge = false\n');
+    // Only the git spawns are arranged against; the session spawn goes through untouched.
+    // Layering `process.env` under it would put the host's real environment back beneath the
+    // closed one `childEnvironment` built — re-adding the very `JEN_*` keys the strip leaves
+    // out rather than sets undefined, and, now that the stub records its environment whole,
+    // writing the runner's secrets to `record.json`. That would be a spawner quietly
+    // defeating the invariant this file exists to test.
     const hostile: Spawner = (spec) =>
-      spawner({ ...spec, env: { ...process.env, ...spec.env, GIT_CONFIG_GLOBAL: config } });
+      spec.command === 'git'
+        ? spawner({ ...spec, env: { ...process.env, ...spec.env, GIT_CONFIG_GLOBAL: config } })
+        : spawner(spec);
 
     rmSync(record, { force: true });
     const outcome = await build({}, true, { spawn: hostile }).launch({ ...REQUEST, branch: 'eng-2-designed' });
     expect(outcome.ok).toBe(true);
-    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string };
+    const invoked = JSON.parse(readFileSync(record, 'utf8')) as { cwd: string; env: Record<string, string> };
     expect(git(['branch', '--show-current'], invoked.cwd)).toBe('eng-2-designed');
     expect(git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], invoked.cwd)).toBe(
       'origin/eng-2-designed',
     );
+    // The session still received the closed environment, not the host's: no `PATH` from the
+    // parent, and no `JEN_*` the host may hold — on a runner carrying the pipeline's own
+    // secrets, that second one is another role's private key.
+    expect(invoked.env.PATH).toBeUndefined();
+    expect(Object.keys(invoked.env).filter((key) => key.startsWith('JEN_'))).toEqual([]);
     rmSync(join(invoked.cwd, '..'), { recursive: true, force: true });
   });
 

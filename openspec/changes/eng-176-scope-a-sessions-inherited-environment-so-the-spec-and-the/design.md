@@ -59,6 +59,8 @@ So `RunOutcome` gains `notes: string[]`, carried into the emitted record and the
 
 *Alternative considered:* writing the note to stderr from inside the executor. Rejected — `jen run | recorder` is the invocation the record shape is built around, and a misconfiguration an operator needs to act on belongs in the record a recorder keeps, not only in a stream nobody may be reading.
 
+*Revised in review.* This decision originally judged the record field additive and left `task-dispatch` unmodified, on the ground that a consumer gaining a field is not a contract change. That was the wrong test. `task-dispatch`'s *Every finished dispatch is reported as a run record* is written as a closed enumeration of what the record names, and it constrains the readable report in the same breath; this adds to both, so after the change neither the field nor the printed line is named by the requirement that defines either. `stage-execution`'s new *the run SHALL say what it found* does not cover the gap — it requires that the run reports, not that the record's shape holds the field, so a later change could drop `notes` from the record, keep the stderr line, and satisfy `stage-execution` on its face while the two capabilities disagreed about the record by omission. And the test that settles it is this change's own premise: ENG-176 exists because `childEnvironment` implemented a mechanism the spec never named. Shipping a tenth field into a requirement that enumerates nine would recreate that defect in the change chartered to close it. `task-dispatch` is therefore modified, with the requirement restated to carry the notes in the record and in the report.
+
 ### jen's own variables still win, and are not special-cased
 
 The seven jen sets are assigned after the copy, so they override anything inherited and anything restricted. An operator who lists `GH_TOKEN` in a stage's declaration has written something inert, and the design does not detect or report that — the note channel exists for a declaration that silently changes behaviour, and this one changes nothing.
@@ -75,7 +77,7 @@ The proposal's argument, stated here as the implementation consequence: `JEN_` i
 
 **An operator restricts a variable a stage other than the named one needed** → That stage now fails where it previously worked, and it fails when the command reaches for the variable. This is the failure mode the change otherwise refuses to create, and it is accepted here because it follows an explicit instruction the operator wrote, rather than from a list jen guessed at.
 
-**`notes` widens the record's shape** → A consumer parsing the JSON record gains a field. Additive and optional to read, so an existing recorder is unaffected.
+**`notes` widens the record's shape** → A consumer parsing the JSON record gains a field. Additive and optional to read, so an existing recorder is unaffected. Additive at runtime is not additive in the spec, though: the requirement enumerating the record's fields is restated to name it, for the reason recorded under *Notes are a channel distinct from failures*.
 
 ## Migration Plan
 

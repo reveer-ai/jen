@@ -51,6 +51,7 @@ The invariant that motivated the inversion is narrower than the inversion: *some
 
 - `stage-execution`: one requirement added, for the category the capability is silent on — that a session inherits the runner's environment so a project's own checks can run, that jen's own namespace is withheld from it, that an operator may restrict a named variable to a single stage, and that the restriction keys on the stage rather than on the role.
 - `adoption-docs`: one requirement added beside the one already carried for permissions — that the documentation tells an adopter what the environment they set on a runner reaches, and how to narrow one variable to one stage.
+- `task-dispatch`: one requirement revised — *Every finished dispatch is reported as a run record*, which enumerates what the record names and what the readable report carries. Reporting a declaration that scoped nothing puts a field in the record and a line in the report, and the enumeration is closed, so it is restated to name them. Added in review; see `design.md` under *Notes are a channel distinct from failures* for why the original judgement that this was purely additive was wrong.
 
 `pipeline-identity` is **not** modified. It states that a run acts under exactly one role, which is untouched by naming a category that is not a role's credential.
 
@@ -58,6 +59,7 @@ The invariant that motivated the inversion is narrower than the inversion: *some
 
 - `openspec/specs/stage-execution/spec.md` — one requirement added. The existing credentials requirement is unchanged and stays true.
 - `openspec/specs/adoption-docs/spec.md` — one requirement added.
+- `openspec/specs/task-dispatch/spec.md` — one requirement revised, to carry what a run had to say in the record and in the readable report.
 - `cli/exec.ts` — `childEnvironment` takes the stage into account, widens its strip, and reports a restriction naming a variable that is not set.
 - `test/exec.test.ts` — that a stage receives the runner's environment, that `JEN_*` does not survive, that a restricted variable reaches its stage and no other, that `deliver-task` does not receive `test-task`'s restricted set despite sharing its role, and that an unset restricted name is reported without failing the run.
 - `README.md` — a subsection beside *Grant the permissions the stages need*, on the same terms: what you put on the runner reaches your stages, and here is how to narrow one.

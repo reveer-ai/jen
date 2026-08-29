@@ -41,3 +41,28 @@ So run `npm run typecheck` before believing a test failure that mentions a statu
 message no fixture in the file contains — the two commands cover different halves, and this
 gap is exactly where they part. Building a client by hand in a new test, rather than through
 the file's helper, is the moment to check that the transport is actually being passed.
+
+## A test spawner that layers `process.env` under the session spawn defeats the thing it tests
+
+`exec.test.ts` arranges hostile conditions by wrapping the real `spawner` and adding to
+`spec.env` — the git-configuration test is the standing example. The natural way to write
+that wrapper is `{ ...process.env, ...spec.env, ...whatever }`, and it is wrong for the
+*session* spawn in a way nothing reports.
+
+`childEnvironment` withholds a variable by leaving its key out, not by setting it to
+`undefined`. So spreading the parent environment underneath puts every withheld key back:
+the `JEN_*` strip is undone, and so is a name one stage's declaration reserved from another.
+On a host that holds the pipeline's own secrets — which is how `payload/jen.yml` arranges a
+runner — the session then receives another role's private key, from inside the file whose
+job is to prove it cannot. Nothing fails, because a wrapper is not what any assertion is
+looking at.
+
+Two consequences to keep in view. The stub records its environment whole, deliberately —
+a filter written in jen's names could never see a project variable arriving under the
+project's own name — so anything layered in is also serialised to `record.json` in
+`$TMPDIR`. And the local symptom of the leak is *nothing at all*: the host has no `JEN_*`
+set, so an assertion against it passes on a laptop and fails only where it matters.
+
+Wrap the git spawns alone — `spec.command === 'git'` separates them — and let the session
+spawn through untouched. The closed environment is complete for it: the stub is invoked by
+absolute path, so it needs no inherited `PATH`.

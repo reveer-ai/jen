@@ -44,3 +44,9 @@
 - [x] 6.1 Run `npm run typecheck`, `npm run lint`, and `npm test`. *(This project defines no `lint` script — `typecheck`, `build`, and `test` are the checks it has, and all three were run.)*
 - [x] 6.2 Run `openspec validate eng-176-scope-a-sessions-inherited-environment-so-the-spec-and-the --strict`.
 - [x] 6.3 Written. A note in `cli/AGENTS.md` on why the scoping reads every stage's declaration rather than only the running stage's — the part of this that reads like a bug until the withholding case is in mind — plus the constraint the strip creates: a variable jen invents for a session to read cannot be named `JEN_*`.
+
+## 7. Review round one
+
+- [x] 7.1 Stop `test/exec.test.ts`'s hostile-gitconfig spawner layering `process.env` under the *session* spawn — `spec.command === 'git'` separates the spawns it is actually arranging against. The spread re-added every key `childEnvironment` withholds by omission, and the widened stub then serialised the host's environment to `record.json`. Assert the session still received the closed environment, and note the trap in `test/AGENTS.md`.
+- [x] 7.2 Write the `task-dispatch` delta for `notes`. Its *Every finished dispatch is reported as a run record* enumerates the record's fields and constrains the readable report, and this change adds to both; `stage-execution`'s new requirement covers *that* the run reports, not the record's shape. Restate the requirement to name them, list the capability in `proposal.md`, and record in `design.md` that the additive judgement changed and why.
+- [x] 7.3 Reply to and resolve the four review threads, then re-run `npm run typecheck`, `npm run build`, `npm test`, and `openspec validate --strict`.
