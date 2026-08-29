@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { VARIABLES } from '../cli/github.js';
+import { NAMESPACE, VARIABLES } from '../cli/github.js';
 import { PAUSED_STATUS_NAME } from '../cli/linear.js';
 import { STAGES } from '../cli/stages.js';
 import { readRepoFile } from './helpers.js';
@@ -41,6 +41,64 @@ describe('the ownership boundary', () => {
   it('does not present unstamping as a way to keep an edit to a shipped skill', () => {
     expect(readme).toContain('Deleting the stamp does not claim it');
     expect(readme).toMatch(/no supported way to keep an edit to a skill jen currently ships/);
+  });
+});
+
+/**
+ * What a session receives, which the adopter is the only one who can supply.
+ *
+ * The failure this documentation prevents is quiet in both directions: a suite that cannot
+ * reach its database because nobody said the runner's environment was where it comes from,
+ * and a secret written into a declaration that was only ever meant to hold names.
+ */
+describe('the environment chapter', () => {
+  const chapter = readme.slice(at('### 5. Give the stages'), at('### 6. Take a later version'));
+
+  // Beside the permissions section deliberately: that one says a project's own checks must be
+  // allowed to run, and this says how those same commands are given what they read.
+  it('sits with the permissions guidance, and says what reaches a session', () => {
+    expect(at('### 4. Grant the permissions the stages need')).toBeLessThan(at('### 5. Give the stages'));
+    expect(chapter).toMatch(/set on the runner reaches every stage|reaches every stage's session/);
+  });
+
+  // An adopter who reads the passthrough as unconditional has been told the runner's role
+  // keys are handed to every session, which is the opposite of what happens.
+  it('names the namespace withheld from sessions, and that the credentials are in it', () => {
+    expect(chapter).toContain(NAMESPACE);
+    expect(chapter).toMatch(/never reaches a session/);
+    expect(chapter).toMatch(/role credentials are inside it|credentials.{0,60}inside it/is);
+  });
+
+  it('gives the declaration that narrows a variable, under the name jen reads', () => {
+    expect(chapter).toContain(VARIABLES.stageScope('test-task'));
+    for (const stage of STAGES) expect(chapter, `${stage.skill} is never named`).toContain(VARIABLES.stageScope(stage.skill));
+  });
+
+  /**
+   * The trap this assertion exists for, and the reason it counts.
+   *
+   * `JEN_ENV_TEST_TASK=STAGING_SSH_KEY` is indistinguishable at a glance from a variable
+   * holding a key, so an example with one name in it teaches an adopter to paste their secret
+   * into the declaration. Two names is what makes a list read as a list.
+   */
+  it('says the declaration holds names, and shows more than one of them', () => {
+    expect(chapter).toMatch(/list of variable \*names\*, not values|names, not values/);
+
+    const example = /JEN_ENV_TEST_TASK=(\S+)/.exec(chapter);
+    expect(example, 'the chapter shows no declaration').not.toBeNull();
+    expect(example![1]!.split(',').length, 'the example names one variable, which reads as a value').toBeGreaterThan(1);
+  });
+
+  // An adopter reasoning from the roles expects testing's variable to be kept from delivery
+  // because of the identities. It is not — they are one identity — and only the declaration
+  // arranges it.
+  it('says the narrowing keys on the stage, and that three stages share one role', () => {
+    expect(chapter).toMatch(/by stage, not by role|keys on the stage/);
+    expect(chapter).toMatch(/Reviewing, testing, and delivering all act under the one `deliver` role/);
+  });
+
+  it('says a declaration that scoped nothing is reported rather than fatal', () => {
+    expect(chapter).toMatch(/reported in the run's output and does not fail it/);
   });
 });
 

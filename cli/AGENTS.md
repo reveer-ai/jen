@@ -132,6 +132,31 @@ is re-dispatched every tick and does real work each time. There is no failure co
 catch it, deliberately. The announcement being the first thing a session does is the whole
 mitigation.
 
+## `JEN_` is a one-way door: nothing named in it can reach a session
+
+`childEnvironment` withholds every variable prefixed `JEN_` from a stage's session, and that
+is exhaustive rather than heuristic only because jen defines the namespace — `VARIABLES` in
+`github.ts` enumerates it, and a prefix test over a closed set has no unnamed member to miss.
+Keeping that true has a cost that is easy to walk into: **a variable jen invents for a
+*session* to read cannot be named `JEN_*`**, because the strip will take it away and the
+symptom is the variable simply not being there. Nothing warns. Either name it outside the
+namespace or hand it to the session some other way.
+
+The scoping beside it reads every stage's `JEN_ENV_<STAGE>` declaration rather than only the
+running stage's, which looks like a bug until the withholding case is in mind: giving
+`test-task` a variable needs its own declaration, but *keeping* it from `deliver-task` means
+`deliver-task`'s run reading `JEN_ENV_TEST_TASK` too, since nothing else tells it the name
+was spoken for. The reason it cannot key on the role instead is `STAGES` — reviewing,
+testing, and delivering are one role, so a role-keyed rule hands the stage that merges what
+was meant for the stage that tests.
+
+**`notes` is not `failures`, and the difference is load-bearing.** `RunOutcome.ok` is derived
+as `failures.length === 0`, so anything pushed there stops a pipeline. A declaration that
+scoped nothing — a misspelt stage, a variable the runner never held — left every stage
+holding exactly what it would have held anyway, and is reported without failing anything.
+Moving one of those into `failures` would fail unattended runs over a typo that changed
+nothing.
+
 ## The in-flight test ignores the marker's stage, on purpose
 
 `inFlight` takes the most recent comment carrying a `jen:run` marker and answers on its
