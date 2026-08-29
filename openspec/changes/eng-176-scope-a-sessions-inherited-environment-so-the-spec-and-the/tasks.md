@@ -55,4 +55,4 @@
 
 - [x] 8.1 Qualify §5 of `README.md` at its top: the passthrough and the stage-narrowing are the local runner's today, and the scheduled runner cannot carry an operator's variables at all — Actions secrets are not ambient, `jen run`'s `env:` block is a closed list, and the file holding it is managed. Point at *Running the pipeline* rather than at the delivery mechanism, which stays its own task.
 - [x] 8.2 Carry the caveat into the `adoption-docs` delta as a clause and a scenario, on this change's own premise: documentation describing a mechanism the runner does not provide is the disagreement ENG-176 exists to close. Assert it in `test/adoption-docs.test.ts`.
-- [ ] 8.3 Reply to and resolve the one review thread, then re-run `npm run typecheck`, `npm run build`, `npm test`, and `openspec validate --strict`.
+- [x] 8.3 Reply to and resolve the one review thread, then re-run `npm run typecheck`, `npm run build`, `npm test`, and `openspec validate --strict`.
