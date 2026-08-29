@@ -61,6 +61,20 @@ describe('the environment chapter', () => {
     expect(chapter).toMatch(/set on the runner reaches every stage|reaches every stage's session/);
   });
 
+  /**
+   * The other way an adopter reads the passthrough as unconditional, and the more expensive one.
+   *
+   * §5 sits before the runner chapter, so a reader meets the words "the runner" before being told
+   * there are two — and on the scheduled one nothing in this section works: Actions secrets are not
+   * ambient, the job's `env:` block is a closed list, and the file holding it is managed. An adopter
+   * who believes the section finds out when a stage dies at the first command that needed the name.
+   */
+  it('says which runner the passthrough is available on today', () => {
+    expect(chapter).toMatch(/the local runner's today/);
+    expect(chapter).toMatch(/scheduled runner cannot carry your variables/);
+    expect(chapter).toContain('.github/workflows/jen.yml');
+  });
+
   // An adopter who reads the passthrough as unconditional has been told the runner's role
   // keys are handed to every session, which is the opposite of what happens.
   it('names the namespace withheld from sessions, and that the credentials are in it', () => {

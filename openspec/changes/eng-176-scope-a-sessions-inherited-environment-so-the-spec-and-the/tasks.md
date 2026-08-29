@@ -50,3 +50,9 @@
 - [x] 7.1 Stop `test/exec.test.ts`'s hostile-gitconfig spawner layering `process.env` under the *session* spawn — `spec.command === 'git'` separates the spawns it is actually arranging against. The spread re-added every key `childEnvironment` withholds by omission, and the widened stub then serialised the host's environment to `record.json`. Assert the session still received the closed environment, and note the trap in `test/AGENTS.md`.
 - [x] 7.2 Write the `task-dispatch` delta for `notes`. Its *Every finished dispatch is reported as a run record* enumerates the record's fields and constrains the readable report, and this change adds to both; `stage-execution`'s new requirement covers *that* the run reports, not the record's shape. Restate the requirement to name them, list the capability in `proposal.md`, and record in `design.md` that the additive judgement changed and why.
 - [x] 7.3 Reply to and resolve the four review threads, then re-run `npm run typecheck`, `npm run build`, `npm test`, and `openspec validate --strict`.
+
+## 8. Review round two
+
+- [x] 8.1 Qualify §5 of `README.md` at its top: the passthrough and the stage-narrowing are the local runner's today, and the scheduled runner cannot carry an operator's variables at all — Actions secrets are not ambient, `jen run`'s `env:` block is a closed list, and the file holding it is managed. Point at *Running the pipeline* rather than at the delivery mechanism, which stays its own task.
+- [x] 8.2 Carry the caveat into the `adoption-docs` delta as a clause and a scenario, on this change's own premise: documentation describing a mechanism the runner does not provide is the disagreement ENG-176 exists to close. Assert it in `test/adoption-docs.test.ts`.
+- [ ] 8.3 Reply to and resolve the one review thread, then re-run `npm run typecheck`, `npm run build`, `npm test`, and `openspec validate --strict`.
