@@ -138,6 +138,12 @@ export interface RunRecord {
   terminated: boolean;
   sessionStarted: boolean;
   transcript: string | null;
+  /**
+   * What the run had to say that was not a failure — a misconfiguration it worked around
+   * rather than stopped over. An empty array where there was nothing, which is why it is not
+   * `null` like the two above: nothing to say and saying nothing are the same fact here.
+   */
+  notes: string[];
 }
 
 export function runRecord(request: RunRequest, result: LaunchResult): RunRecord {
@@ -152,6 +158,7 @@ export function runRecord(request: RunRequest, result: LaunchResult): RunRecord 
     terminated: result.terminated,
     sessionStarted: result.sessionStarted,
     transcript: result.transcriptPath ?? null,
+    notes: result.notes,
   };
 }
 
@@ -170,6 +177,12 @@ export interface LaunchResult {
   ok: boolean;
   /** Every signal that said failure. Empty where {@link ok}. */
   failures: string[];
+  /**
+   * What the run had to say that was not a failure, and so did not bear on {@link ok}.
+   * Required rather than optional, for the reason {@link failures} is: a launcher that could
+   * omit it would have the record report there was nothing to say.
+   */
+  notes: string[];
   /** Whether the run ended because it was stopped rather than because the session did. */
   terminated: boolean;
   /**
@@ -454,7 +467,13 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
         // A launcher that threw is a failed run like any other. Never a rejected set, which
         // would abandon the sessions still running beside it.
         const message = error instanceof Error ? error.message : String(error);
-        return { ok: false, failures: [message], terminated: false, sessionStarted: false } satisfies LaunchResult;
+        return {
+          ok: false,
+          failures: [message],
+          notes: [],
+          terminated: false,
+          sessionStarted: false,
+        } satisfies LaunchResult;
       }
     }),
   );
@@ -487,8 +506,11 @@ async function see(dispatched: RunRequest[], launch: Launch, io: Io): Promise<nu
 
     // Read on every branch rather than only on the failing one. A run can succeed and still
     // have something to say — a transcript it could not keep does not change what the
-    // session did, and saying it only under `failed` would be saying it nowhere.
+    // session did, and saying it only under `failed` would be saying it nowhere. The notes
+    // are here for the same reason and more so: a declaration that scoped nothing never
+    // fails a run, so the successful branch is the only branch it is ever read on.
     for (const failure of result.failures) io.err(`${' '.repeat(13)}${failure}`);
+    for (const note of result.notes) io.err(`${' '.repeat(13)}note: ${note}`);
   });
 
   return failed === 0 ? 0 : 1;

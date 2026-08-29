@@ -242,7 +242,7 @@ function recorder(result: Partial<LaunchResult> = {}): { launch: Launch; launche
     launched,
     launch: async (request) => {
       launched.push(request);
-      return { ok: true, failures: [], terminated: false, sessionStarted: true, ...result };
+      return { ok: true, failures: [], notes: [], terminated: false, sessionStarted: true, ...result };
     },
   };
 }
@@ -956,8 +956,21 @@ describe('the record of what a tick did', () => {
         terminated: false,
         sessionStarted: true,
         transcript: null,
+        notes: [],
       },
     ]);
+  });
+
+  // A note never bears on `ok`, so the successful record is the only place it is ever read.
+  // Carried in the record rather than only in the readable report, because `jen run |
+  // recorder` is the invocation the record shape exists for: a misconfiguration the operator
+  // has to act on belongs where the recorder can keep it.
+  it('carries a run\u2019s notes in the record, without failing it', async () => {
+    const noted = await jenRun([], ENV, one(), recorder({ notes: ['JEN_ENV_TEST names no stage.'] }));
+
+    expect(recordsIn(noted.out)[0]).toMatchObject({ ok: true, notes: ['JEN_ENV_TEST names no stage.'] });
+    expect(noted.err.join('\n')).toContain('JEN_ENV_TEST names no stage.');
+    expect(noted.code).toBe(0);
   });
 
   it('carries the cost beside the outcome in the report a person reads', async () => {
@@ -1145,7 +1158,7 @@ describe('a tick that acts on what it decided', () => {
       launch: async (request: RunRequest) => {
         launched.push(request);
         if (request.task === 'ENG-1') throw new Error('the clone failed');
-        return { ok: true, failures: [], terminated: false, sessionStarted: true } satisfies LaunchResult;
+        return { ok: true, failures: [], notes: [], terminated: false, sessionStarted: true } satisfies LaunchResult;
       },
     };
     const result = await jenRun([], ENV, two(), launcher);
