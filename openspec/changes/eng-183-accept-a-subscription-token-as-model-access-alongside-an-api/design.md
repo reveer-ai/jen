@@ -14,6 +14,8 @@ Three constraints bound what can be done here.
 
 **jen cannot observe what either credential costs.** No usage limit, no balance, no expiry. An API key's spend and a subscription's shared window are both invisible from inside a run, which is why every statement about them in this change is documentation rather than a check.
 
+**The subscription token is narrower than a login, not wider than a key.** Established from the shipped binary rather than assumed: a token minted by `claude setup-token`, and any value supplied as `CLAUDE_CODE_OAUTH_TOKEN`, carries inference-only authority — the CLI refuses it for Claude in Chrome and for Remote Control, both of which require a full login, and says so in those words. This corrects an earlier draft of this design and of the `adoption-docs` delta, which set the token against an API key that is "scoped and revocable per key"; the scope half was wrong, and wrong in the token's disfavour. What actually separates them is that the token is bound to a person and to their subscription's shared window where a key is issued independently of any one person, and that a managed installation's policy can refuse to mint one at all — a limit an adopter should meet in the documentation rather than at the terminal.
+
 ## Goals / Non-Goals
 
 **Goals:**

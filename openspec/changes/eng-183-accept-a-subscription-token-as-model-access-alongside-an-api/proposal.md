@@ -34,7 +34,7 @@ Emptiness is decided the same way `required` already decides it — an unset rep
 
 ## What this deliberately does not do
 
-**It does not choose between them for the adopter.** The documentation states what each costs — shared usage limits against a per-key bill, and a personal long-lived credential against one that is scoped and revocable per key — and the adopter decides. jen refusing one of them, or preferring one, would be jen making a spending decision on someone else's account.
+**It does not choose between them for the adopter.** The documentation states what each costs — shared usage limits against a per-key bill, and a credential bound to one person's subscription against one issued independently of any person — and the adopter decides. jen refusing one of them, or preferring one, would be jen making a spending decision on someone else's account.
 
 **It does not move the model credential into `impossible()`.** A model credential that is absent — and now one that is ambiguous — fails each dispatched run inside the executor, is recorded in that run's failures, and leaves the local runner polling. That is exactly what a missing `ANTHROPIC_API_KEY` does today. `impossible()` holds the tracker credential, the team, the project, and the concurrency, and is the gate that stops `jen watch` before its first tick; moving the model credential up to sit beside them changes what stops a runner, which is a decision about `pipeline-runner` rather than about this credential, and it would be equally true of the nine role variables that are not there either.
 

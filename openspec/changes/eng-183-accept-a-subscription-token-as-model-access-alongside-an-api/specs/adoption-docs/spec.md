@@ -8,7 +8,9 @@ The runners SHALL be presented as peers. The documentation SHALL give the ground
 
 The documentation SHALL state the conditions that come with each runner and are not obvious from choosing it. For the scheduled runner these SHALL include that a git host may disable a schedule on a repository that has been inactive, which is a real failure mode for a pipeline whose ordinary state is quiet, and what an adopter does about it. For the local runner they SHALL include that a session dies with the process that launched it, and what the pipeline then reads on that task.
 
-Where a value a runner needs may be supplied in more than one form, the documentation SHALL name every accepted form and SHALL state what choosing each one costs. Model access is that case: the pipeline runs on an API key or on a subscription token, and the variable names alone answer neither which to use nor what follows from the answer. The documentation SHALL state how the subscription token is obtained, that the subscription's usage limits are shared with the adopter's own interactive use of the same account — so a polling pipeline can exhaust a window they were about to work in, surfacing as a stage dying mid-run rather than as a bill — and that the token is a long-lived personal credential where an API key is scoped and revocable per key. It SHALL state that a runner holds exactly one, and that setting both is refused rather than resolved in the adopter's favour by a precedence.
+Where a value a runner needs may be supplied in more than one form, the documentation SHALL name every accepted form and SHALL state what choosing each one costs. Model access is that case: the pipeline runs on an API key or on a subscription token, and the variable names alone answer neither which to use nor what follows from the answer. The documentation SHALL state how the subscription token is obtained, and that the subscription's usage limits are shared with the adopter's own interactive use of the same account — so a polling pipeline can exhaust a window they were about to work in, surfacing as a stage dying mid-run rather than as a bill. It SHALL state that the token is long-lived and bound to the person who minted it and to their subscription, where an API key is issued independently of any one person. It SHALL NOT describe the token as unscoped: it carries inference-only authority by design, which is what a pipeline session needs and less than a login grants, and an adopter told otherwise would weigh the choice against a risk the credential does not carry. It SHALL state that a runner holds exactly one, and that setting both is refused rather than resolved in the adopter's favour by a precedence.
+
+Where minting the token can be refused by policy on a managed installation, the documentation SHALL say so. An adopter who meets that refusal SHALL be able to recognize it as a stated limit on their installation rather than as a malfunction, and SHALL be left with the other form still open to them.
 
 The alternative spellings of one value SHALL NOT be presented as additional values. The documentation states how many values a runner needs, and an adopter who counts a credential twice looks for a secret they were never meant to store and cannot tell a complete configuration from an incomplete one.
 
@@ -45,7 +47,14 @@ Because the status that pauses the pipeline is one the adopter creates, the docu
 
 - **WHEN** an adopter reads what choosing the subscription costs
 - **THEN** the documentation states that its usage limits are shared with their own interactive work
-- **AND** states that the token is a long-lived personal credential where an API key is revocable per key
+- **AND** states that it is bound to the person who minted it and to their subscription
+- **AND** does not describe it as carrying authority beyond inference
+
+#### Scenario: An adopter's installation forbids minting a token
+
+- **WHEN** an adopter on a managed installation is refused the subscription token
+- **THEN** the documentation has already named that a policy can refuse it
+- **AND** states that the API key remains open to them
 
 #### Scenario: An adopter holds both forms
 
