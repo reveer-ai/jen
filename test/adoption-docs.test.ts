@@ -145,6 +145,51 @@ describe('the runner chapter', () => {
     expect(chapter).toContain('Eleven values');
   });
 
+  // The name alone is not the answer to "how do I get one": an adopter who has never minted
+  // a token has no reason to know the command exists, and the assertion above only holds the
+  // spelling.
+  it('names the subscription token as an accepted form, and how it is obtained', () => {
+    expect(chapter).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    expect(chapter).toContain('claude setup-token');
+    expect(chapter, 'that the command needs a subscription').toMatch(/requires a Claude subscription/);
+  });
+
+  /**
+   * The cost of the subscription form, and the one claim about it that must stay negative.
+   *
+   * The shared window is what an adopter meets as a stage dying mid-run rather than as a bill,
+   * so it has to be read before the choice rather than after it. The `SHALL NOT` is the part
+   * most worth pinning: an earlier draft of this change had the asymmetry backwards and called
+   * the token the less scoped credential, and an edit reintroducing that would weigh an
+   * adopter's choice against a risk the credential does not carry.
+   */
+  it('states what the subscription costs, and does not overstate what the token carries', () => {
+    expect(chapter, 'limits shared with the adopter\'s own work').toMatch(/usage limits are shared with your own interactive use/);
+    expect(chapter, 'bound to the person who minted it').toMatch(/belongs to the person who minted it/);
+    expect(chapter, 'the key is bound to no one person').toMatch(/issued independently of any one person/);
+
+    expect(chapter, 'the authority it actually carries').toMatch(/inference-only/);
+    expect(chapter, 'the token is never described as the broader credential').not.toMatch(/unscoped|unrestricted|full account access/i);
+  });
+
+  // A refusal an adopter meets with no warning reads as jen being broken, and the API key is
+  // the way out of it — which is only useful said in advance, since the refusal comes from
+  // their installation rather than from anything jen runs.
+  it('names that a managed policy can refuse to mint the token, and what is left open', () => {
+    expect(chapter).toMatch(/managed.{0,80}policy may forbid minting one/s);
+    expect(chapter, 'read as a stated limit rather than a malfunction').toMatch(/stated limit on your installation rather than a malfunction/);
+    expect(chapter, 'the other form stays available').toMatch(/`ANTHROPIC_API_KEY` is still open to you/);
+  });
+
+  // An adopter holding both is the ordinary state of a developer's machine, so what happens
+  // then is a thing they read rather than discover. Refusing is the load-bearing half: a
+  // reader who assumes a precedence assumes jen picked the one they meant.
+  it('says holding both is refused rather than resolved by a precedence', () => {
+    expect(chapter).toMatch(/A runner holds exactly one of them/);
+    expect(chapter, 'the run refuses before it spends either').toMatch(/Set both and every run refuses before it starts a session/);
+    expect(chapter, 'and does not choose').toMatch(/jen will not pick one for you/);
+  });
+
   // The symptom is silence, and quiet is what triggers it — so the only warning an adopter
   // can get is one written down before it happens.
   it('names the schedule a quiet repository loses, and how to get it back', () => {

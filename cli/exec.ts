@@ -442,10 +442,17 @@ function declarations(base: Environment): Declarations {
  * **The model credential goes in under the name the run holds it as, and every other name it
  * could have been supplied under comes out.** Unlike the rest of jen's own values, this one's
  * *name* varies, so a session that could see both spellings would leave the choice of which to
- * spend to the CLI's precedence — the ambiguity `credentialsFor` refuses upstream. That refusal
- * means the delete cannot fire on a real runner; it is kept, and asserted directly against a
- * constructed environment, so this unit's contract holds on its own terms rather than by its
- * caller's grace.
+ * spend to the CLI's precedence — the ambiguity `credentialsFor` refuses upstream.
+ *
+ * The delete is not defensive. It fires on every tick of a correctly configured hosted runner:
+ * the managed workflow passes every accepted name through unconditionally, so the one an
+ * adopter never stored arrives as an empty string, `credentialsFor` reads empty as absent and
+ * refuses nothing, and the copy loop above filters on nothing — so without this line the unheld
+ * name would reach the child as `''`, handing the CLI the empty-versus-unset judgment the
+ * refusal exists to take away from it. What the upstream refusal does make unreachable is
+ * narrower: a *non-empty* inherited value under the unheld name. That case is kept covered
+ * anyway, asserted directly against a constructed environment, so this unit's contract holds on
+ * its own terms rather than by its caller's grace.
  *
  * Notes come back beside the environment rather than being thrown or logged: a declaration
  * that scoped nothing is worth telling the operator about and is not worth stopping a

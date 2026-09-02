@@ -10,7 +10,7 @@
 ## 2. Give the session exactly the one it holds
 
 - [x] 2.1 In `childEnvironment` in `cli/exec.ts`, write `credentials.model.value` under `credentials.model.variable` in place of the fixed `ANTHROPIC_API_KEY` assignment, leaving it after the copy loop where jen's own values already override anything inherited.
-- [x] 2.2 Delete every other name in `VARIABLES.model` from the child environment. It is unreachable while `credentialsFor` refuses the both-set case upstream, and it is what makes `childEnvironment`'s own contract true rather than true by a caller's grace — the property the unit tests assert directly (`design.md` — *`childEnvironment` writes the held name and deletes the other*).
+- [x] 2.2 Delete every other name in `VARIABLES.model` from the child environment. It fires on a real runner — the managed workflow's unconditional passthrough delivers the unstored name as `''`, which `credentialsFor` reads as absent and so does not refuse — while what that upstream refusal does rule out is narrower: a *non-empty* inherited value under the unheld name. It is also what makes `childEnvironment`'s own contract true rather than true by a caller's grace — the property the unit tests assert directly (`design.md` — *`childEnvironment` writes the held name and deletes the other*).
 - [x] 2.3 Confirm at the point of the change that nothing else in `cli/` reads `ANTHROPIC_API_KEY` by name, and that no part of how `#session` spawns its child — command line, `--mcp-config`, `CLAUDE_CONFIG_DIR` — participates in model access.
 
 ## 3. Carry it to the runners
@@ -40,6 +40,7 @@
 - [x] 5.6 `test/exec.test.ts` — a session started for a run holding a subscription token receives `CLAUDE_CODE_OAUTH_TOKEN`, and `ANTHROPIC_API_KEY` is absent from its environment; and the mirror case for a run holding an API key.
 - [x] 5.7 `test/exec.test.ts` — `childEnvironment` deletes the unheld name even when the base environment carries it, asserting the unit's own contract rather than relying on the upstream refusal.
 - [x] 5.8 `test/adoption-docs.test.ts` — the README names every accepted model credential, derived from `VARIABLES.model` rather than restated, and still states the count as eleven.
+- [x] 5.8a Hold the rest of what the `adoption-docs` delta grew, one `it` per new scenario, keeping this file's 1:1 correspondence with the requirement's scenarios: how the token is obtained, the shared window and the person it is bound to, the managed-installation refusal with the key left open, and that both-set refuses rather than resolves. The negative `SHALL NOT` is asserted as a pair — *inference-only* present and *unscoped* absent — since the absence alone would also hold if the passage were deleted. (Widened from 5.8 in review: naming the credentials left the prose those names introduce unheld.)
 - [x] 5.9 Run the full suite, the typecheck, and `openspec validate <change> --strict`.
 
 ## 6. Ship it
