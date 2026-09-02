@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { GitHub } from '../cli/github.js';
 import {
+  childEnvironment,
   Executor,
   prompt,
   readStream,
@@ -480,6 +481,52 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(JSON.stringify(invoked!.env)).not.toContain('another role’s key');
   });
 
+  // `stage-execution` requires the session be given the credential the run holds, under that
+  // credential's own name, and the name it does not hold be absent. Both directions are
+  // asserted because the failure is asymmetric: the wrong name present is a session spending
+  // a credential the adopter did not choose, and the right one absent is a session that
+  // cannot reach a model at all.
+  it('gives the session the model credential the run holds, and not the other name', async () => {
+    const key = await launched();
+
+    expect(key.invoked!.env.ANTHROPIC_API_KEY).toBe('sk-ant-recorded');
+    expect(key.invoked!.env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+
+    // What a hosted runner given only the token actually looks like: the other secret is
+    // declared in the workflow and expands to an empty value rather than being absent.
+    const token = await launched(REQUEST, { ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-recorded' });
+
+    expect(token.invoked!.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat-recorded');
+    expect(token.invoked!.env.ANTHROPIC_API_KEY).toBeUndefined();
+  });
+
+  // The case a whole run cannot reach, because `credentialsFor` refuses a runner holding both
+  // from the same environment `childEnvironment` is handed. Asserted here against a constructed
+  // one so the unit's contract is true on its own terms rather than by its caller's grace — if
+  // the upstream refusal were ever relaxed, this is what would still be holding the line.
+  it('deletes the unheld model credential even when the base environment carries a value for it', () => {
+    const { env } = childEnvironment(
+      { ANTHROPIC_API_KEY: 'sk-ant-inherited', PATH: '/usr/bin' },
+      'implement-task',
+      {
+        repo: 'reveer-ai/jen',
+        role: 'dev',
+        appId: '4588651',
+        installation: '153578694',
+        privateKey: 'unused',
+        trackerToken: 'lin_api_recorded',
+        model: { variable: 'CLAUDE_CODE_OAUTH_TOKEN', value: 'sk-ant-oat-recorded' },
+      },
+      'ghs_recorded',
+      '/tmp/config',
+      '/tmp/askpass',
+    );
+
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat-recorded');
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.PATH, 'the project’s own inheritance is untouched').toBe('/usr/bin');
+  });
+
   /**
    * What a session inherits, and the lever that narrows it.
    *
@@ -705,7 +752,12 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     }).launch(REQUEST);
 
     expect(outcome.ok).toBe(false);
-    expect(outcome.failures).toEqual([expect.stringContaining('ANTHROPIC_API_KEY')]);
+    expect(outcome.failures).toEqual([
+      expect.stringContaining('ANTHROPIC_API_KEY'),
+    ]);
+    // Both accepted names, because pointing the operator at only the form they chose not to
+    // use is worse than saying nothing.
+    expect(outcome.failures[0]).toContain('CLAUDE_CODE_OAUTH_TOKEN');
     expect(existsSync(record), 'no session was started').toBe(false);
   });
 

@@ -87,7 +87,7 @@ describe('the shipped scheduled workflow', () => {
       'JEN_PROJECT',
       VARIABLES.repo,
       VARIABLES.tracker,
-      VARIABLES.model,
+      ...VARIABLES.model,
       ...roles.flatMap((role) => [VARIABLES.appId(role), VARIABLES.installation(role), VARIABLES.privateKey(role)]),
     ]);
 

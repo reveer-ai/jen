@@ -416,7 +416,7 @@ function declarations(base: Environment): Declarations {
  * The child's environment: what the project's own commands need, this run's role, and
  * nothing of another's.
  *
- * Three things happen to the runner's environment on the way in.
+ * Four things happen to the runner's environment on the way in.
  *
  * **It is inherited.** A project's checks read configuration jen cannot enumerate — the
  * database a suite connects to, the endpoint an integration test reaches — and
@@ -439,12 +439,27 @@ function declarations(base: Environment): Declarations {
  * stage that tests. A name claimed by two stages reaches both, which falls out of set
  * membership rather than needing a rule of its own.
  *
+ * **The model credential goes in under the name the run holds it as, and every other name it
+ * could have been supplied under comes out.** Unlike the rest of jen's own values, this one's
+ * *name* varies, so a session that could see both spellings would leave the choice of which to
+ * spend to the CLI's precedence — the ambiguity `credentialsFor` refuses upstream.
+ *
+ * The delete is not defensive. It fires on every tick of a correctly configured hosted runner:
+ * the managed workflow passes every accepted name through unconditionally, so the one an
+ * adopter never stored arrives as an empty string, `credentialsFor` reads empty as absent and
+ * refuses nothing, and the copy loop above filters on nothing — so without this line the unheld
+ * name would reach the child as `''`, handing the CLI the empty-versus-unset judgment the
+ * refusal exists to take away from it. What the upstream refusal does make unreachable is
+ * narrower: a *non-empty* inherited value under the unheld name. That case is kept covered
+ * anyway, asserted directly against a constructed environment, so this unit's contract holds on
+ * its own terms rather than by its caller's grace.
+ *
  * Notes come back beside the environment rather than being thrown or logged: a declaration
  * that scoped nothing is worth telling the operator about and is not worth stopping a
  * pipeline over, and {@link RunOutcome.notes} is the channel that can say so without failing
  * the run the way a `failures` entry would.
  */
-function childEnvironment(
+export function childEnvironment(
   base: Environment,
   skill: string,
   credentials: Credentials,
@@ -468,7 +483,9 @@ function childEnvironment(
   // earns no note: the channel is for a declaration that changed something silently, and this
   // one changes nothing at all.
   env.CLAUDE_CONFIG_DIR = configDir;
-  env.ANTHROPIC_API_KEY = credentials.modelKey;
+  // The one of jen's own values whose *name* varies, so the others cannot be read for it.
+  env[credentials.model.variable] = credentials.model.value;
+  for (const name of VARIABLES.model) if (name !== credentials.model.variable) delete env[name];
   env.LINEAR_API_KEY = credentials.trackerToken;
   // What `gh` reads. The stage conventions put every pull-request act through it.
   env.GH_TOKEN = token;

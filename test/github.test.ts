@@ -59,7 +59,7 @@ function credentials(overrides: Partial<Credentials> = {}): Credentials {
     installation: '153578694',
     privateKey,
     trackerToken: 'lin_api_recorded',
-    modelKey: 'sk-ant-recorded',
+    model: { variable: 'ANTHROPIC_API_KEY', value: 'sk-ant-recorded' },
     ...overrides,
   };
 }
@@ -102,19 +102,72 @@ describe('resolving a role’s credentials', () => {
     expect(() => credentialsFor('design', env)).not.toThrow();
   });
 
-  it.each([
+  // The model credential belongs in this table rather than beside it: it is a required
+  // credential like the rest, and the table is the one place a required credential's refusal
+  // is described. What it alone carries is that removing the only name set leaves *no* model
+  // credential, so the refusal names every accepted spelling instead of one.
+  it.each<[string, string | RegExp]>([
     ['JEN_REPO', 'JEN_REPO'],
     ['JEN_GH_APP_ID_DEV', 'JEN_GH_APP_ID_DEV'],
     ['JEN_GH_INSTALLATION_DEV', 'JEN_GH_INSTALLATION_DEV'],
     ['JEN_GH_PRIVATE_KEY_DEV', 'JEN_GH_PRIVATE_KEY_DEV'],
     ['LINEAR_API_KEY', 'LINEAR_API_KEY'],
-    ['ANTHROPIC_API_KEY', 'ANTHROPIC_API_KEY'],
-  ])('refuses when %s is absent, naming it', (variable, named) => {
+    ['ANTHROPIC_API_KEY', /ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN/],
+  ])('refuses when %s is absent, naming what is missing', (variable, named) => {
     const env = environment();
     delete env[variable];
 
     expect(() => credentialsFor('dev', env)).toThrow(CredentialError);
     expect(() => credentialsFor('dev', env)).toThrow(named);
+  });
+
+  // Two spellings of one value, accepted on equal terms. Each case asserts the *name* comes
+  // back beside the value and not the value alone: the name is what `childEnvironment` writes
+  // the session's environment from, so a run that lost it would have to read the environment
+  // a second time to find out what it holds.
+  it.each([
+    ['ANTHROPIC_API_KEY', 'sk-ant-recorded'],
+    ['CLAUDE_CODE_OAUTH_TOKEN', 'sk-ant-oat-recorded'],
+  ])('accepts %s as model access, reporting it as the name held', (variable, value) => {
+    const env = environment();
+    delete env.ANTHROPIC_API_KEY;
+
+    expect(credentialsFor('dev', { ...env, [variable]: value }).model).toEqual({ variable, value });
+  });
+
+  it('refuses when neither model credential is set, naming both', () => {
+    const env = environment();
+    delete env.ANTHROPIC_API_KEY;
+
+    expect(() => credentialsFor('dev', env)).toThrow(CredentialError);
+    for (const name of VARIABLES.model) expect(() => credentialsFor('dev', env)).toThrow(name);
+  });
+
+  // Refused rather than resolved by a precedence. One form bills a key and the other spends a
+  // usage window shared with the operator's own work, so choosing silently is wrong in both
+  // directions — and the refusal has to say what to do, because neither name says it.
+  it('refuses when both model credentials are set, naming both and choosing neither', () => {
+    const env = { ...environment(), CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-recorded' };
+
+    expect(() => credentialsFor('dev', env)).toThrow(CredentialError);
+    for (const name of VARIABLES.model) expect(() => credentialsFor('dev', env)).toThrow(name);
+    expect(() => credentialsFor('dev', env)).toThrow(/exactly one/);
+  });
+
+  // The managed workflow passes both names through unconditionally, so the ordinary state of a
+  // correctly configured hosted runner is one name holding a value beside one holding nothing.
+  // That must read as holding one, not as the both-set refusal.
+  it('treats an empty model credential as absent under either name', () => {
+    expect(credentialsFor('dev', { ...environment(), CLAUDE_CODE_OAUTH_TOKEN: '   ' }).model).toEqual({
+      variable: 'ANTHROPIC_API_KEY',
+      value: 'sk-ant-recorded',
+    });
+
+    const token = { ...environment(), ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat-recorded' };
+    expect(credentialsFor('dev', token).model).toEqual({
+      variable: 'CLAUDE_CODE_OAUTH_TOKEN',
+      value: 'sk-ant-oat-recorded',
+    });
   });
 
   // An empty secret is what an unset repository secret expands to in a workflow, and it

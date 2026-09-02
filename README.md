@@ -162,7 +162,20 @@ JEN_GH_INSTALLATION_DESIGN   JEN_GH_INSTALLATION_DEV   JEN_GH_INSTALLATION_DELIV
 JEN_GH_PRIVATE_KEY_DESIGN    JEN_GH_PRIVATE_KEY_DEV    JEN_GH_PRIVATE_KEY_DELIVER
 ```
 
-plus `LINEAR_API_KEY` — your tracker agent's key, shared by all three roles — and `ANTHROPIC_API_KEY`.
+plus `LINEAR_API_KEY` — your tracker agent's key, shared by all three roles — and one model credential. That last one has two accepted spellings, and they are two ways of writing one value, not two values to store:
+
+```
+ANTHROPIC_API_KEY            # an API key, billed per token
+CLAUDE_CODE_OAUTH_TOKEN      # a token minted from a Claude subscription
+```
+
+**A runner holds exactly one of them.** Set both and every run refuses before it starts a session, names both, and stops. jen will not pick one for you: the two are not paid out of the same pocket, so choosing silently is wrong in both directions — it either bills a key you believed you had stopped using or spends a subscription window you meant to keep. Unset the one this runner is not to spend.
+
+`claude setup-token` mints the subscription form and prints it; it requires a Claude subscription, and the value goes wherever your runner reads its secrets from, under `CLAUDE_CODE_OAUTH_TOKEN`. What it costs you is not money. **The subscription's usage limits are shared with your own interactive use of the same account** — a pipeline polling every 30 minutes and launching up to three sessions a tick can spend the window you were about to work in, and you meet that as a stage dying mid-run rather than as a bill. jen cannot see either credential's limit or its expiry, so nothing warns you first.
+
+The two also differ in what they are bound to. The token is long-lived and belongs to the person who minted it and to that person's subscription; an API key is issued independently of any one person, and outlives whoever created it. That does not make the token the broader credential — it carries **inference-only** authority by design, which the CLI enforces: it refuses a `CLAUDE_CODE_OAUTH_TOKEN` for Claude in Chrome and for Remote Control, both of which require a full login. Inference is exactly what a pipeline session does, and less than a login grants.
+
+If your Claude installation is managed, its policy may forbid minting one at all, and `claude setup-token` says so in as many words. That is a stated limit on your installation rather than a malfunction, and `ANTHROPIC_API_KEY` is still open to you.
 
 jen writes none of these anywhere. A run reads them from its environment at the point of use, mints a short-lived installation token per session, and the run's working directory goes when the run does.
 
@@ -179,7 +192,8 @@ The two values naming your tracker project are resolved into the file from `regi
 ### Starting the local runner
 
 ```bash
-export LINEAR_API_KEY=… ANTHROPIC_API_KEY=…   # and the nine JEN_GH_* values
+export LINEAR_API_KEY=…        # and the nine JEN_GH_* values
+export ANTHROPIC_API_KEY=…     # or CLAUDE_CODE_OAUTH_TOKEN — whichever one you hold, never both
 npx jen watch
 ```
 
