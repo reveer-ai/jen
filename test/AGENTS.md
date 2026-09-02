@@ -66,3 +66,24 @@ set, so an assertion against it passes on a laptop and fails only where it matte
 Wrap the git spawns alone — `spec.command === 'git'` separates them — and let the session
 spawn through untouched. The closed environment is complete for it: the stub is invoked by
 absolute path, so it needs no inherited `PATH`.
+
+## A symlinked `node_modules` fails the `.gitignore` test, and blames `.gitignore`
+
+Testing a change in its *merged* state means a throwaway worktree, and the cheap way to make
+one runnable is to symlink the main checkout's `node_modules` into it rather than install
+again. That one shortcut fails `repo-layout.test.ts` — `ignores build output, dependencies,
+and local agent scratch`, on the `node_modules/anything/index.js` line — in a worktree where
+`.gitignore` is byte-identical to the one that passes.
+
+`isIgnored` shells out to `git check-ignore --no-index` and treats any throw as *not ignored*.
+Git refuses to answer for a path that traverses a symlink at all: `fatal: pathspec
+'node_modules/anything/index.js' is beyond a symbolic link`, exit 128. So the helper reports
+`false`, the assertion reads `expected false to be true`, and nothing anywhere names the
+symlink. Every other path in that test is a real directory, which is why exactly one line
+fails and the failure looks like a rule went missing.
+
+Copy `node_modules` into the worktree instead, or install into it. Don't reach for a
+`try`/`catch` refinement in `isIgnored` — collapsing "git says not ignored" and "git refused
+to look" is what hid the cause here, but widening the helper to distinguish them buys nothing
+for the suite's real job and adds a branch no assertion exercises. The fix is to stop handing
+git a path it will not answer for.
