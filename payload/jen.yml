@@ -73,7 +73,13 @@ jobs:
           JEN_REPO: ${{ github.repository }}
 
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+
+          # Model access, under either name it is accepted as. Both are passed through
+          # unconditionally: a secret this repository was never given expands to an empty
+          # value, which jen reads as absent, so an adopter who stored one has stored one.
+          # Storing both is refused rather than resolved — the run names both and stops.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           # One application per role, so the pull request a stage opens, the review it
           # submits, and the merge it makes are three identities in the timeline rather

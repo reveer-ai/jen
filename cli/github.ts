@@ -83,7 +83,15 @@ export const VARIABLES = {
   /** What an operator sets to restrict named variables to the stage running `skill`. */
   stageScope: (skill: string) => `${STAGE_SCOPE}${token(skill)}`,
   tracker: 'LINEAR_API_KEY',
-  model: 'ANTHROPIC_API_KEY',
+  /**
+   * Every name model access is accepted under: an API key, or a subscription token.
+   *
+   * A list rather than a second key, because the names of one value belong in one place. The
+   * refusal quotes it, so naming every accepted form is a property of the data rather than a
+   * sentence to keep in sync, and `adoption-docs` derives the documented names from here for
+   * the same reason. A run holds exactly one of them; which one is the adopter's to choose.
+   */
+  model: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
 } as const;
 
 /** Everything one run needs to act, resolved from the environment and held in memory only. */
@@ -97,7 +105,15 @@ export interface Credentials {
   privateKey: string;
   /** The tracker agent, shared by all three roles — one agent serves every role. */
   trackerToken: string;
-  modelKey: string;
+  /**
+   * The model credential this run holds, under the name it was supplied as.
+   *
+   * One field rather than two, because two can be constructed disagreeing with each other.
+   * The value alone is not actionable — a session receives it under a name that varies — and
+   * a run carrying only the value would have to re-derive the name by reading the
+   * environment a second time, in a second place that could answer differently.
+   */
+  model: { variable: string; value: string };
 }
 
 export interface Environment {
@@ -113,7 +129,43 @@ function required(env: Environment, name: string, why: string): string {
 }
 
 /**
- * The role's credentials, or a refusal naming the variable that is absent.
+ * The one value a run may supply under more than one name, or a refusal naming what it accepts.
+ *
+ * {@link required}'s emptiness rule, over a slot with more than one spelling, and deliberately
+ * the same rule: a secret a hosted runner was never given expands to an empty value rather
+ * than being absent, which is what lets the managed workflow pass every accepted name through
+ * unconditionally without telling an adopter who supplied one that they supplied two.
+ *
+ * The two refusals are worded differently on purpose. An absent credential is answered by its
+ * own name — set it. An ambiguous one is not: nothing in either name says which to drop, so
+ * that message states what a run holds and leaves the choice with the operator. It is refused
+ * rather than resolved because the forms differ in what they cost — one bills a key, the other
+ * spends a usage window shared with the adopter's own work — so a precedence would be wrong in
+ * both directions and wrong invisibly. jen settles that here, rather than leaving it to the
+ * precedence the CLI would apply below it.
+ */
+function requiredOneOf(
+  env: Environment,
+  names: readonly string[],
+  why: string,
+): { variable: string; value: string } {
+  const held = names
+    .map((variable) => ({ variable, value: env[variable] ?? '' }))
+    .filter(({ value }) => value.trim() !== '');
+  const [only] = held;
+  if (only === undefined) {
+    throw new CredentialError(`${names.join(' or ')} is not set — ${why}.`);
+  }
+  if (held.length > 1) {
+    throw new CredentialError(
+      `${held.map(({ variable }) => variable).join(' and ')} are set together — a run holds exactly one, and jen will not choose. Unset the one this run is not to spend.`,
+    );
+  }
+  return only;
+}
+
+/**
+ * The role's credentials, or a refusal naming the variable the environment got wrong.
  *
  * Every variable is read before anything else happens, which is the tick's refusal shape
  * reused on purpose: a misconfigured run fails naming what is missing, before a session
@@ -137,7 +189,7 @@ export function credentialsFor(role: Role, env: Environment): Credentials {
     ),
     privateKey: required(env, VARIABLES.privateKey(role), `the \`${role}\` role's token cannot be minted without it`),
     trackerToken: required(env, VARIABLES.tracker, 'a session that cannot reach the tracker cannot announce itself'),
-    modelKey: required(env, VARIABLES.model, 'a session cannot run without model access'),
+    model: requiredOneOf(env, VARIABLES.model, 'a session cannot run without model access'),
   };
 }
 
