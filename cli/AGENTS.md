@@ -475,6 +475,22 @@ askpass reading a file the run refreshes, a `gh` credential helper, or a run tha
 ceiling on session length and fails *at* it rather than past it. ENG-167 carries the observation
 that settles which: how long a real stage session actually takes against the hour it has.
 
+## Neither model credential reports what it has left, so exhaustion has no symptom jen can read
+
+The installation token above at least *says* when it expires. Model access says nothing. An API
+key's balance and a subscription's usage window are both invisible from inside a run — there is
+no field to capture the way `expiresAt` is captured — so a token that has been revoked, or a
+window the operator's own interactive work already spent, surfaces as a session dying at model
+access with nothing in jen's output naming the cause. It reads as an ordinary stage failure.
+
+This is why the both-set case in `credentialsFor` is a refusal rather than a precedence. Every
+other credential jen reads has exactly one name, so a wrong one fails loudly the first time it
+is used; a model credential picked silently out of two fails only later, on the *other* one's
+budget, and the operator has nothing to read that says which was spent. Refusing costs one
+`unset` at configuration time, where a person is. The delete in `childEnvironment` is the same
+argument one layer down — the session is given the name the run holds and no other, so the CLI
+never gets to apply its own precedence below jen's decision.
+
 ## The shipped workflow's source is `payload/`, not `.github/workflows/`
 
 Every other managed file's `source` is its own target path, because jen's working copies *are*

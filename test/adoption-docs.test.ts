@@ -137,7 +137,7 @@ describe('the runner chapter', () => {
     const roles = [...new Set(STAGES.map((stage) => stage.role))];
     const needed = [
       VARIABLES.tracker,
-      VARIABLES.model,
+      ...VARIABLES.model,
       ...roles.flatMap((role) => [VARIABLES.appId(role), VARIABLES.installation(role), VARIABLES.privateKey(role)]),
     ];
 
