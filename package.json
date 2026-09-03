@@ -1,6 +1,6 @@
 {
   "name": "@reveer/jen",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "The workflow layer for automated, agentic software development — task-anchored, spec-driven, and git-reviewed.",
   "license": "Apache-2.0",
   "private": false,
