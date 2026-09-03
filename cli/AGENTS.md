@@ -301,11 +301,11 @@ promise against an exit code.
 ## Workspace trust is the invocation's, and `-p` does not exempt a run from it
 
 `-p`'s own help says the trust dialog is skipped in non-interactive mode, which reads like a
-dispatched run is exempt. It is not. A fresh clone under `-p --permission-mode dontAsk` still
-prints `Ignoring N permissions.allow entries from .claude/settings.json: this workspace has
-not been trusted` and runs **as though the file were empty** — on every run, since every clone
-is a path nothing has ever trusted. Under `dontAsk` the consequence is the failure the seeded
-allow list exists to prevent, reached with nobody present to grant anything.
+dispatched run is exempt. It is not. A fresh clone under `-p --permission-mode acceptEdits`
+still prints `Ignoring N permissions.allow entries from .claude/settings.json: this workspace
+has not been trusted` and runs **as though the file were empty** — on every run, since every
+clone is a path nothing has ever trusted. With nobody present, the consequence is the failure
+the seeded allow list exists to prevent.
 
 Three routes past it were verified against 2.1.220 rather than read off documentation:
 `--settings` (works, and rejected — it leaves the project's own file inert, so a project could

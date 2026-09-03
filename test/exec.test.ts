@@ -48,8 +48,8 @@ function report(overrides: Partial<SessionReport> = {}): SessionReport {
 
 describe('the prompt', () => {
   // Both halves are named and neither is inferred. The task especially: a session launched
-  // with a bare skill name has no asking branch under `dontAsk`, so it would refuse to act —
-  // spending a dispatch and presenting from outside as a stage failure.
+  // with a bare skill name has no asking branch when run non-interactively under `-p`, so it
+  // would refuse to act — spending a dispatch and presenting from outside as a stage failure.
   it('names the skill by name and the task beside it', () => {
     expect(prompt(REQUEST)).toBe('/implement-task ENG-1');
   });
@@ -339,7 +339,7 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(invoked!.argv.at(-1)).toBe('/implement-task ENG-1');
     expect(invoked!.argv.at(-2)).toBe('-p');
     expect(invoked!.argv).toContain('--permission-mode');
-    expect(invoked!.argv[invoked!.argv.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+    expect(invoked!.argv[invoked!.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
     expect(invoked!.argv).toContain('--verbose');
     expect(invoked!.argv[invoked!.argv.indexOf('--output-format') + 1]).toBe('stream-json');
   });
