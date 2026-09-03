@@ -32,14 +32,9 @@ rather than a local patch — is on the Linear issue, [ENG-184](https://linear.a
 
 ### Modified Capabilities
 
-<!-- None. The relevant requirement, `stage-execution` › "A run cannot block on a human",
-     is written mechanism-free: "A session SHALL be started in a mode that denies it the
-     ability to ask a person a question, and that denial SHALL hold even where a permission
-     rule would otherwise allow the asking." `-p` is that mode and satisfies that
-     requirement; the fictional `dontAsk` never did. The requirement's wording stays
-     correct, so this change carries no delta. Only ENG-164's archived design (unchanged —
-     history) and the two code-comment spots above wrongly attributed the denial to a named
-     `--permission-mode` value. -->
+- `stage-execution` — sharpen "A run cannot block on a human" to state that asking is
+  denied because the session is non-interactive, independently of its permission mode, and
+  add a scenario covering a permission level that otherwise lets tools act without prompts.
 
 ## Impact
 
