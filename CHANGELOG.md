@@ -1,5 +1,11 @@
 # @reveer/jen
 
+## 0.3.1
+
+### Patch Changes
+
+- [#22](https://github.com/reveer-ai/jen/pull/22) [`f4e3206`](https://github.com/reveer-ai/jen/commit/f4e32068087e57fac23df314cc157d9d01bd9397) Thanks [@joshtgi](https://github.com/joshtgi)! - Launch dispatched Claude sessions with the supported `acceptEdits` permission mode.
+
 ## 0.3.0
 
 ### Minor Changes
