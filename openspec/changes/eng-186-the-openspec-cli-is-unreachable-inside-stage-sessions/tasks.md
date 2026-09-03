@@ -3,18 +3,23 @@
 - [x] 1.1 In `cli/exec.ts`, import `openspecBin` from `./openspec.js` and add `delimiter`
   to the existing `node:path` import.
 - [x] 1.2 Add a private method that writes the shim — e.g. `#openspecShim(directory)`:
-  `mkdir` a `bin/` under the run directory (sibling to `repo/` and `config/`), write a
-  `bin/openspec` file with mode `0o755`, and return the `bin/` path. Contents:
+  write an `openspec` file with mode `0o755` into **both** `bin/` and `node_modules/.bin/`
+  under the run directory (siblings to `repo/` and `config/`), and return the `bin/` path.
+  Contents:
 
   ```sh
   #!/bin/sh
   exec "<process.execPath>" "<openspecBin()>" "$@"
   ```
 
-  Both paths are interpolated at write time (trusted absolute local paths); embed them
-  directly rather than via environment variables — a `JEN_*` name would be stripped by
-  `childEnvironment`, and a non-namespaced one is avoidable noise. Same shape and lifetime
-  as the askpass script: written into the run directory, swept with it.
+  Two placements because the two invocations resolve differently: `openspec` off `PATH`
+  (the `bin/` prepend), and `npx openspec` off `npm exec`'s walk-up for `node_modules/.bin`
+  from the session cwd — `npx` never consults `PATH`, and with no local bin it fetches the
+  unscoped `openspec` from the registry. Both paths are interpolated at write time (trusted
+  absolute local paths); embed them directly rather than via environment variables — a
+  `JEN_*` name would be stripped by `childEnvironment`, and a non-namespaced one is
+  avoidable noise. Same shape and lifetime as the askpass script: written into the run
+  directory, swept with it.
 - [x] 1.3 Call it from `launch()` alongside the other per-run setup (after the `config`
   dir is made), and thread the returned `bin/` path into `#session(...)` as a new argument.
 - [x] 1.4 `#session` passes the `bin/` path to `childEnvironment`.
@@ -42,8 +47,9 @@
 - [x] 3.3 Add a launched-session assertion: `invoked.env.PATH` starts with the run's `bin/`
   dir + `delimiter`; `bin/openspec` exists, is executable (mode `& 0o111`), and its contents
   name both `process.execPath` and the path `openspecBin()` returns.
-- [x] 3.4 Add an end-to-end assertion that the shim runs: exec `<binDir>/openspec --version`
-  with an empty `PATH` and confirm it exits 0 and prints the version from
+- [x] 3.4 Add end-to-end assertions that the shim runs: exec `<binDir>/openspec --version`
+  with an empty `PATH`, and run `npx openspec --version` from the clone with a `PATH` that
+  carries `sh`/`node`/`npx` but no `openspec`; confirm each prints the version from
   `@fission-ai/openspec`'s `package.json`. This is what proves the resolution actually works
   rather than just that a file was written.
 
@@ -53,8 +59,10 @@
 - [x] 4.2 `npm run typecheck` and `npm run build` pass; confirm `dist/exec.js` carries the
   shim write and the PATH prepend.
 - [x] 4.3 Sanity-check against the real failure: in a checkout with no `node_modules` and a
-  `PATH` that does not contain `openspec`, the shim dir on `PATH` makes both `openspec …`
-  and `npx openspec …` resolve.
+  `PATH` that does not contain `openspec`, the `bin/` shim on `PATH` makes `openspec …`
+  resolve and the `node_modules/.bin/` shim makes `npx openspec …` resolve (verified: `npx`
+  does not consult `PATH`, so the `bin/` prepend alone leaves `npx openspec` fetching the
+  unscoped registry package).
 
 ## 5. Release
 

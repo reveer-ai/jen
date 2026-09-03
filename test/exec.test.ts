@@ -13,7 +13,17 @@
  * network, which is the only thing the stubs are there to avoid.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { mkdtemp, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -399,10 +409,10 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], invoked.cwd)).toBe(
       'origin/eng-2-designed',
     );
-    // The session still received the closed environment, not the host's: the host's `PATH` is
-    // not inherited, so what the session gets is jen's own shim dir and nothing else. And no
-    // `JEN_*` the host may hold — on a runner carrying the pipeline's own secrets, that is
-    // another role's private key.
+    // The session still received the closed environment, not the host's. This test's base env
+    // carries no `PATH`, so the prepended shim dir stands in for the whole of it — in
+    // production it would be `<binDir><delimiter><runner PATH>`. And no `JEN_*` the host may
+    // hold — on a runner carrying the pipeline's own secrets, that is another role's private key.
     expect(invoked.env.PATH).toBe(join(invoked.cwd, '..', 'bin'));
     expect(Object.keys(invoked.env).filter((key) => key.startsWith('JEN_'))).toEqual([]);
     rmSync(join(invoked.cwd, '..'), { recursive: true, force: true });
@@ -699,21 +709,23 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
   });
 
   // Every stage runs `openspec`, and the session's clone has no `node_modules` and no
-  // `openspec` on the inherited `PATH`. The run writes a shim into its own `bin/` and puts
-  // that first on `PATH`, so both `openspec …` and `npx openspec …` resolve.
-  it('puts an openspec shim on the session PATH', async () => {
+  // `openspec` on the inherited `PATH`. The run writes the same wrapper into its own `bin/`
+  // (prepended to `PATH`, for bare `openspec`) and a sibling `node_modules/.bin/` (found by
+  // `npm exec`'s walk-up, for `npx openspec` — which never consults `PATH`).
+  it('puts an openspec shim on the session PATH and in a node_modules/.bin above the clone', async () => {
     const { invoked } = await launched(REQUEST, {}, true);
     const bin = join(invoked!.cwd, '..', 'bin');
 
     expect(invoked!.env.PATH!.startsWith(bin + delimiter) || invoked!.env.PATH === bin).toBe(true);
 
-    const shim = join(bin, 'openspec');
-    expect(existsSync(shim)).toBe(true);
-    expect(statSync(shim).mode & 0o111).toBeTruthy();
+    for (const shim of [join(bin, 'openspec'), join(invoked!.cwd, '..', 'node_modules', '.bin', 'openspec')]) {
+      expect(existsSync(shim)).toBe(true);
+      expect(statSync(shim).mode & 0o111).toBeTruthy();
 
-    const text = readFileSync(shim, 'utf8');
-    expect(text).toContain(process.execPath);
-    expect(text).toContain(openspecBin());
+      const text = readFileSync(shim, 'utf8');
+      expect(text).toContain(process.execPath);
+      expect(text).toContain(openspecBin());
+    }
 
     rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
   });
@@ -736,6 +748,31 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(printed).toContain(manifest.version);
 
     rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
+  });
+
+  // The other half of the same claim: `npm exec` walking up from the session cwd for
+  // `node_modules/.bin/openspec` before it reaches the registry. Run `npx openspec` from the
+  // clone with a `PATH` that carries `sh`/`node`/`npx` but no `openspec`, so the only way it
+  // prints jen's pinned version is the walk-up finding the shim.
+  it('resolves OpenSpec through `npx` via the node_modules/.bin shim', async () => {
+    const { invoked } = await launched(REQUEST, {}, true);
+    const home = mkdtempSync(join(tmpdir(), 'jen-npx-'));
+
+    try {
+      const printed = execFileSync('npx', ['openspec', '--version'], {
+        cwd: invoked!.cwd,
+        encoding: 'utf8',
+        env: { HOME: home, PATH: ['/bin', '/usr/bin', dirname(process.execPath)].join(delimiter) },
+      }).trim();
+
+      const manifest = JSON.parse(
+        readFileSync(join(dirname(openspecBin()), '..', 'package.json'), 'utf8'),
+      ) as { version: string };
+      expect(printed).toContain(manifest.version);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(join(invoked!.cwd, '..'), { recursive: true, force: true });
+    }
   });
 
   // A command line is readable by every process on the host, and this string carries the

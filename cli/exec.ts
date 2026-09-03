@@ -368,20 +368,29 @@ esac
 `;
 
 /**
- * The `openspec` wrapper written onto the session's `PATH`.
+ * The `openspec` wrapper the run puts in front of the session, in two places for two
+ * callers.
  *
  * The session runs in a bare clone the pipeline never installs dependencies into, so
- * neither `openspec` (a dependency's bin, never linked by a global install of jen) nor
- * `npx openspec` (which then reaches the registry) resolves. Every stage runs `openspec`,
- * so without this the pipeline cannot start.
+ * neither `openspec` nor `npx openspec` resolves on its own. Every stage runs `openspec`,
+ * so without this the pipeline cannot start. The two invocations reach a command by
+ * different routes, and neither route is `PATH` alone:
  *
- * Both paths are jen's own — the `node` running the runner and the entrypoint
+ *   - `openspec …` resolves off `PATH` — a global install of jen links jen's own bin and
+ *     never a dependency's — so the shim goes in a `bin/` that {@link childEnvironment}
+ *     prepends to it.
+ *   - `npx openspec …` never consults `PATH`. `npm exec` walks up from the cwd for a
+ *     `node_modules/.bin/<name>`, then checks jen's global bin, then reaches the registry —
+ *     for the unscoped `openspec`, not jen's `@fission-ai/openspec`. So a second copy goes
+ *     in a `node_modules/.bin/` above the clone, where that walk-up lands first.
+ *
+ * Both interpolated paths are jen's own — the `node` running the runner and the entrypoint
  * {@link openspecBin} resolves from jen's dependency tree — so the wrapper runs the exact
- * OpenSpec version jen depends on, with no install, fetch, or pin of its own, and answers
- * both `openspec …` and `npx openspec …`. They are interpolated at write time rather than
- * passed through the environment: a `JEN_*` name would be stripped by
- * {@link childEnvironment}, and a non-namespaced one is avoidable. Same shape and lifetime
- * as {@link ASKPASS} — written into the run directory, swept with it.
+ * OpenSpec version jen depends on, with no install, fetch, or pin of its own. They are
+ * interpolated at write time rather than passed through the environment: a `JEN_*` name
+ * would be stripped by {@link childEnvironment}, and a non-namespaced one is avoidable.
+ * Same shape and lifetime as {@link ASKPASS} — written into the run directory, swept with
+ * it.
  */
 function openspecShim(node: string, bin: string): string {
   return `#!/bin/sh
@@ -869,17 +878,24 @@ export class Executor {
   }
 
   /**
-   * Write the `openspec` shim, and return the directory to put on the session's `PATH`.
+   * Write the `openspec` shim in both places the session reaches it from, and return the
+   * directory to prepend to `PATH`.
    *
-   * A sibling of `repo/` and `config/` rather than inside either: it is neither the clone's
-   * content nor Claude's config store, and a directory of its own keeps `PATH` pointed at
-   * exactly the one wrapper jen owns. Mode `0755` — the shim is executed, not sourced — and
-   * it holds no secret, only two of jen's own absolute paths. Swept with the run directory.
+   * `bin/` is a sibling of `repo/` and `config/` — neither the clone's content nor Claude's
+   * config store — and a directory of its own keeps `PATH` pointed at exactly the one
+   * wrapper jen owns. `node_modules/.bin/` sits beside it, above the clone, so `npm exec`'s
+   * walk-up from the session cwd finds the same wrapper for `npx openspec` — which never
+   * looks at `PATH`. Mode `0755` — the shim is executed, not sourced — and it holds no
+   * secret, only two of jen's own absolute paths. Both go with the run directory.
    */
   async #openspecShim(directory: string): Promise<string> {
+    const shim = openspecShim(process.execPath, openspecBin());
     const bin = join(directory, 'bin');
+    const nodeBin = join(directory, 'node_modules', '.bin');
     await mkdir(bin, { recursive: true });
-    await writeFile(join(bin, 'openspec'), openspecShim(process.execPath, openspecBin()), { mode: 0o755 });
+    await mkdir(nodeBin, { recursive: true });
+    await writeFile(join(bin, 'openspec'), shim, { mode: 0o755 });
+    await writeFile(join(nodeBin, 'openspec'), shim, { mode: 0o755 });
     return bin;
   }
 
