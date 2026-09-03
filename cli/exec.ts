@@ -21,9 +21,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { credentialsFor, GitHub, NAMESPACE, remoteUrl, STAGE_SCOPE, VARIABLES, type Credentials, type Environment } from './github.js';
+import { openspecBin } from './openspec.js';
 import { STAGES } from './stages.js';
 
 import type { RunRequest } from './run.js';
@@ -366,6 +367,28 @@ Username*) printf '%s' 'x-access-token' ;;
 esac
 `;
 
+/**
+ * The `openspec` wrapper written onto the session's `PATH`.
+ *
+ * The session runs in a bare clone the pipeline never installs dependencies into, so
+ * neither `openspec` (a dependency's bin, never linked by a global install of jen) nor
+ * `npx openspec` (which then reaches the registry) resolves. Every stage runs `openspec`,
+ * so without this the pipeline cannot start.
+ *
+ * Both paths are jen's own — the `node` running the runner and the entrypoint
+ * {@link openspecBin} resolves from jen's dependency tree — so the wrapper runs the exact
+ * OpenSpec version jen depends on, with no install, fetch, or pin of its own, and answers
+ * both `openspec …` and `npx openspec …`. They are interpolated at write time rather than
+ * passed through the environment: a `JEN_*` name would be stripped by
+ * {@link childEnvironment}, and a non-namespaced one is avoidable. Same shape and lifetime
+ * as {@link ASKPASS} — written into the run directory, swept with it.
+ */
+function openspecShim(node: string, bin: string): string {
+  return `#!/bin/sh
+exec "${node}" "${bin}" "$@"
+`;
+}
+
 /** What the operator declared about which variables belong to which stage. */
 interface Declarations {
   /** Per declaration variable — `JEN_ENV_TEST_TASK` — the variable names it claims. */
@@ -416,7 +439,7 @@ function declarations(base: Environment): Declarations {
  * The child's environment: what the project's own commands need, this run's role, and
  * nothing of another's.
  *
- * Four things happen to the runner's environment on the way in.
+ * Five things happen to the runner's environment on the way in.
  *
  * **It is inherited.** A project's checks read configuration jen cannot enumerate — the
  * database a suite connects to, the endpoint an integration test reaches — and
@@ -454,6 +477,12 @@ function declarations(base: Environment): Declarations {
  * anyway, asserted directly against a constructed environment, so this unit's contract holds on
  * its own terms rather than by its caller's grace.
  *
+ * **The run's own `bin/` is prepended to `PATH`.** It holds the `openspec` shim
+ * ({@link openspecShim}); the session runs in a bare clone with no `node_modules` and a
+ * global install of jen links jen's bin alone, so this is the only way `openspec` resolves.
+ * Prepended so it wins, and it stands in for `PATH` entirely where the runner holds none —
+ * which is the closed-environment case the tests construct.
+ *
  * Notes come back beside the environment rather than being thrown or logged: a declaration
  * that scoped nothing is worth telling the operator about and is not worth stopping a
  * pipeline over, and {@link RunOutcome.notes} is the channel that can say so without failing
@@ -466,6 +495,7 @@ export function childEnvironment(
   token: string,
   configDir: string,
   askpass: string,
+  binDir: string,
 ): { env: NodeJS.ProcessEnv; notes: string[] } {
   const { byStage, unrecognized } = declarations(base);
   const mine = byStage.get(VARIABLES.stageScope(skill)) ?? new Set<string>();
@@ -494,6 +524,9 @@ export function childEnvironment(
   // clone it cannot push, since the remote URL deliberately carries no credential.
   env.GIT_ASKPASS = askpass;
   env.GIT_TERMINAL_PROMPT = '0';
+  // Prepended, so the shim wins over anything the inherit loop copied; and the whole of
+  // `PATH` where the runner carried none, which is the closed-environment case.
+  env.PATH = env.PATH ? binDir + delimiter + env.PATH : binDir;
 
   return { env, notes: [...unrecognized.map(unknownStage), ...unheld(byStage, base)] };
 }
@@ -623,7 +656,8 @@ export class Executor {
         mode: 0o600,
       });
 
-      const { child, notes } = this.#session(repo, config, mcp, request, credentials, installation.token, script);
+      const bin = await this.#openspecShim(directory);
+      const { child, notes } = this.#session(repo, config, mcp, request, credentials, installation.token, script, bin);
       sessionStarted = true;
       const exit = await child.exited;
       const report = readStream(exit.stdout);
@@ -835,6 +869,21 @@ export class Executor {
   }
 
   /**
+   * Write the `openspec` shim, and return the directory to put on the session's `PATH`.
+   *
+   * A sibling of `repo/` and `config/` rather than inside either: it is neither the clone's
+   * content nor Claude's config store, and a directory of its own keeps `PATH` pointed at
+   * exactly the one wrapper jen owns. Mode `0755` — the shim is executed, not sourced — and
+   * it holds no secret, only two of jen's own absolute paths. Swept with the run directory.
+   */
+  async #openspecShim(directory: string): Promise<string> {
+    const bin = join(directory, 'bin');
+    await mkdir(bin, { recursive: true });
+    await writeFile(join(bin, 'openspec'), openspecShim(process.execPath, openspecBin()), { mode: 0o755 });
+    return bin;
+  }
+
+  /**
    * The identity the clone's commits carry.
    *
    * The token governs what the run may *do*; the git config governs what the history *says*
@@ -885,9 +934,10 @@ export class Executor {
     credentials: Credentials,
     token: string,
     askpass: string,
+    binDir: string,
   ): { child: Child; notes: string[] } {
     const [command, ...leading] = this.#options.claude ?? ['claude'];
-    const { env, notes } = childEnvironment(this.#env, request.skill, credentials, token, config, askpass);
+    const { env, notes } = childEnvironment(this.#env, request.skill, credentials, token, config, askpass, binDir);
     const child = this.#spawn({
       command: command!,
       args: [

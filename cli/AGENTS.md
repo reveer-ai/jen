@@ -78,6 +78,8 @@ import.meta.resolve('@fission-ai/openspec')               →  …/@fission-ai/o
 
 `openspec.ts` therefore resolves the bare specifier and walks up to the directory holding `package.json` to read `bin.openspec`. Not `node_modules/.bin/openspec`: that shim lives in jen's install tree, which is not the project's under a global or `npx` install. Not `npx @fission-ai/openspec` either — that needs the network and floats off the version the lockfile pins.
 
+**A dispatched stage session cannot resolve OpenSpec on its own, so the run hands it a shim.** The session's cwd is a bare clone the pipeline never installs into — no `node_modules` to walk up to — and a global install of jen links jen's bin alone, never a dependency's, so `openspec` is not on the inherited `PATH` and `npx openspec` reaches for the registry. `exec.ts` writes `bin/openspec` (`exec "<node>" "<openspecBin()>" "$@"`) into a sibling of `repo/` and `config/` and prepends that dir to the session `PATH` in `childEnvironment`, same shape and lifetime as the askpass script. This is the *only* thing that puts `PATH` on the session at all — the runner's own `PATH` is not inherited — so the closed-environment tests assert `PATH` is exactly the shim dir. Every stage runs `openspec`; without this the pipeline cannot start.
+
 ## Variable-set members must be able to carry the stamp
 
 Deletion is the stamp intersected with the shipped payload, so a format with nowhere to put a stamp can never be reconciled. Markdown (frontmatter) and YAML (`#` comments) qualify; JSON does not. Adding a JSON file to a variable set fails staging — put it in a fixed path instead, or leave it project-owned.

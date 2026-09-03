@@ -1,8 +1,8 @@
 ## 1. Make the OpenSpec CLI reachable to the session
 
-- [ ] 1.1 In `cli/exec.ts`, import `openspecBin` from `./openspec.js` and add `delimiter`
+- [x] 1.1 In `cli/exec.ts`, import `openspecBin` from `./openspec.js` and add `delimiter`
   to the existing `node:path` import.
-- [ ] 1.2 Add a private method that writes the shim — e.g. `#openspecShim(directory)`:
+- [x] 1.2 Add a private method that writes the shim — e.g. `#openspecShim(directory)`:
   `mkdir` a `bin/` under the run directory (sibling to `repo/` and `config/`), write a
   `bin/openspec` file with mode `0o755`, and return the `bin/` path. Contents:
 
@@ -15,49 +15,49 @@
   directly rather than via environment variables — a `JEN_*` name would be stripped by
   `childEnvironment`, and a non-namespaced one is avoidable noise. Same shape and lifetime
   as the askpass script: written into the run directory, swept with it.
-- [ ] 1.3 Call it from `launch()` alongside the other per-run setup (after the `config`
+- [x] 1.3 Call it from `launch()` alongside the other per-run setup (after the `config`
   dir is made), and thread the returned `bin/` path into `#session(...)` as a new argument.
-- [ ] 1.4 `#session` passes the `bin/` path to `childEnvironment`.
+- [x] 1.4 `#session` passes the `bin/` path to `childEnvironment`.
 
 ## 2. Prepend the shim dir to the session PATH
 
-- [ ] 2.1 `childEnvironment(...)` takes a new `binDir: string` parameter (place it beside
+- [x] 2.1 `childEnvironment(...)` takes a new `binDir: string` parameter (place it beside
   `configDir` / `askpass`).
-- [ ] 2.2 After the copy loop and the other explicit assignments, set
+- [x] 2.2 After the copy loop and the other explicit assignments, set
   `env.PATH = env.PATH ? binDir + delimiter + env.PATH : binDir`. This wins over whatever
   the inherit loop copied and covers the case where the runner holds no `PATH`.
-- [ ] 2.3 Update the doc comment on `childEnvironment` so the PATH handling is described
+- [x] 2.3 Update the doc comment on `childEnvironment` so the PATH handling is described
   where the four other transforms already are.
 
 ## 3. Tests (`test/exec.test.ts`)
 
-- [ ] 3.1 The `childEnvironment` unit call (~line 508) gains the `binDir` argument. Repoint
+- [x] 3.1 The `childEnvironment` unit call (~line 508) gains the `binDir` argument. Repoint
   `expect(env.PATH …)` from `.toBe('/usr/bin')` to assert the value is
   `binDir + delimiter + '/usr/bin'`.
-- [ ] 3.2 The closed-environment assertion (~line 404) `expect(invoked.env.PATH).toBeUndefined()`
+- [x] 3.2 The closed-environment assertion (~line 404) `expect(invoked.env.PATH).toBeUndefined()`
   becomes an assertion that `PATH` is exactly the run's `bin/` dir
   (`join(invoked.cwd, '..', 'bin')`), since the base environment there carries no `PATH`.
   Reword the comment: the host's `PATH` is still not inherited; what the session gets is
   jen's own shim dir and nothing else.
-- [ ] 3.3 Add a launched-session assertion: `invoked.env.PATH` starts with the run's `bin/`
+- [x] 3.3 Add a launched-session assertion: `invoked.env.PATH` starts with the run's `bin/`
   dir + `delimiter`; `bin/openspec` exists, is executable (mode `& 0o111`), and its contents
   name both `process.execPath` and the path `openspecBin()` returns.
-- [ ] 3.4 Add an end-to-end assertion that the shim runs: exec `<binDir>/openspec --version`
+- [x] 3.4 Add an end-to-end assertion that the shim runs: exec `<binDir>/openspec --version`
   with an empty `PATH` and confirm it exits 0 and prints the version from
   `@fission-ai/openspec`'s `package.json`. This is what proves the resolution actually works
   rather than just that a file was written.
 
 ## 4. Verify
 
-- [ ] 4.1 `npm test` passes.
-- [ ] 4.2 `npm run typecheck` and `npm run build` pass; confirm `dist/exec.js` carries the
+- [x] 4.1 `npm test` passes.
+- [x] 4.2 `npm run typecheck` and `npm run build` pass; confirm `dist/exec.js` carries the
   shim write and the PATH prepend.
-- [ ] 4.3 Sanity-check against the real failure: in a checkout with no `node_modules` and a
+- [x] 4.3 Sanity-check against the real failure: in a checkout with no `node_modules` and a
   `PATH` that does not contain `openspec`, the shim dir on `PATH` makes both `openspec …`
   and `npx openspec …` resolve.
 
 ## 5. Release
 
-- [ ] 5.1 Add a patch changeset describing the fix.
-- [ ] 5.2 Note in the closing handoff: as with ENG-184, the compiled fix reaches the
+- [x] 5.1 Add a patch changeset describing the fix.
+- [x] 5.2 Note in the closing handoff: as with ENG-184, the compiled fix reaches the
   scheduled runner only once the Version PR ships — CI installs jen fresh each run.
