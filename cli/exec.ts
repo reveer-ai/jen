@@ -321,11 +321,11 @@ export function verdict(report: SessionReport, exit: Exit, stderr: string): stri
  * a judgment, and judgment about what to run belongs to the dispatch decision, not to a
  * session nobody is watching.
  *
- * Naming the task is the half that interacts with `dontAsk`. A stage takes its task given
- * or inferred, asks when that is unclear, and stops when it can neither identify one nor
- * ask — and a dispatched run has no asking branch. A session launched with a bare skill name
- * would therefore refuse to act, correctly, spending a dispatch and presenting from outside
- * as a stage failure.
+ * Naming the task is the half that interacts with the session being non-interactive under
+ * `-p`. A stage takes its task given or inferred, asks when that is unclear, and stops when it
+ * can neither identify one nor ask — and a dispatched run has no asking branch. A session
+ * launched with a bare skill name would therefore refuse to act, correctly, spending a
+ * dispatch and presenting from outside as a stage failure.
  */
 export function prompt(request: RunRequest): string {
   return `/${request.skill} ${request.task}`;
@@ -893,7 +893,7 @@ export class Executor {
       args: [
         ...leading,
         '--permission-mode',
-        'dontAsk',
+        'acceptEdits',
         '--output-format',
         'stream-json',
         '--verbose',
