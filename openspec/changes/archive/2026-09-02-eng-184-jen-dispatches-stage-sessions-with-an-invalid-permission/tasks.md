@@ -30,5 +30,7 @@
 ## 4. Release
 
 - [x] 4.1 Add a changeset for the fix (patch).
-- [ ] 4.2 Delivery cuts the release as its last act; CI installs jen fresh, so the fix
-  reaches the scheduled runner only once the release ships.
+- [x] 4.2 Record the release handoff: the task PR carries the patch changeset; after it
+  lands on `main`, release automation prepares the separate Version PR for a human to
+  merge. CI installs jen fresh, so the fix reaches the scheduled runner only once that
+  release ships.

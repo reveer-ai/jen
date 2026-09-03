@@ -21,8 +21,10 @@ rather than a local patch — is on the Linear issue, [ENG-184](https://linear.a
   mechanism: a dispatched session runs under `-p`, and `-p` gives it no way to put a
   question to a person, so the stage prose's "never wait on a human" is enforced by the
   invocation regardless of what a permission rule would allow.
-- A jen release is cut. The compiled `dist/exec.js` carries the same argv, and a scheduled
-  runner installs jen fresh on every run, so the fix does not reach CI until it ships.
+- The task PR carries a patch changeset. After it lands, release automation prepares the
+  separate Version PR for a human to merge. The compiled `dist/exec.js` carries the same
+  argv, and a scheduled runner installs jen fresh on every run, so the fix does not reach
+  CI until that release ships.
 
 ## Capabilities
 
@@ -41,6 +43,7 @@ rather than a local patch — is on the Linear issue, [ENG-184](https://linear.a
 - `cli/exec.ts` — the dispatched-session argv, and one doc comment.
 - `test/exec.test.ts` — one assertion, one comment.
 - `cli/AGENTS.md` — the workspace-trust note.
-- A jen release; `dist/exec.js` is rebuilt from `cli/exec.ts` as part of it.
+- A patch changeset and the resulting Version PR; `dist/exec.js` is rebuilt from
+  `cli/exec.ts` before the release artifact is packed.
 - Every dispatched stage session after the release actually starts, where today the argv is
   rejected before the session runs.
