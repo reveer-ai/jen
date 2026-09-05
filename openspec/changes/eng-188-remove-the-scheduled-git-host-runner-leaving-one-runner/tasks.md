@@ -1,42 +1,43 @@
-## 1. The retired path
+## 1. Removing the workflow
 
-- [ ] 1.1 Add `{ kind: 'retired'; target: string }` to `PayloadGroup` in `cli/payload.ts`, with an accessor giving the retired targets. Leave `payloadFiles()` and `stagedFiles()` returning only files that are written, so staging, installation, and the stamp rule are untouched.
-- [ ] 1.2 Plan retired paths in `cli/plan.ts`: for each declared target, push to `plan.obstructions` where `symlinkedAncestor` answers, skip anything that is not a regular file, skip an absent path silently, and otherwise append to `plan.deletions`. Retire the doc comment on `Plan.deletions` that says the stamp is the only ground.
-- [ ] 1.3 Assert the declaration in `test/payload.test.ts`: a path declared both shipped and retired is rejected, in the same shape as the existing one-set-per-target-directory assertion.
-- [ ] 1.4 Cover the guards in `test/plan.test.ts`: a retired path present is planned for deletion; absent is silent; an unstamped file at one is still deleted; a directory at one is left alone; a symlinked ancestor obstructs rather than deleting. Add an `test/install.test.ts` case proving `jen update` actually removes the file end to end.
+- [ ] 1.1 Delete `payload/jen.yml` and drop its fixed-path declaration from `PAYLOAD` in `cli/payload.ts`, including `WORKFLOW_TARGET` and the comment block explaining where it lands.
+- [ ] 1.2 Delete `test/scheduled-workflow.test.ts`.
+- [ ] 1.3 Confirm nothing else writes, reads, or asserts the workflow — including `scripts/stage-payload.js` and `test/stage-payload.test.ts`, whose expectations derive from the declaration and should follow it without editing. Confirm `format: 'yaml'` still has a member (`scaffold/registry.yaml`) before assuming it is dead.
 
-## 2. Removing the workflow
+## 2. Removing write-time substitution
 
-- [ ] 2.1 Delete `payload/jen.yml`, drop its fixed-path declaration from `PAYLOAD`, and declare `.github/workflows/jen.yml` as the first retired path.
-- [ ] 2.2 Delete `test/scheduled-workflow.test.ts`.
-- [ ] 2.3 Confirm nothing else in the repository still writes, reads, or asserts the workflow — including `scripts/stage-payload.js` and `test/stage-payload.test.ts`, whose expectations are derived from the declaration and should follow it without editing.
+- [ ] 2.1 Delete `substitute`, `PLACEHOLDER`, and `ManagedFile.substituted` from `cli/payload.ts`; move `SUBSTITUTIONS` and `SubstitutionName` to `cli/registry.ts` and update every importer.
+- [ ] 2.2 Delete the `render` substitution branch, the `resolveFromRegistry` call, and the `Plan.unresolved` field from `cli/plan.ts`, and the unresolved-value report from `cli/cli.ts`.
+- [ ] 2.3 Keep `Unresolved` and `Resolution` in `cli/registry.ts` — `cli/watch.ts:115` iterates `registry.unresolved` to carry *why* a value is missing into the runner's refusal. They look like substitution's types and are the runner's.
+- [ ] 2.4 Confirm `test/registry.test.ts` and `test/watch.test.ts` still pass unchanged. If either needed editing, the removal reached further than intended.
 
-## 3. Removing write-time substitution
+## 3. One runner, in the code
 
-- [ ] 3.1 Delete `substitute`, `PLACEHOLDER`, and `ManagedFile.substituted` from `cli/payload.ts`; move `SUBSTITUTIONS` and `SubstitutionName` to `cli/registry.ts` and update `watch.ts` and `registry.ts` to import them from there.
-- [ ] 3.2 Delete the substitution branch in `cli/plan.ts`, together with `Plan.unresolved` and the `Unresolved` type, and the unresolved-value report in `cli/cli.ts`.
-- [ ] 3.3 Leave `resolveFromRegistry` and every runner-side reader intact. Confirm `test/registry.test.ts` and `test/watch.test.ts` still pass unchanged — if either needed editing, the removal reached further than intended.
+- [ ] 3.1 Rename the runner through `cli/` — `watch.ts`'s module comment and `DEFAULT_INTERVAL_SECONDS` doc, `cli.ts`'s help and usage text, and the two-runner reasoning in the comments at `run.ts:6`, `run.ts:271`, `run.ts:320`, `run.ts:554`, `exec.ts:14`, `exec.ts:606`, `exec.ts:907`, `stages.ts:7`, `cli.ts:420`, and `watch.ts:241`. `jen watch` keeps its name; this is prose only.
+- [ ] 3.2 Confirm `resolveIdentity` and `impossible()` in `cli/watch.ts` already refuse an unresolvable team or project, naming what is absent and the checkout read. Add what is missing; add no new mechanism if nothing is.
 
-## 4. One runner, in the code and its prose
+## 4. Contributor notes
 
-- [ ] 4.1 Rename the runner in `cli/` — `watch.ts`'s module comment, `cli.ts`'s help and usage text, and every comment describing the pair. `jen watch` keeps its name; this is prose only.
-- [ ] 4.2 Confirm `resolveIdentity` and `impossible()` in `cli/watch.ts` already refuse an unresolvable team or project, naming what is absent and the checkout read. Add what is missing; add no new mechanism if nothing is.
-- [ ] 4.3 Remove the post-binding refresh step and the disabled-schedule check from `.claude/skills/setup-jen/SKILL.md`, and anything else in the shipped skills describing the scheduled runner.
+- [ ] 4.1 Delete the three `cli/AGENTS.md` sections that exist only for the workflow: *The shipped workflow's source is `payload/`, not `.github/workflows/`*, *Substitution renders empty, never the placeholder*, and *A job-level `if` cannot read the `env` context*.
+- [ ] 4.2 Rewrite *The local runner holds no lock, deliberately*. The conclusion survives — the tracker is the record and a restart re-establishes it — but the argument moves from *the other runner cannot see a lock* to *a second instance cannot*.
+- [ ] 4.3 Sweep the rest of `cli/AGENTS.md` for the two-runner framing (`:112`, `:245`, `:413`) and correct what is no longer true.
+- [ ] 4.4 Remove the post-binding refresh step and the disabled-schedule check from `.claude/skills/setup-jen/SKILL.md`, and the "same under both runners" phrasing at `:134`.
 
 ## 5. Adopter documentation
 
-- [ ] 5.1 `README.md` ownership table: drop the workflow row and the claim that it is the one managed file outside `.claude/` and the root.
-- [ ] 5.2 `README.md` environment passthrough: delete the scheduled-runner caveat, and state the mechanism unconditionally.
-- [ ] 5.3 `README.md` runner chapter: one runner rather than a pair. Keep that the git host is still required; state that a runner jen does not ship is equally valid and that a scheduled git-host job is one; say why jen stopped shipping that one; supply no workflow file or example. Move the runner's own conditions — a session dying with its process, a hung session hanging the loop — into the chapter, and drop the schedule-disabled failure mode.
-- [ ] 5.4 Update `test/adoption-docs.test.ts` to match: the workflow-ownership assertion, `says which runner the passthrough is available on today`, `presents both runners with what distinguishes them`, and `says the local runner does not remove the git host`. Add an assertion that the README supplies no Actions workflow example.
+- [ ] 5.1 `README.md` ownership table: drop the workflow row, and the paragraph at `:23` claiming it is the only managed file outside `.claude/` and the root.
+- [ ] 5.2 `README.md:263`: delete the paragraph saying `jen init` refuses a project holding its own `.github/workflows/jen.yml`. jen no longer owns that path, so there is nothing to refuse.
+- [ ] 5.3 `README.md` environment passthrough (`:102`): delete the scheduled-runner caveat and state the mechanism unconditionally.
+- [ ] 5.4 `README.md` runner chapter (`:136`–`:230`): one runner rather than a pair — the comparison table, both *Starting* sections, the disabled-schedule failure mode, the two-hour bound, and the "under both runners" phrasing. Keep that the git host is still required. State that a runner jen does not ship is equally valid and that a scheduled git-host job is one; say why jen stopped shipping that one; supply no workflow file or example. Move the runner's own conditions — a session dying with its process, a hung session hanging the loop — into the chapter.
+- [ ] 5.5 Update `test/adoption-docs.test.ts` to match: the workflow-ownership assertion, `says which runner the passthrough is available on today`, `presents both runners with what distinguishes them`, and `says the local runner does not remove the git host`. Add an assertion that the README supplies no Actions workflow example.
 
 ## 6. Release
 
-- [ ] 6.1 Write the changeset as a **minor** bump (`0.3.x` → `0.4.0`), leading with the required action: updating deletes `.github/workflows/jen.yml`, and an adopter who ran the pipeline on it has no runner until they start one.
+- [ ] 6.1 Write the changeset as a **minor** bump (`0.3.x` → `0.4.0`): the scheduled runner is gone and `jen watch` is the runner, plus one sentence telling anyone who installed an earlier version to delete `.github/workflows/jen.yml` by hand.
 - [ ] 6.2 File the follow-up task for a liveness bound on the runner, referencing the `pipeline-runner` removal note that records the gap.
 
 ## 7. Verification
 
 - [ ] 7.1 Run the full suite and the type check.
 - [ ] 7.2 `openspec validate eng-188-remove-the-scheduled-git-host-runner-leaving-one-runner --strict`.
-- [ ] 7.3 Prove the migration by hand: install a `0.3.x` payload into a scratch project, update to this build, and confirm `.github/workflows/jen.yml` is gone, the deletion was reported, and a sibling file in `.github/workflows/` is untouched.
+- [ ] 7.3 Grep the whole repository for `jen.yml`, `scheduled`, `local runner`, `two runners`, and `both runners` outside `openspec/changes/archive/`, and confirm every survivor is either jen's own CI (`ci.yml`, `release.yml`) or a deliberate reference to a runner an adopter drives.

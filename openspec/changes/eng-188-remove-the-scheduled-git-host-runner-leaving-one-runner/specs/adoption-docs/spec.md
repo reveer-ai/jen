@@ -1,18 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: The documentation states that an update removes the workflow, and what an adopter running it must do
-
-The adopter's documentation and the release accompanying this change SHALL state that updating deletes `.github/workflows/jen.yml` from the project, and that an adopter whose pipeline ran on it has no runner at all until they start one.
-
-This SHALL be stated as a required action rather than as a note. Every other file jen has ever removed on update was a skill, replaced by the payload's own; this one is the whole pipeline's trigger, and an adopter who reads past it discovers the loss the way this pipeline's worst failure always presents — as nothing happening, indefinitely, on a project whose ordinary state is quiet.
-
-#### Scenario: An adopter on the scheduled workflow reads the release
-
-- **WHEN** an adopter whose pipeline ran on the scheduled workflow reads what the update does
-- **THEN** it states that the workflow file is deleted from their repository
-- **AND** states that they have no runner until they start one
-- **AND** names what to start
-
 ### Requirement: The documentation states what the environment set on the runner reaches
 
 The adopter's documentation SHALL state that the variables an operator sets on the runner reach the pipeline's sessions. It SHALL be stated beside the permissions guidance, which answers the neighbouring half of the same question: the permissions section says a project's own checks must be granted the commands they run, and this says how those commands are given the configuration they read.
