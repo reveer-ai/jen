@@ -1,16 +1,17 @@
 /**
- * The local runner: the same tick, on an interval, until it is stopped.
+ * The runner: the same tick, on an interval, until it is stopped.
  *
  * A wrapper and nothing more. Every decision about what to dispatch belongs to `tick()`,
- * which this calls exactly as the scheduled workflow calls `jen run` — so a task's fate does
- * not depend on which runner happened to be pointed at the project.
+ * which this calls exactly as anything else driving `jen run` calls it — so a task's fate
+ * does not depend on what happened to be pointed at the project. This is the runner jen
+ * ships; a timer, a container, or a scheduled job on the git host is equally a runner, and
+ * supporting one takes nothing beyond the entry point already published.
  *
  * **It holds no state.** No lock file, no ledger, no queue, and no memory of what it
  * launched. Restarting it re-establishes everything from the tracker, and two instances on
- * one project behave exactly as two runners do, governed by the same in-flight test and the
- * same cap — both of which live in the tracker, which is the one place both runners look. A
- * lock here would be state one runner has and the other cannot see, which is the single rule
- * this whole change is built around.
+ * one project are governed by the same in-flight test and the same cap — both of which live
+ * in the tracker, which is the one place every runner looks. A lock here would be state one
+ * instance has and another cannot see, which is the single rule this is built around.
  *
  * The one thing it does that the tick does not is read a file: the checkout it was pointed
  * at has a `registry.yaml`, and resolving the tracker team and project from it is the
@@ -35,7 +36,13 @@ export interface Sessions {
   terminate(signal: NodeJS.Signals): void;
 }
 
-/** How long the local runner waits between ticks when nothing says otherwise, in seconds. */
+/**
+ * How long the runner waits between ticks when nothing says otherwise, in seconds.
+ *
+ * Chosen for what a tick actually costs the operator — a handful of tracker requests — and
+ * not for how fresh the pipeline's state ought to look. How often the runner asks is not
+ * pipeline state.
+ */
 export const DEFAULT_INTERVAL_SECONDS = 60;
 
 /** Where each of the tick's two identifying values came from, for the line the runner opens with. */
@@ -96,7 +103,7 @@ export function resolveIdentity(
   if (team && project) return { team, project, sources, unresolved };
 
   // Read once, and only for what is still missing. This is the parity with a person's own
-  // working copy that makes the local runner worth having: pointed at a checkout, it polls
+  // working copy that makes the runner worth pointing at a checkout at all: it polls
   // whatever that checkout says it is bound to.
   const registry = resolveFromRegistry(projectRoot);
   if (!team && registry.values.team) {
@@ -237,10 +244,10 @@ export async function watch(
         //
         // Left uncaught it would leave `watch`, leave `run()` — whose own `try` is
         // synchronous and never sees a rejected promise — and end the process as an
-        // unhandled rejection. That is also where the two runners would part: under the
-        // scheduled runner the same fault is one red job and the next cron picks up, while
-        // here it would be silence, which is the one state this pipeline must never be
-        // mistaken for.
+        // unhandled rejection: a runner that stopped, with nothing saying so. That is
+        // silence, which is the one state this pipeline must never be mistaken for. A
+        // runner an adopter drives from a job scheduler gets a failed job out of the same
+        // fault; this one has only the loop, so the loop is what has to survive it.
         io.err(`jen watch: the tick failed — ${error instanceof Error ? error.message : String(error)}`);
         // Not promised where a stop has already landed: the next tick is the retry only if
         // there is going to be one, and this line is the operator's evidence the runner is

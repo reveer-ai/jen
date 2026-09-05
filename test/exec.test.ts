@@ -855,7 +855,7 @@ else process.exit(Number(env.STUB_EXIT ?? '0'));
     expect(one.cwd).not.toBe(two.cwd);
   });
 
-  // Termination is ordinary operation — a cancelled job and a stopping local runner both
+  // Termination is ordinary operation — a stopping runner and whatever supervises one both
   // produce it — so it is handled deterministically rather than as a crash path.
   it('stops its session on termination, cleans up, and leaves the outcome saying so', async () => {
     rmSync(record, { force: true });

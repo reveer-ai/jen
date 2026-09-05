@@ -12,7 +12,7 @@
  * the skill it names is the skill that runs, the role it names is the identity it runs
  * under, and a status that changed since the decision changes nothing. `stage-execution`
  * states this as a requirement, and the reason is that two runners must not be able to reach
- * different conclusions from the same request.
+ * different conclusions from the same request — whichever of them dispatched it.
  *
  * Nothing here writes to the tracker — not for a session that failed, and not for one that
  * was terminated. Every tracker write in the pipeline belongs to a stage session, which is
@@ -476,8 +476,9 @@ function declarations(base: Environment): Declarations {
  * *name* varies, so a session that could see both spellings would leave the choice of which to
  * spend to the CLI's precedence — the ambiguity `credentialsFor` refuses upstream.
  *
- * The delete is not defensive. It fires on every tick of a correctly configured hosted runner:
- * the managed workflow passes every accepted name through unconditionally, so the one an
+ * The delete is not defensive. It fires on every tick of a runner that passes each accepted
+ * name through unconditionally — which is what a job scheduler's environment block does, and
+ * what an adopter driving the tick from one will have written — so the name an
  * adopter never stored arrives as an empty string, `credentialsFor` reads empty as absent and
  * refuses nothing, and the copy loop above filters on nothing — so without this line the unheld
  * name would reach the child as `''`, handing the CLI the empty-versus-unset judgment the
@@ -602,8 +603,8 @@ export class Executor {
   /**
    * Stop every session this executor started.
    *
-   * SIGTERM is ordinary operation rather than a crash path: a cancelled Actions job and a
-   * stopping local runner both produce it. Claude Code aborts the in-progress turn, kills
+   * SIGTERM is ordinary operation rather than a crash path: a stopping runner produces it,
+   * and so does whatever supervises the process an adopter drives the tick from. Claude Code aborts the in-progress turn, kills
    * the Bash process tree, runs its `SessionEnd` hooks, and exits 143 — so the run waits for
    * that rather than killing harder, and each run's own `finally` removes its directory.
    *
@@ -904,8 +905,8 @@ export class Executor {
    *
    * The token governs what the run may *do*; the git config governs what the history *says*
    * it was, and they have to be set together. Without this, commits carry whatever identity
-   * the host has configured — a person's, on a local runner — and the attribution
-   * `pipeline-identity` builds its audit story on silently stops being true.
+   * the host has configured — a person's, on a runner started from their own machine — and
+   * the attribution `pipeline-identity` builds its audit story on silently stops being true.
    */
   async #configureIdentity(repo: string, login: string, email: string): Promise<void> {
     await this.#run({ command: 'git', args: ['config', 'user.name', login], cwd: repo }, 'setting the commit name');

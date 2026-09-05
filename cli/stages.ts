@@ -3,10 +3,10 @@
  * stage, which skill that stage runs, and which identity role it acts under.
  *
  * This restates the stage table in the root `AGENTS.md`, and restating a fact is how two
- * statements of it drift. It cannot be read from that document at runtime — the tick
- * reads no files by requirement, and the scheduled runner never checks the repository out
- * — so what holds the two together is `test/stages.test.ts`, which parses the table out
- * of `AGENTS.md` and asserts this matches. Change one and the other fails in CI, which is
+ * statements of it drift. It cannot be read from that document at runtime — the tick reads
+ * no files by requirement, and a runner need not have the repository checked out at all —
+ * so what holds the two together is `test/stages.test.ts`, which parses the table out of
+ * `AGENTS.md` and asserts this matches. Change one and the other fails in CI, which is
  * where both statements live.
  */
 

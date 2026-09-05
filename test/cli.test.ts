@@ -43,7 +43,7 @@ describe('the built binary', () => {
   // The loop is a real process an operator starts and stops, so the one thing worth
   // spawning for is that it starts at all — with standard input closed, like everything
   // else here, and refusing rather than idling when it has nothing to poll.
-  it('refuses to start the local runner against a project it cannot resolve', () => {
+  it('refuses to start the runner against a project it cannot resolve', () => {
     const root = project({}, 'spawned-watch');
     // Every credential blanked deliberately. This spawns a real process, and a contributor
     // with a working key exported would otherwise have this test start a live pipeline

@@ -1,5 +1,5 @@
 /**
- * The local runner: a loop over the same tick, and the things a loop has that a single pass
+ * The runner: a loop over the same tick, and the things a loop has that a single pass
  * does not — an interval, a signal, and somewhere the project identity came from.
  *
  * Driven through `jen watch` exactly as an operator invokes it, with the tracker recorded
@@ -208,7 +208,7 @@ const ENV = { LINEAR_API_KEY: 'lin_api_recorded' };
 const baselineListeners = process.listenerCount('SIGTERM');
 const baselineInterrupts = process.listenerCount('SIGINT');
 
-describe('the local runner', () => {
+describe('the runner', () => {
   it('ticks, waits, and ticks again until it is stopped', async () => {
     const root = project({ 'registry.yaml': BOUND }, 'watch-loop');
     const result = await jenWatch([root], ENV, 3);
@@ -370,7 +370,7 @@ describe('the local runner', () => {
   });
 });
 
-describe('where the local runner gets the project it polls', () => {
+describe('where the runner gets the project it polls', () => {
   it('reads the checkout it was pointed at, and passes the values into the tick', async () => {
     const root = project({ 'registry.yaml': BOUND }, 'watch-registry');
     const result = await jenWatch([root], ENV, 1);
@@ -422,7 +422,7 @@ describe('where the local runner gets the project it polls', () => {
   });
 });
 
-describe('what the local runner holds', () => {
+describe('what the runner holds', () => {
   // No lock file, no ledger, no queue. Restarting re-establishes everything from the tracker,
   // and two instances on one project are governed by the in-flight test and the cap the
   // tracker represents rather than by anything held on either host.
@@ -507,7 +507,7 @@ describe('what the local runner holds', () => {
 });
 
 describe('the usage text', () => {
-  it('names watch, its interval, and why the two runners default differently', async () => {
+  it('names watch and its interval, and does not qualify the runner as local', async () => {
     const out: string[] = [];
     await run(['watch', '--help'], { out: (line) => out.push(line), err: () => {} }, { env: ENV });
     const usage = out.join('\n');
@@ -515,8 +515,9 @@ describe('the usage text', () => {
     expect(usage).toMatch(/^ {2}watch {2,}\S/m);
     expect(usage).toContain('--interval');
     expect(usage).toContain(`${DEFAULT_INTERVAL_SECONDS} seconds`);
-    expect(usage).toContain('30 minutes');
-    expect(usage, 'the local runner does not remove the git host').toMatch(/git-host identities/);
+    expect(usage, 'the runner jen ships is the runner, unqualified').not.toMatch(/local runner/i);
+    expect(usage, 'the runner does not remove the git host').toMatch(/git-host identities/);
+    expect(usage, 'and a runner jen does not ship is equally valid').toMatch(/does not ship is\s+equally valid/);
   });
 
   it('has no --dry-run, and says what to reach for instead', async () => {

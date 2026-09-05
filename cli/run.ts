@@ -3,8 +3,8 @@
  * dispatched, then exit.
  *
  * The loop is not here. `jen run` is the seam between the dispatcher and whatever drives
- * it, so a scheduled job and a long-running local process are both thin wrappers over this
- * one entry point rather than two implementations of the same decision that drift.
+ * it, so the runner jen ships and any runner an adopter drives are both thin wrappers over
+ * this one entry point rather than implementations of the same decision that drift.
  *
  * **Nothing in this module writes** — not to the tracker, not to the git host, not to the
  * filesystem. That is what makes deciding safe to run at any time, twice, and what lets two
@@ -268,7 +268,8 @@ export function inFlight(comments: TrackerComment[]): boolean | undefined {
  * The gate, as a pure function of what the tracker said.
  *
  * Two ticks over identical tracker state reach identical conclusions, which is what lets
- * two runners share one ceiling without knowing about each other. The in-flight count is
+ * two runners — two instances of the one jen ships, or one of those beside a runner an
+ * adopter drives — share one ceiling without knowing about each other. The in-flight count is
  * over the candidates already fetched: a run in flight against a task whose status has
  * since left the pipeline is missed, but that is a session on its way out rather than one
  * about to start work, so counting it would only make the cap more conservative.
@@ -317,8 +318,8 @@ export function decide(examined: Examined[], concurrency: number): Outcome[] {
  * files it under. The pause is matched on its name, because jen prescribes that name and its
  * category — `started` — is one that must never halt on its own.
  *
- * The single seam both runners reach the halt through. A tick asks this once, before it
- * polls, and neither runner carries a switch of its own.
+ * The single seam every runner reaches the halt through. A tick asks this once, before it
+ * polls, and no runner carries a switch of its own.
  */
 export function haltingStatus(project: TrackerProject): { name: string; type: string } | undefined {
   const status = project.status;
@@ -550,9 +551,10 @@ export interface Impossible {
  * an exit code that cannot express it.
  *
  * The messages name a flag and a variable and nothing else, because those are the two places
- * every runner has. A runner with a third says so itself; this function must never learn
- * that a checkout or a registry exists, or the two runners diverge here rather than in the
- * wrapper where the difference is harmless.
+ * every runner has. A runner with a third says so itself — `jen watch` adds the registry in
+ * the checkout it was pointed at — and this function must never learn that a checkout or a
+ * registry exists, or runners diverge here rather than in the wrapper where the difference
+ * is harmless.
  */
 export function impossible(input: TickInput, env: Environment): Impossible | undefined {
   if (!env[TOKEN_VARIABLE]) {

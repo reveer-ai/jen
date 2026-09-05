@@ -109,7 +109,8 @@ cd /tmp/proj && git init && npm init -y && npm i -D /tmp/reveer-jen-*.tgz && npx
 
 `run.ts` reads, decides, prints, and hands the dispatched set to a launcher it was given.
 No tracker mutation, no git-host call, no file — which is what makes deciding safe to run
-at any time, twice, and what lets two runners reach identical conclusions. `test/dispatch.test.ts` holds it both ways: every document the
+at any time, twice, and what lets two runners — two instances of the one jen ships, or one
+of those beside a runner an adopter drives — reach identical conclusions. `test/dispatch.test.ts` holds it both ways: every document the
 tick sends must parse as a `query`, and the modules on its path must import nothing from
 `node:fs`. Adding a write here is not a small change; it is the property being protected.
 
@@ -242,7 +243,7 @@ one. The gate runs before the comment read, so a non-task never triggers the pag
 ## The status table is a second statement of the workflow's, held by a test
 
 `stages.ts` restates the stage table in the root `AGENTS.md`, and cannot do otherwise — the
-tick reads no files, and the scheduled runner never checks the repository out. So the
+tick reads no files, and a runner need not have the repository checked out at all. So the
 mitigation is `test/stages.test.ts`, which parses the table out of `AGENTS.md` and asserts
 the compiled one matches, in the idiom `payload.test.ts` uses for the scaffold's skill
 references. Same for the announcement marker, which has seven statements: six skills and
@@ -410,8 +411,8 @@ goes with the run rather than sitting in `.git/config` for the length of it.
 **Setting the token without setting `user.name`/`user.email` is a silent bug.** The token
 governs what a run may *do*; the git config governs what the history *says* it was. Leave the
 second out and commits carry whatever identity the host has configured — a person's, on a
-local runner — and the attribution `pipeline-identity` builds its audit story on stops being
-true without anything failing.
+runner started from their own machine — and the attribution `pipeline-identity` builds its
+audit story on stops being true without anything failing.
 
 **The noreply address is keyed by the bot user's id, not the app's, and nothing tells you
 when you have used the wrong one.** They are different numbers for the same app —
@@ -493,59 +494,18 @@ budget, and the operator has nothing to read that says which was spent. Refusing
 argument one layer down — the session is given the name the run holds and no other, so the CLI
 never gets to apply its own precedence below jen's decision.
 
-## The shipped workflow's source is `payload/`, not `.github/workflows/`
-
-Every other managed file's `source` is its own target path, because jen's working copies *are*
-the thing it ships. The pipeline's scheduled workflow cannot be: a file at
-`.github/workflows/jen.yml` in this repository is a live scheduled workflow *here*, firing
-every half hour against a project named by an unresolved `{{jen:team}}`. jen is not an
-installation of itself — `prepack` stages from the working copies and nothing ever renders
-them — so there is no run in which that file would become correct.
-
-It lives at `payload/jen.yml` and stages to `workflows/jen.yml`, tool-neutral like every other
-staged path. Moving it "next to where it lands" is the change to not make.
-
-## Substitution renders empty, never the placeholder
-
-`substitute()` replaces every `{{jen:name}}` it finds, whether or not the name resolved and
-whether or not jen even declares it. That looks over-eager until you name the failure: a
-literal `{{jen:team}}` surviving into `.github/workflows/jen.yml` makes the runner poll a
-tracker project called `{{jen:team}}` — a wrong value that reads as a configured one, on a
-file whose whole job is to say which project this is. An empty value fails the way an absent
-one does, which is to say `jen run` refuses naming the missing team.
-
-So an unresolved name is not an error, and the planner does not refuse over one. It renders
-empty, and `plan.unresolved` carries the name and *why* into the run's report — the moment the
-state is created is the only moment anybody is looking at it. `project-binding` closes the
-window: binding finishes by running `jen update`, which is what fills the values in.
-
-Resolution reads `registry.yaml` through `plan.ts`, which reads and never writes, so `jen
-init`'s refusal path is untouched — a refused plan is still not written, whatever it rendered.
-`registry.ts` never throws: a registry that is absent, unparseable, or names zero or several
-tracker resources all come back as no values and a reason.
-
-## A job-level `if` cannot read the `env` context
-
-The obvious shape for an unbound project's scheduled poll is a guard — skip the job when the
-team is empty, rather than failing it. It cannot be written. A job-level `if` sees only
-`github`, `needs`, `vars`, and `inputs`; `env` is not among them, so the condition would have
-to be a step inside a job that has already started and already billed its minute.
-
-Identical cost, quieter failure, more machinery — which is why the shipped workflow simply
-fails, naming the missing team. GitHub reports a failed scheduled run to the repository's
-owner, and a poll that quietly did nothing is indistinguishable from a pipeline with nothing to
-do. That is the one state this pipeline must never be confused with.
-
-## The local runner holds no lock, deliberately
+## The runner holds no lock, deliberately
 
 `jen watch` keeps no lock file, no pidfile, no ledger, and no memory of what it launched.
 This is not an omission to be tidied up the first time someone runs two of them.
 
-A lock is pipeline state one runner has and the other cannot see. The scheduled runner has no
-host to hold one on, so the moment `watch` consults a lock the two runners stop being wrappers
-over one tick and start being two implementations that can reach different conclusions from the
-same tracker. What actually stops a task being dispatched twice is the announcement on the task
-— which both runners read, and which a restart re-establishes for free.
+A lock is pipeline state one instance has and another cannot see. jen ships one runner but
+does not ship the only one — a timer, a container, or a scheduled job on a git host drives
+the same `jen run`, and none of those shares a host with this process. So the moment `watch`
+consults a lock, runners stop being wrappers over one tick and start being implementations
+that can reach different conclusions from the same tracker. What actually stops a task being
+dispatched twice is the announcement on the task — which every runner reads, and which a
+restart re-establishes for free.
 
 Two instances on one project are therefore governed by exactly what two runners are: the
 in-flight test and the concurrency cap, both derived from the tracker. `test/watch.test.ts`

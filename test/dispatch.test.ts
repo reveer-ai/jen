@@ -797,7 +797,7 @@ describe('an issue in a stage status that is not a task', () => {
  * The pipeline's halt, and the ambiguity the lookup it needs also closes.
  *
  * The halt is the tracker's own project status rather than anything jen invented, which is
- * what makes it reach both runners with nothing added to either: it is read where every
+ * what makes it reach every runner with nothing added to any: it is read where every
  * runner already looks, and un-pausing resumes the pipeline with nothing restarted.
  */
 describe('a project that is not being worked', () => {

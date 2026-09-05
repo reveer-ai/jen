@@ -2,7 +2,7 @@
  * The compiled stage table against the one the workflow document states.
  *
  * `cli/stages.ts` restates `AGENTS.md`'s stage table, and it has to: the tick reads no
- * files by requirement, and the scheduled runner never checks the repository out, so the
+ * files by requirement, and a runner need not have the repository checked out at all, so the
  * table cannot be read at runtime. Two statements of one fact drift, and this is the only
  * thing standing between them — the same job `payload.test.ts` does for the scaffold's
  * skill references, in the same place, since both statements live in this repository.
