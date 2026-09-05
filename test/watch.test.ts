@@ -1,5 +1,5 @@
 /**
- * The local runner: a loop over the same tick, and the things a loop has that a single pass
+ * The runner: a loop over the same tick, and the things a loop has that a single pass
  * does not — an interval, a signal, and somewhere the project identity came from.
  *
  * Driven through `jen watch` exactly as an operator invokes it, with the tracker recorded
@@ -208,7 +208,7 @@ const ENV = { LINEAR_API_KEY: 'lin_api_recorded' };
 const baselineListeners = process.listenerCount('SIGTERM');
 const baselineInterrupts = process.listenerCount('SIGINT');
 
-describe('the local runner', () => {
+describe('the runner', () => {
   it('ticks, waits, and ticks again until it is stopped', async () => {
     const root = project({ 'registry.yaml': BOUND }, 'watch-loop');
     const result = await jenWatch([root], ENV, 3);
@@ -327,9 +327,50 @@ describe('the local runner', () => {
     expect(refused, 'and what that registry was missing').toContain('project-management');
     expect(result.ticks).toBe(0);
   });
+
+  // Four ways for a checkout to supply nothing, and the refusal has to tell them apart: a
+  // person fixes each one differently, and the runner's own output is the only place they
+  // find out which one it was. This used to be asserted through the planner, which read the
+  // registry to render a file; the runner is now its only reader, so it is asserted here.
+  it('names which way the checkout supplied nothing, rather than that it did', async () => {
+    const cases: [string, Record<string, string>, RegExp][] = [
+      ['absent', {}, /has no registry\.yaml/],
+      ['unparseable', { 'registry.yaml': 'resources:\n  - name: [unclosed\n' }, /could not be parsed/],
+      ['no tracker', { 'registry.yaml': 'resources:\n  - name: acme\n    kind: repository\n' }, /names no/],
+      [
+        'two trackers',
+        { 'registry.yaml': `${BOUND}  - name: other\n    kind: project-management\n    team: OPS\n    project: Ops\n` },
+        /names 2 /,
+      ],
+    ];
+
+    for (const [label, files, why] of cases) {
+      const root = project(files, `watch-nothing-${label.replace(/ /g, '-')}`);
+      const result = await jenWatch([root], ENV, 1);
+
+      expect(result.code, label).toBe(1);
+      expect(result.err.join('\n'), label).toMatch(why);
+      expect(result.ticks, label).toBe(0);
+    }
+  });
+
+  // A tracker resource that answers for one value and not the other. The refusal names the
+  // field the resource is missing rather than the file, because the file is present and
+  // correct and re-reading it is not what fixes this.
+  it('names the field a tracker resource is missing, rather than the file', async () => {
+    const root = project(
+      { 'registry.yaml': 'resources:\n  - name: acme-web-tracker\n    kind: project-management\n    team: ENG\n' },
+      'watch-half-bound',
+    );
+    const result = await jenWatch([root], ENV, 1);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toMatch(/names no `project`/);
+    expect(result.ticks).toBe(0);
+  });
 });
 
-describe('where the local runner gets the project it polls', () => {
+describe('where the runner gets the project it polls', () => {
   it('reads the checkout it was pointed at, and passes the values into the tick', async () => {
     const root = project({ 'registry.yaml': BOUND }, 'watch-registry');
     const result = await jenWatch([root], ENV, 1);
@@ -381,7 +422,7 @@ describe('where the local runner gets the project it polls', () => {
   });
 });
 
-describe('what the local runner holds', () => {
+describe('what the runner holds', () => {
   // No lock file, no ledger, no queue. Restarting re-establishes everything from the tracker,
   // and two instances on one project are governed by the in-flight test and the cap the
   // tracker represents rather than by anything held on either host.
@@ -466,7 +507,7 @@ describe('what the local runner holds', () => {
 });
 
 describe('the usage text', () => {
-  it('names watch, its interval, and why the two runners default differently', async () => {
+  it('names watch and its interval, and does not qualify the runner as local', async () => {
     const out: string[] = [];
     await run(['watch', '--help'], { out: (line) => out.push(line), err: () => {} }, { env: ENV });
     const usage = out.join('\n');
@@ -474,8 +515,9 @@ describe('the usage text', () => {
     expect(usage).toMatch(/^ {2}watch {2,}\S/m);
     expect(usage).toContain('--interval');
     expect(usage).toContain(`${DEFAULT_INTERVAL_SECONDS} seconds`);
-    expect(usage).toContain('30 minutes');
-    expect(usage, 'the local runner does not remove the git host').toMatch(/git-host identities/);
+    expect(usage, 'the runner jen ships is the runner, unqualified').not.toMatch(/local runner/i);
+    expect(usage, 'the runner does not remove the git host').toMatch(/git-host identities/);
+    expect(usage, 'and a runner jen does not ship is equally valid').toMatch(/does not ship is\s+equally valid/);
   });
 
   it('has no --dry-run, and says what to reach for instead', async () => {

@@ -797,7 +797,7 @@ describe('an issue in a stage status that is not a task', () => {
  * The pipeline's halt, and the ambiguity the lookup it needs also closes.
  *
  * The halt is the tracker's own project status rather than anything jen invented, which is
- * what makes it reach both runners with nothing added to either: it is read where every
+ * what makes it reach every runner with nothing added to any: it is read where every
  * runner already looks, and un-pausing resumes the pipeline with nothing restarted.
  */
 describe('a project that is not being worked', () => {
@@ -932,10 +932,11 @@ describe('resolving the project the tick was told to act on', () => {
 });
 
 /**
- * What an operator has afterwards, under either runner and with nothing added to either.
+ * What an operator has afterwards, under any runner and with nothing added to it.
  *
- * The record is the dispatcher's, which is the whole reason it reads identically whether a
- * scheduled job or a local process drove the tick: neither contributed anything to it.
+ * The record is the dispatcher's, which is the whole reason it reads identically whether the
+ * runner jen ships or one an adopter drives put the tick in motion: neither contributed
+ * anything to it.
  */
 describe('the record of what a tick did', () => {
   const one = () => script({ body: TEAM }, { body: PROJECT }, { body: polled(issueNode('ENG-1', 'in progress')) });

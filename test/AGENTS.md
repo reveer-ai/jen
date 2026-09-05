@@ -52,9 +52,9 @@ that wrapper is `{ ...process.env, ...spec.env, ...whatever }`, and it is wrong 
 `childEnvironment` withholds a variable by leaving its key out, not by setting it to
 `undefined`. So spreading the parent environment underneath puts every withheld key back:
 the `JEN_*` strip is undone, and so is a name one stage's declaration reserved from another.
-On a host that holds the pipeline's own secrets — which is how `payload/jen.yml` arranges a
-runner — the session then receives another role's private key, from inside the file whose
-job is to prove it cannot. Nothing fails, because a wrapper is not what any assertion is
+On a host that holds the pipeline's own secrets — which is what a runner's host is — the
+session then receives another role's private key, from inside the test whose job is to prove
+it cannot. Nothing fails, because a wrapper is not what any assertion is
 looking at.
 
 Two consequences to keep in view. The stub records its environment whole, deliberately —

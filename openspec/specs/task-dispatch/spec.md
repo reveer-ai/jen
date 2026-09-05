@@ -456,6 +456,6 @@ Emitting a record SHALL NOT be a tracker write and SHALL NOT be read as one. Not
 
 #### Scenario: The same output under either runner
 
-- **WHEN** the same dispatch happens under the scheduled runner and under the local one
+- **WHEN** the same dispatch happens under the runner jen ships and under a runner it does not
 - **THEN** the run record is the same
 - **AND** neither runner added anything to produce it

@@ -1,8 +1,5 @@
-# openspec-integration Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change eng-131-initialize-jen. Update Purpose after archive.
-## Requirements
 ### Requirement: OpenSpec is available to agents without out-of-band setup
 
 OpenSpec SHALL be obtained from the version jen declares as a dependency, and SHALL NOT be carried in-tree as copied skills or command wrappers. A vendored copy is a snapshot that goes stale silently as OpenSpec releases, and it obliges jen to know OpenSpec's file list.
@@ -63,48 +60,3 @@ A dispatched stage session is not an attended checkout and the project-dependenc
 
 - **WHEN** the same stage session is launched by the runner jen ships and by a runner it does not
 - **THEN** the OpenSpec CLI is reachable to the session in the same way under both
-
-### Requirement: Spec-driven development follows an ordered artifact progression
-
-Changes SHALL progress through the ordered artifacts defined by the workflow schema in use. A task's status mirrors its current stage, and moving the task to its next status is what triggers the work for that stage.
-
-#### Scenario: A change is created
-
-- **WHEN** a change is started
-- **THEN** its artifacts are produced in the order the schema defines
-- **AND** an artifact whose dependencies are unmet is not yet available to write
-
-#### Scenario: A task advances
-
-- **WHEN** a task is moved to the status for the next stage
-- **THEN** that transition is the trigger for an agent to do that stage's work
-
-### Requirement: Changes and specs live under a single `openspec/` directory
-
-The repository SHALL hold one `openspec/` directory at its root, containing in-flight changes, archived changes, and the specs they resolve to. A project SHALL NOT carry more than one, whatever else the repository holds and however many things deploy out of it.
-
-The directory sits at the repository root rather than beside the sources it describes, alongside the rest of what the workflow owns, so that a project's specs are one set regardless of how its sources under `src/` are organized.
-
-#### Scenario: A change is created in an adopted project
-
-- **WHEN** a change is created in a project that has adopted the workflow
-- **THEN** it is written under the single root `openspec/`
-- **AND** no second `openspec/` directory is created for a subtree
-
-#### Scenario: A change is created in a fork
-
-- **WHEN** a change is created in a git fork of an adopted project's repository
-- **THEN** it is written under that repository's single root `openspec/`
-- **AND** forking the repository neither adds a second `openspec/` nor changes where changes are written
-
-#### Scenario: A change is archived
-
-- **WHEN** a change completes
-- **THEN** its delta specs resolve into the specs under `openspec/`
-- **AND** the change moves into the archive
-
-#### Scenario: Sources are organized without splitting the specs
-
-- **WHEN** a project's sources under `src/` are divided into several deployable parts
-- **THEN** the specs describing them remain in the one root `openspec/`
-

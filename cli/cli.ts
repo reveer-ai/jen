@@ -19,7 +19,7 @@ import { apply, ApplyFailure, type Applied } from './apply.js';
 import { ignoredPaths } from './ignore.js';
 import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
-import { payloadFiles, placeholderFor, SCAFFOLD, SKILLS } from './payload.js';
+import { payloadFiles, SCAFFOLD, SKILLS } from './payload.js';
 import { PAUSED_STATUS_NAME, TOKEN_VARIABLE } from './linear.js';
 import { executor, type ExecOptions } from './exec.js';
 import { DEFAULTS, tick, type Environment, type Launch, type TickInput } from './run.js';
@@ -71,23 +71,28 @@ A session's transcript is discarded with the run unless \`--transcripts\` names 
 keep it. It is the session's entire stream — repository content, tool output, everything the
 stage read — so keeping a durable copy is yours to ask for rather than jen's to assume.
 
-\`watch\` is the other runner jen ships, and a peer of the scheduled workflow rather than a
-fallback from it: the same tick, driven from a process you own instead of from a schedule the
-git host runs. It takes a project path, reads the tracker team and project from that
-checkout's \`registry.yaml\` unless \`--team\`/\`--project\` say otherwise, and accepts every flag
-\`run\` does. It still opens pull requests, submits review verdicts, and depends on the merge
-gate, so the pipeline's registered git-host identities are as necessary here as there.
+\`watch\` is the runner jen ships: the same tick, on an interval, in a process you own. It
+takes a project path, reads the tracker team and project from that checkout's
+\`registry.yaml\` unless \`--team\`/\`--project\` say otherwise, and accepts every flag \`run\`
+does. It refuses to start rather than poll an unbound project, naming what is missing and
+the checkout it read. It still opens pull requests, submits review verdicts, and depends on
+the merge gate, so the pipeline's registered git-host identities are as necessary here as
+anywhere — running the runner does not leave the git host behind.
 
-Its interval defaults to ${DEFAULT_INTERVAL_SECONDS} seconds where the shipped workflow's cron defaults to 30 minutes,
-and the difference is not the runners diverging: a local tick costs a handful of tracker
-requests, while a scheduled one is billed by the git host in whole minutes. Under both, the
-interval is a floor between the end of one tick and the start of the next — never a promise
-of when a poll happens, because a tick waits for the sessions it launched.
+Anything that can invoke \`jen run\` on an interval is a runner, and one jen does not ship is
+equally valid: a timer, a container, a scheduled job on the git host. jen publishes the
+entry point and ships no template or example for any of them, because the file that drives
+the tick is the adopter's own.
 
-The halt is neither runner's: move the tracker project to a status named \`${PAUSED_STATUS_NAME}\` and
-every tick stops dispatching, with no schedule deleted, no process stopped, and no task's
-status touched. Create that status under the tracker's in-progress category first — it is
-matched by name, so a project that has never been given one has no halt to reach for.`;
+Its interval defaults to ${DEFAULT_INTERVAL_SECONDS} seconds, chosen for what a tick costs the
+operator — a handful of tracker requests. The interval is a floor between the end of one
+tick and the start of the next, never a promise of when a poll happens, because a tick waits
+for the sessions it launched. How often it asks is not pipeline state.
+
+The halt is not the runner's: move the tracker project to a status named \`${PAUSED_STATUS_NAME}\` and
+every tick stops dispatching, with no process stopped and no task's status touched. Create
+that status under the tracker's in-progress category first — it is matched by name, so a
+project that has never been given one has no halt to reach for.`;
 
 export interface Io {
   out(line: string): void;
@@ -369,16 +374,6 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
   for (const write of plan.writes) {
     if (write.symlink) notes.push(`${write.target} was a symlink, and is now a regular file jen owns`);
   }
-  // A value that did not resolve was written empty rather than left as its placeholder, so
-  // the file reads as unconfigured — which is correct, and invisible unless it is said here.
-  // This is the moment the state is created and the only moment anybody is looking at it.
-  for (const { name, why } of plan.unresolved) {
-    notes.push(`${placeholderFor(name)} did not resolve: ${why} — it was written empty`);
-  }
-  if (plan.unresolved.length > 0) {
-    notes.push(`bind the project with the \`setup-jen\` skill, then re-run \`jen ${command}\` to fill them in`);
-  }
-
   let delegation: Error | undefined;
   if (command === 'init') {
     try {
@@ -417,9 +412,10 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
  * command's, not a module's — and it is removed again on the way out, so a caller invoking
  * `run` twice in one process (which the tests do) does not accumulate handlers.
  *
- * SIGTERM is ordinary operation: a cancelled Actions job and a stopping local runner both
- * send it. Forwarding it to the sessions is what lets each one abort its turn, kill its
- * process tree, and run its `SessionEnd` hooks, rather than being orphaned or hard-killed.
+ * SIGTERM is ordinary operation rather than a crash path: a stopping runner sends it, and so
+ * does whatever supervises the process an adopter drives the tick from. Forwarding it to the
+ * sessions is what lets each one abort its turn, kill its process tree, and run its
+ * `SessionEnd` hooks, rather than being orphaned or hard-killed.
  */
 async function dispatch(invoked: Invoked, io: Io, env: Environment, options: RunOptions): Promise<number> {
   const { input, transcripts } = invoked;
