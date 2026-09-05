@@ -61,7 +61,7 @@ A dispatched stage session is not an attended checkout and the project-dependenc
 
 #### Scenario: The same session under either runner
 
-- **WHEN** the same stage session is launched by the scheduled runner and by the local runner
+- **WHEN** the same stage session is launched by the runner jen ships and by a runner it does not
 - **THEN** the OpenSpec CLI is reachable to the session in the same way under both
 
 ### Requirement: Spec-driven development follows an ordered artifact progression

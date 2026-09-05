@@ -56,6 +56,8 @@ Support for other assistants is the project's own concern, satisfied by a symlin
 
 This SHALL constrain where *instructions* go, and SHALL NOT be read as a rule that jen writes nowhere else at all. A managed file that is not an instruction — configuration the project's automation reads — SHALL be declared at the path its consumer requires, because there is no second location it could be written to and no duplication to avoid. Each such path SHALL be declared individually; jen SHALL NOT claim a directory outside `.claude/` wholesale.
 
+No such file is currently declared: everything jen writes lands in `.claude/` or at a root path. The rule SHALL survive that, because it governs what happens when one is declared again and not whether one exists today.
+
 #### Scenario: Instructions reach one directory
 
 - **WHEN** jen writes the workflow document and the skills into a project
@@ -68,9 +70,14 @@ This SHALL constrain where *instructions* go, and SHALL NOT be read as a rule th
 - **THEN** the updated content is visible through the symlink
 - **AND** jen performed no additional write to do so
 
+#### Scenario: Every written path is `.claude/` or a root path
+
+- **WHEN** the payload declaration is read
+- **THEN** every target jen writes is under `.claude/` or at the repository root
+
 #### Scenario: A declared path outside `.claude/`
 
-- **WHEN** the payload declares the pipeline's scheduled workflow at the path the git host requires
+- **WHEN** the payload declares a file the project's automation reads at the path that consumer requires
 - **THEN** jen writes it there
 - **AND** it writes no copy of it anywhere else
 - **AND** no other file in that directory is claimed by having declared it
@@ -173,36 +180,3 @@ Project-specific agent instructions belong to the nearest `AGENTS.md` at or belo
 - **WHEN** a project has authored `src/api/AGENTS.md` and jen writes its payload
 - **THEN** `src/api/AGENTS.md` is unchanged
 
-### Requirement: A managed file may carry values resolved from the registry
-
-The payload declaration SHALL be able to mark a managed file as carrying substituted values. Substitution SHALL resolve a closed set of named values, declared as data, and SHALL NOT be a general template language: no conditionals, no loops, no expressions, and no name jen has not declared.
-
-The values SHALL be resolved from the project's registry, which remains the one place the project authors them. Substitution SHALL happen when the file is written, so that a file jen owns can carry a value the project owns without either one editing the other's file.
-
-Resolution SHALL be total. A name that cannot be resolved SHALL be written as empty, and SHALL NOT be left in the output as the placeholder text: a placeholder surviving into a file its consumer reads is a wrong value that looks like a configured one, where an empty value fails the way an absent one does. The run's report SHALL name every value that did not resolve and SHALL say why, so that the state is discoverable at the moment it is created.
-
-Substitution SHALL NOT change what the run writes to. A substituted file is written to its declared target exactly as any other managed file is, is refreshed by an update exactly as any other is, and is subject to the same rules about symlinks and project boundaries.
-
-#### Scenario: A value resolves
-
-- **WHEN** a managed file declares a substituted value and the registry supplies it
-- **THEN** the written file carries the registry's value
-- **AND** the registry file itself is unchanged
-
-#### Scenario: A value does not resolve
-
-- **WHEN** the registry does not supply a declared value
-- **THEN** the written file carries an empty value in its place
-- **AND** the placeholder text does not appear in the written file
-- **AND** the report names the value that did not resolve
-
-#### Scenario: The registry changes
-
-- **WHEN** the registry is edited and the project is updated
-- **THEN** the substituted file is rewritten with the new values
-
-#### Scenario: Substitution is not a template language
-
-- **WHEN** the payload's substitution is examined
-- **THEN** it resolves only names jen has declared
-- **AND** nothing in a managed file can express a condition, a loop, or a computation
