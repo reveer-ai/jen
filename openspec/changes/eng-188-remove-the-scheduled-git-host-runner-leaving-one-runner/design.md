@@ -37,7 +37,9 @@ The workflow is a fixed path, so removing its declaration leaves any installed c
 
 Deleted: `substitute`, `PLACEHOLDER`, `ManagedFile.substituted`, `Plan.unresolved`, the `render` substitution branch and the `resolveFromRegistry` call in `plan.ts`, and the unresolved-value report in `cli.ts`.
 
-Moved from `cli/payload.ts` to `cli/registry.ts`: `SUBSTITUTIONS` and `SubstitutionName`. They name the two values the registry can answer for, which is now a fact about the registry and its one reader — `watch.ts`, which already imports `SubstitutionName` for exactly that purpose. Leaving names built on "substitution" in a payload that substitutes nothing is the residue this change exists to avoid.
+Moved from `cli/payload.ts` to `cli/registry.ts`, and renamed there: `SUBSTITUTIONS` and `SubstitutionName` become `REGISTRY_VALUES` and `RegistryValueName`. They name the two values the registry can answer for, which is now a fact about the registry and its one reader — `watch.ts`, which already imported the type for exactly that purpose. Leaving names built on "substitution" in a payload that substitutes nothing is the residue this change exists to avoid.
+
+The rename was not in the original design, which said move rather than rename; review took it on the argument that the sentence above argues one step further than the design went — the moved names described the deleted mechanism, contradicted the doc comment they sat under, and typed the runner's refusal state in `watch.ts`. The screaming-snake form follows `REGISTRY_FILE` and `TRACKER_KIND` beside them rather than the `RegistryValues` spelling first floated on the thread.
 
 **`Unresolved` and `Resolution` in `cli/registry.ts` stay.** They look like substitution's types and are not: `watch.ts:115` iterates `registry.unresolved` to say *why* a value is missing, which is the message the runner's refusal is required to carry. After this change the runner is their only consumer, which is what makes them registry types rather than payload ones.
 

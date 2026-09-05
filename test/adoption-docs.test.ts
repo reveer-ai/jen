@@ -36,7 +36,19 @@ describe('the ownership boundary', () => {
     const boundary = readme.slice(0, at('## Adopting jen'));
 
     expect(boundary).toMatch(/Change which project the pipeline polls in `registry\.yaml`/);
-    expect(boundary).toMatch(/reads it from the checkout/);
+    expect(boundary).toMatch(/The runner reads it from the checkout/);
+  });
+
+  // The table says who reads the registry before the paragraph below it does, and it used to
+  // credit "the workflow below" — the workflow row this change deletes. Both halves of that
+  // were wrong once jen shipped no workflow: the reference dangled, and it attributed the read
+  // to something that no longer exists. The row has to name the same reader the paragraph does.
+  it('credits the runner, not a workflow, with reading the registry', () => {
+    const boundary = readme.slice(0, at('## Adopting jen'));
+    const row = boundary.split('\n').find((line) => line.startsWith('| `registry.yaml`'));
+
+    expect(row).toMatch(/where the runner gets your tracker project from/);
+    expect(row).not.toMatch(/workflow/);
   });
 
   // jen claimed exactly one path outside `.claude/` and the root — the scheduled workflow —

@@ -127,8 +127,8 @@ for any runner — `jen run` is the entry point, and an adopter who drives it fr
 job owns the file that does so.
 
 The rules below therefore describe a workflow an adopter might write, not one in this
-repository. They are kept because getting either wrong is silent, and because the pipeline's
-own stages hit the same two rules however they are dispatched.
+repository. They are kept because the pipeline's own stages hit the same two rules however
+they are dispatched.
 
 Both of the rules below fail silently when they are got wrong, which is why they were written
 down before the code that could trip on them existed.

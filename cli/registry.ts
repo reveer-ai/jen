@@ -28,9 +28,9 @@ import { parse } from 'yaml';
  * What jen is allowed to read out of a project's own file is a decision that belongs in
  * this list, not at the call site.
  */
-export const SUBSTITUTIONS = ['team', 'project'] as const;
+export const REGISTRY_VALUES = ['team', 'project'] as const;
 
-export type SubstitutionName = (typeof SUBSTITUTIONS)[number];
+export type RegistryValueName = (typeof REGISTRY_VALUES)[number];
 
 /** The project-relative path of the registry. Fixed: `init` writes it, and nothing moves it. */
 export const REGISTRY_FILE = 'registry.yaml';
@@ -46,7 +46,7 @@ export interface Unresolved {
 
 /** What the registry supplied, and why it supplied nothing where it did not. */
 export interface Resolution {
-  values: Partial<Record<SubstitutionName, string>>;
+  values: Partial<Record<RegistryValueName, string>>;
   unresolved: Unresolved[];
 }
 
@@ -112,13 +112,13 @@ function tracker(projectRoot: string): { resource: Resource } | { why: string } 
 export function resolveFromRegistry(projectRoot: string): Resolution {
   const reading = tracker(projectRoot);
   if ('why' in reading) {
-    return { values: {}, unresolved: SUBSTITUTIONS.map((name) => ({ name, why: reading.why })) };
+    return { values: {}, unresolved: REGISTRY_VALUES.map((name) => ({ name, why: reading.why })) };
   }
 
-  const values: Partial<Record<SubstitutionName, string>> = {};
+  const values: Partial<Record<RegistryValueName, string>> = {};
   const unresolved: Unresolved[] = [];
 
-  for (const name of SUBSTITUTIONS) {
+  for (const name of REGISTRY_VALUES) {
     const value = text(reading.resource[name]);
     if (value === undefined) {
       unresolved.push({ name, why: `the \`${TRACKER_KIND}\` resource in ${REGISTRY_FILE} names no \`${name}\`` });

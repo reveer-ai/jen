@@ -14,7 +14,7 @@ Read this before you install. jen overwrites its own files on every update, and 
 |---|---|---|
 | `AGENTS.md` (root) | jen | **Replaced wholesale.** This is the workflow document. Notes you write here are lost. |
 | `.claude/skills/<stage>/SKILL.md` (the seven shipped skills) | jen | **Replaced wholesale.** A skill jen stops shipping is deleted. |
-| `registry.yaml` | you, from the moment it exists | Nothing. Written once when it is absent, then never rewritten or deleted. Read, though: it is where the workflow below gets your tracker project from. |
+| `registry.yaml` | you, from the moment it exists | Nothing. Written once when it is absent, then never rewritten or deleted. Read, though: it is where the runner gets your tracker project from. |
 | `.claude/settings.json` | you, from the moment it exists | Nothing. Same once-only rule. |
 | `src/`, your `openspec/` content, skills you write yourself | you | Nothing. jen does not touch them and never deletes an unstamped file. |
 | your `.gitignore` | you | Nothing. jen writes no ignore rules and imposes no arrangement on what you track. |

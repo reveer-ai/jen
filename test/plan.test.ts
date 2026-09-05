@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 

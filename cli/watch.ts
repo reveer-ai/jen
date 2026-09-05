@@ -19,7 +19,7 @@
  * a tick decides, which is what keeps a runner that has a checkout and a runner that does not
  * from taking different paths through the deciding pass.
  */
-import { resolveFromRegistry, type SubstitutionName } from './registry.js';
+import { resolveFromRegistry, type RegistryValueName } from './registry.js';
 import { impossible, tick, type Environment, type Launch, type TickInput } from './run.js';
 
 import type { Io } from './cli.js';
@@ -62,7 +62,7 @@ export interface WatchInput {
    * shared message knows about. Empty where the registry was never consulted, which is what
    * a value resolved from a flag or the environment means.
    */
-  unresolved: Partial<Record<SubstitutionName, string>>;
+  unresolved: Partial<Record<RegistryValueName, string>>;
 }
 
 export interface WatchOptions {

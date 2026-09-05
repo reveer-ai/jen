@@ -41,3 +41,11 @@
 - [x] 7.1 Run the full suite and the type check.
 - [x] 7.2 `openspec validate eng-188-remove-the-scheduled-git-host-runner-leaving-one-runner --strict`.
 - [x] 7.3 Grep the whole repository for `jen.yml`, `scheduled`, `local runner`, `two runners`, and `both runners` outside `openspec/changes/archive/`, and confirm every survivor is either jen's own CI (`ci.yml`, `release.yml`) or a deliberate reference to a runner an adopter drives.
+
+## 8. Review fixes
+
+- [x] 8.1 `README.md` ownership table: the `registry.yaml` row credited "the workflow below" with reading the registry — a dangling reference to the row this change deletes, and an attribution to a workflow jen no longer ships. Name the runner, as the paragraph below the table already does.
+- [x] 8.2 Tighten `test/adoption-docs.test.ts` so the row is covered: assert it credits the runner and names no workflow. Mutation-checked against the original prose.
+- [x] 8.3 Rename `SUBSTITUTIONS`/`SubstitutionName` to `REGISTRY_VALUES`/`RegistryValueName` in `cli/registry.ts` and `cli/watch.ts`, superseding 2.1's move-only instruction.
+- [x] 8.4 Drop the unused `writeFileSync` import left in `test/plan.test.ts` by the `substitution` block's removal.
+- [x] 8.5 Remove the duplicated "getting either wrong is silent" clause from `.github/AGENTS.md`, leaving the claim to the paragraph directly below that already made it.
