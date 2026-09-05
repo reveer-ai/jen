@@ -46,7 +46,17 @@ Worth stating outright, because it is easy to read the ownership stamp as "this 
 | dropped from the payload | deleted | left alone |
 | never in the payload | left alone | left alone |
 
+That table is about variable-set members. A fixed path is in none of its rows: it is written unconditionally, carries no stamp by construction, and `plan.ts` never considers it for deletion at all.
+
 The only thing unstamping buys an adopter is keeping a skill a later version dropped. There is no supported way to hold an edit to a skill jen currently ships, and documentation must not imply one — telling an adopter their edit is safe in precisely the case where it is lost is worse than saying nothing.
+
+## Retiring a fixed path is a migration, not a deletion
+
+Deleting a fixed path's declaration stops jen *writing* it. It does not remove the copies already installed, and no later `jen update` will: a fixed path can never be orphaned, so it is never a deletion candidate — the reasoning is at the guard itself, in `plan.ts`. Every installed copy stays where it is, doing whatever it did, forever.
+
+This is worth stating because the opposite is the natural reading, and it has already been assumed in writing once — the scheduled workflow's removal was scoped believing `jen update` would clean up after it, on the strength of the deletion table above. It would have left a live polling workflow in every adopted repository.
+
+So retiring a fixed path is two questions, and the second is the one that gets skipped: what stops shipping, and what happens to what is already out there. The second is answered per retirement — by the adopter count, by what the stale file does if left, and by whether the path is one an adopter might later want for themselves. Do not reach for a general mechanism that deletes retired paths on sight without weighing that last part: a retirement entry never expires, so claiming a path forever in order to clean it up once will silently delete whatever an adopter writes there afterwards.
 
 ## The planner writes nothing
 
