@@ -18,8 +18,7 @@
  * a tick decides, which is what keeps a runner that has a checkout and a runner that does not
  * from taking different paths through the deciding pass.
  */
-import { type SubstitutionName } from './payload.js';
-import { resolveFromRegistry } from './registry.js';
+import { resolveFromRegistry, type SubstitutionName } from './registry.js';
 import { impossible, tick, type Environment, type Launch, type TickInput } from './run.js';
 
 import type { Io } from './cli.js';

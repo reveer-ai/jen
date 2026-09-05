@@ -327,6 +327,47 @@ describe('the local runner', () => {
     expect(refused, 'and what that registry was missing').toContain('project-management');
     expect(result.ticks).toBe(0);
   });
+
+  // Four ways for a checkout to supply nothing, and the refusal has to tell them apart: a
+  // person fixes each one differently, and the runner's own output is the only place they
+  // find out which one it was. This used to be asserted through the planner, which read the
+  // registry to render a file; the runner is now its only reader, so it is asserted here.
+  it('names which way the checkout supplied nothing, rather than that it did', async () => {
+    const cases: [string, Record<string, string>, RegExp][] = [
+      ['absent', {}, /has no registry\.yaml/],
+      ['unparseable', { 'registry.yaml': 'resources:\n  - name: [unclosed\n' }, /could not be parsed/],
+      ['no tracker', { 'registry.yaml': 'resources:\n  - name: acme\n    kind: repository\n' }, /names no/],
+      [
+        'two trackers',
+        { 'registry.yaml': `${BOUND}  - name: other\n    kind: project-management\n    team: OPS\n    project: Ops\n` },
+        /names 2 /,
+      ],
+    ];
+
+    for (const [label, files, why] of cases) {
+      const root = project(files, `watch-nothing-${label.replace(/ /g, '-')}`);
+      const result = await jenWatch([root], ENV, 1);
+
+      expect(result.code, label).toBe(1);
+      expect(result.err.join('\n'), label).toMatch(why);
+      expect(result.ticks, label).toBe(0);
+    }
+  });
+
+  // A tracker resource that answers for one value and not the other. The refusal names the
+  // field the resource is missing rather than the file, because the file is present and
+  // correct and re-reading it is not what fixes this.
+  it('names the field a tracker resource is missing, rather than the file', async () => {
+    const root = project(
+      { 'registry.yaml': 'resources:\n  - name: acme-web-tracker\n    kind: project-management\n    team: ENG\n' },
+      'watch-half-bound',
+    );
+    const result = await jenWatch([root], ENV, 1);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join('\n')).toMatch(/names no `project`/);
+    expect(result.ticks).toBe(0);
+  });
 });
 
 describe('where the local runner gets the project it polls', () => {

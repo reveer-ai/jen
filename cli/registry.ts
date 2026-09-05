@@ -1,26 +1,36 @@
 /**
- * The project's registry, read for the values a managed file carries.
+ * The project's registry, read for the tracker the runner polls.
  *
  * The registry is the project's own file — written once by `init` and never touched
- * again — and this is the only place jen reads it back. It is read at *install* time, by
- * the planner, so that a file jen owns can carry a value the project owns without either
- * one editing the other's file.
+ * again — and this is the only place jen reads it back. `jen watch` reads it as it
+ * starts, so a runner pointed at a checkout polls whatever that checkout says it is
+ * bound to, without either file editing the other.
  *
  * **Nothing here throws.** A registry that is absent, unparseable, or says nothing about a
- * tracker resolves to no values and a reason, because the caller's job is to write a file
- * and report what it could not fill in — not to refuse an installation over a file it does
- * not own. Every failure therefore comes back as a `why` a person can act on.
+ * tracker resolves to no values and a reason, because the caller's job is to say what it
+ * could not find out — not to fail on a file it does not own. Every failure therefore
+ * comes back as a `why` a person can act on, and the runner's refusal is built out of them.
  *
  * The parse goes through `yaml` rather than a line reader. The file is hand-authored by
- * adopters, and a narrow parser's failure mode is a confidently wrong value — exactly the
- * failure substitution is built to avoid, arrived at one step earlier.
+ * adopters, and a narrow parser's failure mode is a confidently wrong value — a runner
+ * polling a project nobody named — where a reported absence fails visibly.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse } from 'yaml';
 
-import { SUBSTITUTIONS, type SubstitutionName } from './payload.js';
+/**
+ * Every value the registry can answer for, and the whole of what a caller may ask it.
+ *
+ * A closed set, declared here as data: there is no way for a caller to reach a name the
+ * registry has not listed, and no conditional, loop, or expression anywhere in the form.
+ * What jen is allowed to read out of a project's own file is a decision that belongs in
+ * this list, not at the call site.
+ */
+export const SUBSTITUTIONS = ['team', 'project'] as const;
+
+export type SubstitutionName = (typeof SUBSTITUTIONS)[number];
 
 /** The project-relative path of the registry. Fixed: `init` writes it, and nothing moves it. */
 export const REGISTRY_FILE = 'registry.yaml';
@@ -93,11 +103,11 @@ function tracker(projectRoot: string): { resource: Resource } | { why: string } 
 }
 
 /**
- * Every substituted value the registry supplies, and a reason for each one it does not.
+ * Every value the registry supplies, and a reason for each one it does not.
  *
- * The names jen substitutes and the fields the tracker resource carries are deliberately
- * the same words — `team` and `project` — so the registry reads as the answer to the
- * workflow file rather than as a second vocabulary mapped onto it.
+ * The names jen asks for and the fields the tracker resource carries are deliberately the
+ * same words — `team` and `project` — so the registry reads as the answer to the runner's
+ * question rather than as a second vocabulary mapped onto it.
  */
 export function resolveFromRegistry(projectRoot: string): Resolution {
   const reading = tracker(projectRoot);

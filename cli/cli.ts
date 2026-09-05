@@ -19,7 +19,7 @@ import { apply, ApplyFailure, type Applied } from './apply.js';
 import { ignoredPaths } from './ignore.js';
 import * as openspec from './openspec.js';
 import { isEmpty, planInstall, type Plan } from './plan.js';
-import { payloadFiles, placeholderFor, SCAFFOLD, SKILLS } from './payload.js';
+import { payloadFiles, SCAFFOLD, SKILLS } from './payload.js';
 import { PAUSED_STATUS_NAME, TOKEN_VARIABLE } from './linear.js';
 import { executor, type ExecOptions } from './exec.js';
 import { DEFAULTS, tick, type Environment, type Launch, type TickInput } from './run.js';
@@ -369,16 +369,6 @@ function install(command: InstallCommand, invocation: Invocation, io: Io, option
   for (const write of plan.writes) {
     if (write.symlink) notes.push(`${write.target} was a symlink, and is now a regular file jen owns`);
   }
-  // A value that did not resolve was written empty rather than left as its placeholder, so
-  // the file reads as unconfigured — which is correct, and invisible unless it is said here.
-  // This is the moment the state is created and the only moment anybody is looking at it.
-  for (const { name, why } of plan.unresolved) {
-    notes.push(`${placeholderFor(name)} did not resolve: ${why} — it was written empty`);
-  }
-  if (plan.unresolved.length > 0) {
-    notes.push(`bind the project with the \`setup-jen\` skill, then re-run \`jen ${command}\` to fill them in`);
-  }
-
   let delegation: Error | undefined;
   if (command === 'init') {
     try {
