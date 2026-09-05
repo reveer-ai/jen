@@ -3,9 +3,10 @@
  * prose.
  *
  * Every one of these is a thing an adopter finds out the hard way when the documentation
- * does not say it: an edit lost to the next update, a schedule the git host switched off, a
- * pipeline they cannot work out how to stop, or a local runner they chose believing it took
- * the git host out of the picture. Nothing at runtime reports any of them.
+ * does not say it: an edit lost to the next update, a pipeline they cannot work out how to
+ * stop, a runner they started believing it took the git host out of the picture, or a
+ * session that hangs the loop with no timeout behind it. Nothing at runtime reports any of
+ * them.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -28,14 +29,23 @@ describe('the ownership boundary', () => {
     expect(at('## What jen owns, and what you own')).toBeLessThan(at('npx jen init'));
   });
 
-  // A file that reads as configuration is the likeliest one for an adopter to edit in place,
-  // and the loss is the same as editing a skill — reached through a file they think is theirs.
-  it('names the workflow as jen\'s, and the registry as where its values are changed', () => {
+  // Where the pipeline's tracker project is set. It used to be resolved into a managed file
+  // as jen wrote it, so the boundary had to warn against editing that file; now the runner
+  // reads the registry directly, and what the boundary owes an adopter is where to change it.
+  it('names the registry as where the pipeline\'s project is set, and says who reads it', () => {
     const boundary = readme.slice(0, at('## Adopting jen'));
 
-    expect(boundary).toContain('.github/workflows/jen.yml');
-    expect(boundary).toMatch(/only managed file jen writes outside/);
-    expect(boundary).toMatch(/registry\.yaml`, never in the workflow file/);
+    expect(boundary).toMatch(/Change which project the pipeline polls in `registry\.yaml`/);
+    expect(boundary).toMatch(/reads it from the checkout/);
+  });
+
+  // jen claimed exactly one path outside `.claude/` and the root — the scheduled workflow —
+  // and claims none now. An adopter reading the table must not be told otherwise.
+  it('claims no managed path outside .claude/ and the repository root', () => {
+    const boundary = readme.slice(0, at('## Adopting jen'));
+
+    expect(boundary).not.toContain('.github/workflows/jen.yml');
+    expect(boundary).not.toMatch(/only managed file jen writes outside/);
   });
 
   it('does not present unstamping as a way to keep an edit to a shipped skill', () => {
@@ -62,17 +72,16 @@ describe('the environment chapter', () => {
   });
 
   /**
-   * The other way an adopter reads the passthrough as unconditional, and the more expensive one.
-   *
-   * §5 sits before the runner chapter, so a reader meets the words "the runner" before being told
-   * there are two — and on the scheduled one nothing in this section works: Actions secrets are not
-   * ambient, the job's `env:` block is a closed list, and the file holding it is managed. An adopter
-   * who believes the section finds out when a stage dies at the first command that needed the name.
+   * The passthrough is available on the runner jen ships, which is the only one it ships, so
+   * the section carries no caveat naming a runner it is unavailable on. It used to: the
+   * scheduled workflow was handed a closed list of names from a managed file and could not be
+   * given another. A caveat that survived that runner would describe nothing, and an adopter
+   * reading it would go looking for a restriction that no longer exists.
    */
-  it('says which runner the passthrough is available on today', () => {
-    expect(chapter).toMatch(/the local runner's today/);
-    expect(chapter).toMatch(/scheduled runner cannot carry your variables/);
-    expect(chapter).toContain('.github/workflows/jen.yml');
+  it('states the passthrough without qualifying which runner it is available on', () => {
+    expect(chapter).not.toMatch(/the local runner's today/);
+    expect(chapter).not.toMatch(/cannot carry your variables/);
+    expect(chapter).not.toContain('.github/workflows/jen.yml');
   });
 
   // An adopter who reads the passthrough as unconditional has been told the runner's role
@@ -119,18 +128,43 @@ describe('the environment chapter', () => {
 describe('the runner chapter', () => {
   const chapter = readme.slice(at('## Running the pipeline'), at('## Which assistants this reaches'));
 
-  it('presents both runners with what distinguishes them, and neither as the default', () => {
+  it('presents one runner jen ships, and names it without the local qualifier', () => {
     expect(chapter).toContain('jen watch');
-    expect(chapter).toContain('.github/workflows/jen.yml');
-    expect(chapter).toMatch(/peers, not a default and a fallback/);
-    expect(chapter).not.toMatch(/fall back to `jen watch`|the default runner/i);
+    expect(chapter).toMatch(/jen ships one runner/);
+    expect(chapter, 'in this documentation *local* meant "not the git host"').not.toMatch(/local runner/i);
   });
 
-  // An adopter choosing the local runner to get away from the git host will assume the
-  // pipeline follows them, and nothing about running it locally tells them otherwise.
-  it('says the local runner does not remove the git host', () => {
-    expect(chapter).toMatch(/does not remove GitHub from the pipeline/);
+  // An adopter running the pipeline from their own machine will assume the git host went
+  // with it, and nothing about starting a process on their own hardware tells them otherwise.
+  it('says the runner does not remove the git host', () => {
+    expect(chapter).toMatch(/does not remove the git host from it/);
     expect(chapter).toMatch(/merge gate/);
+  });
+
+  /**
+   * A runner jen does not ship is the answer for anyone who wants their git host's scheduler,
+   * and the reason jen stopped shipping one is the part that cannot be left out: a paste-ready
+   * workflow carries jen's apparent endorsement back into the cost this removal exists to end.
+   * So the chapter must say a scheduled git-host job is a valid runner, say why jen ships none,
+   * and supply no file — which is what the last assertion holds, since a fenced YAML block with
+   * a cron in it is what "supplying one" would look like.
+   */
+  it('says a runner jen does not ship is valid, why jen ships none, and supplies no example', () => {
+    expect(chapter).toMatch(/scheduled job on your git host/);
+    expect(chapter).toMatch(/holds a paid runner for the entire life of every stage session/);
+
+    expect(chapter, 'a workflow file would be a recipe jen decided not to publish').not.toMatch(/on:\s*\n\s*schedule:/);
+    expect(chapter).not.toMatch(/cron:/);
+    expect(chapter).not.toMatch(/runs-on:/);
+  });
+
+  // The runner has no liveness bound, and the two ways that reaches an adopter are a session
+  // that dies with the process and one that never finishes at all. Neither is visible from
+  // starting it, and the second has nothing at runtime that would ever report it.
+  it('names the conditions the runner carries', () => {
+    expect(chapter).toMatch(/dies with the process that launched it/i);
+    expect(chapter).toMatch(/a session is still working this/);
+    expect(chapter).toMatch(/hung session hangs the loop/i);
   });
 
   it('names every credential a runner needs, under the name the runner reads', () => {
@@ -190,19 +224,6 @@ describe('the runner chapter', () => {
     expect(chapter, 'and does not choose').toMatch(/jen will not pick one for you/);
   });
 
-  // The symptom is silence, and quiet is what triggers it — so the only warning an adopter
-  // can get is one written down before it happens.
-  it('names the schedule a quiet repository loses, and how to get it back', () => {
-    expect(chapter).toMatch(/60 days/);
-    expect(chapter).toMatch(/public/);
-    expect(chapter).toContain('gh workflow enable');
-  });
-
-  it('names what a session dying with its runner leaves on the task', () => {
-    expect(chapter).toMatch(/sessions? (die|dies)|dies with the process/);
-    expect(chapter).toMatch(/still working this|until a person moves it|not be picked up again/);
-  });
-
   it('says what the pipeline does unsupervised, and what a human still owns', () => {
     expect(chapter).toContain('`Todo` → `In Design`');
     expect(chapter).toContain('`Pending` → `In Progress`');
@@ -210,12 +231,12 @@ describe('the runner chapter', () => {
     expect(chapter).toContain('--concurrency');
   });
 
-  it('documents the halt as the tracker\'s project status, under either runner', () => {
+  it('documents the halt as the tracker\'s project status, under any runner', () => {
     const stopping = chapter.slice(chapter.indexOf('### Stopping it'));
 
     expect(stopping).toContain(PAUSED_STATUS_NAME);
-    expect(stopping).toMatch(/halt under both runners/);
-    expect(stopping).toMatch(/no schedule to delete, no process to stop, no task's status to edit/);
+    expect(stopping).toMatch(/halt under any runner, including one jen does not ship/);
+    expect(stopping).toMatch(/no process to stop, no task's status to edit/);
   });
 
   // The status is one the adopter creates, so naming it is not enough on its own — an

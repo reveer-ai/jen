@@ -16,13 +16,10 @@ Read this before you install. jen overwrites its own files on every update, and 
 | `.claude/skills/<stage>/SKILL.md` (the seven shipped skills) | jen | **Replaced wholesale.** A skill jen stops shipping is deleted. |
 | `registry.yaml` | you, from the moment it exists | Nothing. Written once when it is absent, then never rewritten or deleted. Read, though: it is where the workflow below gets your tracker project from. |
 | `.claude/settings.json` | you, from the moment it exists | Nothing. Same once-only rule. |
-| `.github/workflows/jen.yml` | jen | **Replaced wholesale.** The pipeline's scheduled runner. The two values in it that name your tracker project come from `registry.yaml`. |
 | `src/`, your `openspec/` content, skills you write yourself | you | Nothing. jen does not touch them and never deletes an unstamped file. |
 | your `.gitignore` | you | Nothing. jen writes no ignore rules and imposes no arrangement on what you track. |
 
-`.github/workflows/jen.yml` is the only managed file jen writes outside `.claude/` and the repository root, and it is there because the git host fixes the path — a workflow is configuration its consumer reads from somewhere specific, not an instruction with anywhere else to live. jen claims that one path and nothing else in `.github/`; your own workflows sit beside it untouched.
-
-**Change which project the pipeline polls in `registry.yaml`, never in the workflow file.** jen resolves the team and project into it as it writes, so an edit there survives exactly until your next `jen update` — the same loss as editing a skill, reached through a file that reads like configuration you own. Edit the registry and run `jen update`.
+**Change which project the pipeline polls in `registry.yaml`.** The runner reads it from the checkout it was pointed at, when it starts — so editing the registry is the whole of it, and a running runner takes the change on its next start.
 
 ### The stamp, and what it does and does not protect
 
@@ -59,7 +56,7 @@ A devDependency rather than a bare `npx`, so that jen and the OpenSpec version i
 npx jen init
 ```
 
-Writes the workflow document, the seven skills, the pipeline's scheduled workflow, and a scaffold your project owns from then on, then initializes OpenSpec in the project. It prompts for nothing, is safe to re-run, and is safe in CI. It reports every path it wrote, refreshed, or left alone.
+Writes the workflow document, the seven skills, and a scaffold your project owns from then on, then initializes OpenSpec in the project. It prompts for nothing, is safe to re-run, and is safe in CI. It reports every path it wrote, refreshed, or left alone.
 
 ### 3. Bind the project to its tracker — your step, not a command
 
@@ -99,8 +96,6 @@ The tracker's own tools are granted where the pipeline is invoked rather than he
 
 The permissions above settle what a session is *allowed* to run. This settles what those commands can *read*.
 
-**All of this is the local runner's today.** `jen watch` reads the environment of whatever shell you started it in, so what you export is what a session is offered. The scheduled runner cannot carry your variables at all: GitHub Actions secrets are not ambient, `jen run` is handed a closed list of names in `.github/workflows/jen.yml`, and a secret you store as `DATABASE_URL` never enters the job — so it is not withheld from a session, it was never on the runner. Adding a name to that block is not the way round it either; the file is jen's, and `jen update` rewrites it. Giving the scheduled runner a way to carry your own configuration is its own piece of work, and nothing in this section changes when it lands — a session's environment is scoped the same way however the runner's came to be filled. Until then, a project whose commands need configuration jen does not supply wants `jen watch`; *Running the pipeline* below is where the two are set against each other.
-
 **Everything you set on the runner reaches every stage's session**, under the same names you set it under. A suite that connects to `DATABASE_URL` finds `DATABASE_URL`; an integration test that reads `API_BASE_URL` finds that. This is deliberate rather than incidental: jen has no way to enumerate what your toolchain reads — `NODE_OPTIONS`, `CARGO_HOME`, `VIRTUAL_ENV`, a proxy setting, your own variables — and a list of the ones it could think of would be wrong in a way that surfaces as a stage failing at the first command that needed the name jen left out, mid-run, with nobody watching.
 
 **jen's own `JEN_*` namespace is the exception, and never reaches a session.** The nine role credentials are inside it, so the passthrough does not expose them: a session acts through a token minted for its own role, and cannot read the keys the runner holds for the other two.
@@ -133,28 +128,15 @@ npm i -D @reveer/jen@latest && npx jen update
 
 Everything above installs the workflow and points it at your tracker. This is the step that makes it act on its own.
 
-A **runner** drives one thing: `jen run`, a single pass over the tracker — poll, decide which tasks are ready for which stage, run a session for each, exit. It never loops. Driving that pass on a schedule is the runner's whole job, and jen ships two of them.
+A **runner** drives one thing: `jen run`, a single pass over the tracker — poll, decide which tasks are ready for which stage, run a session for each, exit. It never loops. Driving that pass on a schedule is the runner's whole job.
 
-### Which one
+jen ships one runner: `jen watch`, a process you start and keep up. A runner jen does not ship is equally valid — see *A runner jen does not ship* below.
 
-They are peers, not a default and a fallback. Pick on where you would rather the process live:
+**Running the pipeline from your own machine does not remove the git host from it.** The stages still open pull requests, push branches, submit review verdicts, and depend on the branch's merge gate to make that review load-bearing — so the three registered applications are exactly as necessary here as anywhere. What the runner decides is where the *poll* runs, nothing more.
 
-| | Scheduled workflow | `jen watch` |
-|---|---|---|
-| Runs on | GitHub Actions, from `.github/workflows/jen.yml` | a machine you own — a VPS, a home server, a laptop |
-| Keeps up | nothing | one process |
-| Costs | Actions minutes: every poll bills a whole minute, free on a public repository | nothing beyond the machine |
-| Interval | 30 minutes, in the workflow's `cron` | 60 seconds, `--interval` |
-| Configured with | eleven repository secrets | the same eleven variables, exported |
-| Conditions it carries | a schedule the host disables on an inactive public repository; a job ceiling of two hours | sessions die with the process; restarts and logging are yours |
+### What the runner needs
 
-**Choosing the local runner does not remove GitHub from the pipeline.** The stages still open pull requests, push branches, submit review verdicts, and depend on the branch's merge gate to make that review load-bearing — so the three registered applications are exactly as necessary under `jen watch` as under Actions. What you are choosing is where the *poll* runs, nothing more.
-
-A runner jen does not ship is equally valid. Anything that can invoke `jen run` on a schedule — a systemd timer, a cron entry, a container, a scheduler jen has never heard of — is a runner, and needs nothing added to jen.
-
-### What both need
-
-Eleven values, the same names either way. Three per role, for the three applications `setup-jen` walked you through registering:
+Eleven values. Three per role, for the three applications `setup-jen` walked you through registering:
 
 ```
 JEN_GH_APP_ID_DESIGN         JEN_GH_APP_ID_DEV         JEN_GH_APP_ID_DELIVER
@@ -171,7 +153,7 @@ CLAUDE_CODE_OAUTH_TOKEN      # a token minted from a Claude subscription
 
 **A runner holds exactly one of them.** Set both and every run refuses before it starts a session, names both, and stops. jen will not pick one for you: the two are not paid out of the same pocket, so choosing silently is wrong in both directions — it either bills a key you believed you had stopped using or spends a subscription window you meant to keep. Unset the one this runner is not to spend.
 
-`claude setup-token` mints the subscription form and prints it; it requires a Claude subscription, and the value goes wherever your runner reads its secrets from, under `CLAUDE_CODE_OAUTH_TOKEN`. What it costs you is not money. **The subscription's usage limits are shared with your own interactive use of the same account** — a pipeline polling every 30 minutes and launching up to three sessions a tick can spend the window you were about to work in, and you meet that as a stage dying mid-run rather than as a bill. jen cannot see either credential's limit or its expiry, so nothing warns you first.
+`claude setup-token` mints the subscription form and prints it; it requires a Claude subscription, and the value goes wherever your runner reads its secrets from, under `CLAUDE_CODE_OAUTH_TOKEN`. What it costs you is not money. **The subscription's usage limits are shared with your own interactive use of the same account** — a polling pipeline launching up to three sessions a tick can spend the window you were about to work in, and you meet that as a stage dying mid-run rather than as a bill. jen cannot see either credential's limit or its expiry, so nothing warns you first.
 
 The two also differ in what they are bound to. The token is long-lived and belongs to the person who minted it and to that person's subscription; an API key is issued independently of any one person, and outlives whoever created it. That does not make the token the broader credential — it carries **inference-only** authority by design, which the CLI enforces: it refuses a `CLAUDE_CODE_OAUTH_TOKEN` for Claude in Chrome and for Remote Control, both of which require a full login. Inference is exactly what a pipeline session does, and less than a login grants.
 
@@ -179,17 +161,7 @@ If your Claude installation is managed, its policy may forbid minting one at all
 
 jen writes none of these anywhere. A run reads them from its environment at the point of use, mints a short-lived installation token per session, and the run's working directory goes when the run does.
 
-### Starting the scheduled runner
-
-1. Put the eleven values in **Settings → Secrets and variables → Actions**, under exactly the names above. The workflow reads them by name; a secret stored under any other name reaches nothing.
-2. Make sure `.github/workflows/jen.yml` is committed and pushed. `jen init` writes it; `jen update` refreshes it after you bind the project.
-3. That is all. The schedule takes it from there, every 30 minutes.
-
-`gh workflow run jen.yml` polls immediately rather than waiting for the next half hour — which is what to reach for right after binding.
-
-The two values naming your tracker project are resolved into the file from `registry.yaml` when jen writes it, so **run `jen update` after binding**. Until they are filled in, the scheduled run fails naming the missing team — deliberately, because GitHub emails you about a failed scheduled run and a job that quietly skipped would look exactly like a pipeline with nothing to do.
-
-### Starting the local runner
+### Starting it
 
 ```bash
 export LINEAR_API_KEY=…        # and the nine JEN_GH_* values
@@ -197,24 +169,32 @@ export ANTHROPIC_API_KEY=…     # or CLAUDE_CODE_OAUTH_TOKEN — whichever one 
 npx jen watch
 ```
 
-Pointed at a checkout, it reads that checkout's `registry.yaml` for the team and project, so there is nothing else to configure. `--team` and `--project` override it, `--interval <seconds>` changes the pace, and every flag `jen run` takes works here too.
+Pointed at a checkout, it reads that checkout's `registry.yaml` for the team and project, so there is nothing else to configure. `--team` and `--project` override it, `--interval <seconds>` changes the pace — it defaults to 60 — and every flag `jen run` takes works here too.
+
+If the checkout names no tracker project and you gave none, it refuses to start, names what is missing and the checkout it read, and polls nothing. That is the state a project is in between installing jen and binding it. Refusing beats polling an empty team name, which would be indistinguishable from a pipeline with nothing to do.
 
 It writes no pidfile, keeps no log file, and rotates nothing — its output is stdout and stderr, and where that goes is yours to decide. Run it under whatever supervises processes on that machine.
 
-### What each one costs you when it goes wrong
+### A runner jen does not ship
 
-**A schedule GitHub disabled.** On a **public** repository, GitHub disables a scheduled workflow after 60 days without repository activity. This is a real failure mode for a pipeline whose ordinary state is quiet: nobody promotes work for two months, the schedule stops, and you find out when you finally do promote something and nothing happens. GitHub emails the repository owner before it happens, and `gh workflow enable jen.yml` turns it back on. A pipeline that dispatched anything in that window pushed commits, which is activity — so this only bites a genuinely idle project.
+Anything that can invoke `jen run` on a schedule is a runner: a systemd timer, a cron entry, a container, a scheduled job on your git host, a scheduler jen has never heard of. Supporting one needs nothing added to jen — `jen run` is the entry point, and it is already published.
 
-**A local session dies with its process.** Stop `jen watch`, or lose the machine, and every session it launched stops too. The task keeps the announcement its session wrote and never gets the closing comment, which every later tick reads as *a session is still working this* — so that task will not be picked up again until a person moves it. That is deliberate: nothing writes to the tracker on a dead session's behalf, because the alternative is a stage that reports completion while its commits go with the discarded run directory. When you kill a runner, check what it was working.
+jen supplies no workflow file, template, or worked example for any of them. The file that drives the tick is yours.
 
-The scheduled runner has a bound the local one does not: its job ends after two hours, so a session that hangs releases the runner instead of holding it. That is a liveness bound on the job, not a limit on how long a stage may take. On `jen watch`, a hung session hangs the loop, and stopping it is yours.
+That is a deliberate reversal. jen used to ship a scheduled GitHub Actions workflow and removed it, because `jen run` waits for the sessions it launches — so the job holds a paid runner for the entire life of every stage session, not just for the poll. At roughly five stages of about fifteen minutes, one task consumes something like 75 runner-minutes, which is agent sessions billed as CI compute on 2-vCPU hardware. Shipping a ready-made replacement would walk you back into that cost with jen's apparent endorsement. Writing your own is a choice you have made with the number in front of you.
+
+### What the runner does not protect you from
+
+**A session dies with the process that launched it.** Stop `jen watch`, or lose the machine, and every session it launched stops too. The task keeps the announcement its session wrote and never gets the closing comment, which every later tick reads as *a session is still working this* — so that task will not be picked up again until a person moves it. That is deliberate: nothing writes to the tracker on a dead session's behalf, because the alternative is a stage that reports completion while its commits go with the discarded run directory. When you kill a runner, check what it was working.
+
+**A hung session hangs the loop.** The runner awaits each tick, and a tick waits for the sessions it launched, so a session that never finishes stops the next poll from happening at all. There is no timeout: stopping it is yours, and the pipeline has no liveness bound of its own.
 
 ### What it does while nobody is watching
 
 - **Two transitions stay yours.** `Todo` → `In Design` starts a task's design, and `Pending` → `In Progress` starts its implementation. No runner makes either. From `In Progress` onward the pipeline drives itself: design → implement → review → test → deliver → merged.
 - **Any stage can hand a task back to you.** `Pending` is where a stage parks anything only a person can settle — a decision it cannot make, a blocker it cannot clear, work that is finished and needs your eye, or a task it judges is circling. The comment the stage leaves says which. A task sitting in `Pending` is waiting for you and will not move on its own.
 - **Three tasks at a time.** `--concurrency` caps how many sessions may be in flight, and it defaults to 3. The cap is derived from the announcements on the tasks themselves rather than from anything a runner remembers, so two runners pointed at one project share one ceiling.
-- **Ticks do not overlap.** Under both runners the interval is a floor between the *end* of one pass and the start of the next. A tick waits for the sessions it launched, so a long session delays the following poll.
+- **Ticks do not overlap.** The interval is a floor between the *end* of one pass and the start of the next, never a promise of when a poll happens. A tick waits for the sessions it launched, so a long session delays the following poll.
 - **Each run leaves a record.** Every dispatch and every finished session is a line of JSON on stdout — task, stage, role, outcome, cost, session id — beside a readable report on stderr. `jen run | recorder` works with no flag. Session transcripts are discarded unless `--transcripts <dir>` names somewhere to keep them.
 
 ### Stopping it
@@ -227,7 +207,7 @@ The name is what jen matches, and the category deliberately is not. `In Progress
 
 Those two categories do still halt, matched on the category rather than on any name — a project that is genuinely completed or cancelled dispatches nothing, which is what you want and needs no setup.
 
-That is the halt under both runners, and it is deliberately not a runner-level switch: no schedule to delete, no process to stop, no task's status to edit, and nothing to redeploy when you want it back. Move the project back to an active status and the next tick carries on. Sessions already running are not interrupted — a session that has announced itself owns its task until it reports.
+That is the halt under any runner, including one jen does not ship, and it is deliberately not a runner-level switch: no process to stop, no task's status to edit, and nothing to redeploy when you want it back. Move the project back to an active status and the next tick carries on. Sessions already running are not interrupted — a session that has announced itself owns its task until it reports.
 
 For a preview rather than a stop:
 
@@ -239,7 +219,7 @@ which polls and reports exactly what the pipeline would do right now, launching 
 
 ## Which assistants this reaches
 
-The instructions jen ships — the workflow document and the skills — go into `.claude/` and the repository root, and into no other assistant's directory. Claude Code picks the skills up with no further configuration. (The scheduled workflow is not an instruction; it is configuration GitHub reads from a path GitHub fixes, which is why it is the one exception in the table above.)
+The instructions jen ships — the workflow document and the skills — go into `.claude/` and the repository root, and into no other assistant's directory. Claude Code picks the skills up with no further configuration.
 
 For another assistant, symlink the directory it reads to jen's — substituting whatever directory yours actually uses:
 
@@ -259,8 +239,6 @@ You have two ways forward, and both are decisions rather than workarounds:
 
 - Move your file aside, run `jen init`, and fold what you need back into the workflow document knowing an update replaces it.
 - Run `npx jen init --force`, which replaces your root `AGENTS.md` wholesale with jen's. `--force` applies to `init` only, and only to this one ambiguity — it never overrides a scaffold file that already exists, and it never makes jen delete something it did not write.
-
-The same holds for a project that already has its own `.github/workflows/jen.yml`: jen owns that path outright, cannot tell your file from one it wrote, and refuses adoption naming it. Move yours aside, or run `--force` to replace it.
 
 `jen init` also refuses a project that reaches a managed path through a symlinked directory, `--force` included. Everything below such a link belongs to wherever it points, possibly outside your project entirely.
 
