@@ -120,11 +120,15 @@ and the credential itself.
 
 ## Running a stage from a workflow
 
-The workflow that does this is not in this directory. jen ships the pipeline's scheduled
-runner to adopters at `.github/workflows/jen.yml`, and its template lives at `payload/jen.yml`
-— deliberately not at its own target path, because a file there would be a live scheduled
-workflow in *this* repository polling an unresolved placeholder every half hour. See
-`cli/AGENTS.md`. The two workflows here are jen's own CI and release, and neither runs a stage.
+No workflow here runs a stage, and jen ships none that does. The two in this directory are
+jen's own CI and release. jen used to ship a scheduled runner to adopters at
+`.github/workflows/jen.yml`; that was removed in ENG-188, and jen now ships no workflow file
+for any runner — `jen run` is the entry point, and an adopter who drives it from a scheduled
+job owns the file that does so.
+
+The rules below therefore describe a workflow an adopter might write, not one in this
+repository. They are kept because getting either wrong is silent, and because the pipeline's
+own stages hit the same two rules however they are dispatched.
 
 Both of the rules below fail silently when they are got wrong, which is why they were written
 down before the code that could trip on them existed.
