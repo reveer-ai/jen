@@ -341,13 +341,20 @@ export class DockerSandboxDriver implements SandboxDriver {
        * Every process starts through DELIVER, whether or not this agent has a credential —
        * one path, so the path that carries them is the one every test here exercises.
        * `--interactive` is what keeps standard input attached long enough for the block to
-       * arrive; it is closed straight after, which the command sees as the end of its own
-       * input.
+       * arrive; it is closed after whatever follows it, which the command sees as the end
+       * of its own input.
+       *
+       * **The caller's input is concatenated onto the block rather than written after it**,
+       * and that is what makes the ordering unlosable — there is one write and one close,
+       * so nothing can interleave and nothing can arrive early. The prologue reads its
+       * lines one byte at a time, as POSIX requires of a shared descriptor, so it consumes
+       * the block and not a byte more; the command it `exec`s inherits the rest of the pipe
+       * exactly as the caller wrote it.
        */
       exec: async (command, options) =>
         this.#start(
           ['exec', '--interactive', '--workdir', options?.cwd ?? workspace, name, 'sh', '-c', DELIVER, 'sh', ...command],
-          credentials,
+          credentials + (options?.input ?? ''),
         ),
 
       /**

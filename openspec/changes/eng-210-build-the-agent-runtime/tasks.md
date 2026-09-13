@@ -43,18 +43,18 @@
 
 ## 6. Boot, and the entry point
 
-- [ ] 6.1 Read the boot frame from standard input and construct the runtime from the record and log it carries. Nothing in argv.
-- [ ] 6.2 Fail construction on a malformed boot frame with an error naming what could not be read, before any model call is made.
-- [ ] 6.3 Add the entry point the manifest declares.
-- [ ] 6.4 Test that the boot frame arrives intact after the sandbox's credential delivery on the same pipe. The failure mode is a truncated frame that reads as a malformed record, so this test is what names the real cause.
-- [ ] 6.5 Test that an empty log is valid and denotes an agent that has not yet run.
+- [x] 6.1 Read the boot frame from standard input and construct the runtime from the record and log it carries. Nothing in argv.
+- [x] 6.2 Fail construction on a malformed boot frame with an error naming what could not be read, before any model call is made.
+- [x] 6.3 Add the entry point the manifest declares.
+- [x] 6.4 Test that the boot frame arrives intact after the sandbox's credential delivery on the same pipe. The failure mode is a truncated frame that reads as a malformed record, so this test is what names the real cause.
+- [x] 6.5 Test that an empty log is valid and denotes an agent that has not yet run.
 
 ## 7. The property the design rests on
 
-- [ ] 7.1 Write the indistinguishability test: run a sequence of turns in one runtime capturing every request body; run the same sequence destroying and reconstructing the runtime from the emitted log at every turn boundary; assert the two sequences are byte-identical and in the same order.
-- [ ] 7.2 Include a turn carrying capability calls and results, so the comparison covers a log with more in it than plain messages.
-- [ ] 7.3 Include a reconstruction across an interrupted capability call, so the synthesized result is covered by the same comparison.
-- [ ] 7.4 Test that the runtime constructed for an agent with no parent is the same runtime as one constructed at depth, with no branch distinguishing them.
+- [x] 7.1 Write the indistinguishability test: run a sequence of turns in one runtime capturing every request body; run the same sequence destroying and reconstructing the runtime from the emitted log at every turn boundary; assert the two sequences are byte-identical and in the same order.
+- [x] 7.2 Include a turn carrying capability calls and results, so the comparison covers a log with more in it than plain messages.
+- [x] 7.3 Include a reconstruction across an interrupted capability call, so the synthesized result is covered by the same comparison.
+- [x] 7.4 Test that the runtime constructed for an agent with no parent is the same runtime as one constructed at depth, with no branch distinguishing them.
 
 ## 8. Closing out
 

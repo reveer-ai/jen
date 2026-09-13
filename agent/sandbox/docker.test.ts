@@ -806,3 +806,74 @@ describe('a broken pipe fails the process, not the caller', () => {
     await subject.releaseWorkspace(agent.id);
   });
 });
+
+/**
+ * The credential block and whatever the caller sends next share one standard input, and the
+ * second has to arrive whole after the first.
+ *
+ * This works because POSIX requires a shell's `read` not to consume past its newline on a
+ * shared descriptor, so the prologue takes the block a byte at a time and stops at its
+ * terminator. That is a guarantee it is easy to not know about, and the failure mode if it
+ * ever stopped holding is not an error — it is a payload missing its first bytes, which
+ * reads to whoever receives it as a malformed message rather than as a pipe problem. Hence
+ * a test, so a change to the prologue fails here and says so.
+ */
+describe('what follows the credential block arrives intact', () => {
+  const SECRET = 'sentinel-e3f1a9c7-not-a-real-key';
+
+  function delivering() {
+    return driver({
+      env: { ...process.env, JEN_TEST_TOKEN: SECRET },
+      resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
+    });
+  }
+
+  it('hands the process every byte of it, after the credentials and not before', async () => {
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const subject = delivering();
+    const sandbox = await subject.create(agent);
+
+    const payload = `${JSON.stringify({ record: { id: agent.id }, events: [] })}\n`;
+    const started = await sandbox.exec(['sh', '-c', 'printf %s "$AGENT_TOKEN"; printf "|"; cat'], { input: payload });
+    const [out, exit] = await Promise.all([text(started.stdout), started.exit]);
+
+    expect(exit.code).toBe(0);
+    expect(out).toBe(`${SECRET}|${payload}`);
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  // The reason a log cannot travel in an argument is that a single one is capped well below
+  // the size a log reaches in ordinary use. A payload past that cap is the case the channel
+  // exists for, so it is the case that gets tested.
+  it('hands it over whole when it is larger than an argument could ever be', async () => {
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const subject = delivering();
+    const sandbox = await subject.create(agent);
+
+    const payload = `${JSON.stringify({ events: ['x'.repeat(400_000)] })}\n`;
+    expect(payload.length).toBeGreaterThan(128 * 1024);
+
+    const started = await sandbox.exec(['cat'], { input: payload });
+    const [out, exit] = await Promise.all([text(started.stdout), started.exit]);
+
+    expect(exit.code).toBe(0);
+    expect(out.length).toBe(payload.length);
+    expect(out).toBe(payload);
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  it('ends the input where it always did when the caller sends nothing after', async () => {
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const subject = delivering();
+    const sandbox = await subject.create(agent);
+
+    expect(await inside(sandbox, ['cat'])).toMatchObject({ out: '', code: 0 });
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+});

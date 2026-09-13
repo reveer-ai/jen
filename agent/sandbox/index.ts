@@ -54,6 +54,16 @@ export interface Exit {
 export interface ExecOptions {
   /** Where inside the sandbox to run. Defaults to the agent's workspace. */
   cwd?: string;
+  /**
+   * What the process reads on its standard input, after the credentials and before the
+   * input ends.
+   *
+   * One channel rather than two, and the ordering is the whole of it. A process is sent its
+   * credentials as it starts; whatever the caller has to say next follows on the same
+   * input, so there is no second channel to open, to close, or to get the order wrong on.
+   * A caller with nothing to say passes nothing and the input ends where it always did.
+   */
+  input?: string;
 }
 
 /**
