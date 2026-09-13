@@ -18,6 +18,10 @@ function pipe(...chunks: string[]): Readable {
   return Readable.from(chunks.map((chunk) => Buffer.from(chunk, 'utf8')));
 }
 
+function bytes(...chunks: Buffer[]): Readable {
+  return Readable.from(chunks);
+}
+
 function frame(body: Record<string, unknown>): string {
   return `${JSON.stringify(body)}\n`;
 }
@@ -34,6 +38,46 @@ describe('the frame carries a record and a log, together', () => {
     const whole = frame({ record: aRecord(), events: [] });
     const read = await readBootFrame(pipe(whole.slice(0, 7), whole.slice(7, 40), whole.slice(40)));
     expect(read.record.id).toBe(aRecord().id);
+  });
+
+  // The frame is on this channel precisely because a log grows without bound, so a large one
+  // split across many chunks is the ordinary case rather than an edge — and it is the case
+  // the reading has to stay linear over. The cost is what the note in `boot.ts` is about;
+  // what is asserted here is that scanning only the arriving chunk finds the same line.
+  it('reads a large frame arriving in many chunks, with the remainder left intact', async () => {
+    const events = Array.from({ length: 20_000 }, (_, index) => ({
+      type: 'message',
+      at: '2026-01-01T00:00:00.000Z',
+      from: 'self',
+      content: `something the agent said, the ${index}th time`,
+    }));
+    const rest = '{"type":"stop"}\n';
+    const whole = Buffer.from(frame({ record: aRecord(), events }) + rest, 'utf8');
+    expect(whole.length).toBeGreaterThan(1_000_000);
+
+    const chunks: Buffer[] = [];
+    for (let at = 0; at < whole.length; at += 64 * 1024) chunks.push(whole.subarray(at, at + 64 * 1024));
+
+    const input = bytes(...chunks);
+    const read = await readBootFrame(input);
+    expect(read.events).toHaveLength(events.length);
+    expect(read.events.at(-1)).toEqual(events.at(-1));
+
+    let remaining = '';
+    for await (const chunk of input) remaining += String(chunk);
+    expect(remaining).toBe(rest);
+  });
+
+  // A newline is one byte and cannot hide inside a multi-byte sequence, which is what makes
+  // scanning chunk by chunk safe — but the decoding still has to happen after the join and
+  // not before it, so a character split across the boundary is worth holding down.
+  it('reads a frame whose chunk boundary falls inside a character', async () => {
+    const whole = Buffer.from(frame({ record: aRecord({ charter: 'Ich muss das Ähnliche prüfen.' }), events: [] }));
+    const split = whole.indexOf(Buffer.from('Ä', 'utf8')) + 1;
+    expect(split).toBeGreaterThan(0);
+
+    const read = await readBootFrame(bytes(whole.subarray(0, split), whole.subarray(split)));
+    expect(read.record.charter).toBe('Ich muss das Ähnliche prüfen.');
   });
 
   // What follows the frame is the line protocol the supervisor and the runtime converse

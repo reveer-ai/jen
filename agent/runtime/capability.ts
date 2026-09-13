@@ -48,7 +48,20 @@ export interface Capability {
    * mean revising every implementation.
    */
   invoke(input: unknown, signal: AbortSignal): Promise<CapabilityResult>;
-  /** Optional running commentary, for a capability slow enough that silence is misleading. */
+  /**
+   * Optional running commentary, for a capability slow enough that silence is misleading.
+   *
+   * **Nothing reads this yet.** `dispatch` does not look at it, no capability implements it,
+   * and a capability author who writes one today gets silence rather than an error — so it
+   * is said here, where they would be reading, rather than left to be discovered.
+   *
+   * It is declared anyway because `agent-runtime` requires a capability to be *able* to
+   * declare one, and the consumer is named: the supervisor's `read` (ENG-212), which is what
+   * gives a parent something to watch a long invocation through. `sandbox/index.ts` refuses
+   * the mirror of this and the difference is the point — there is no policy behind a sandbox
+   * option nobody set, whereas this has a specified shape and a stated reader, and inventing
+   * it later would mean revising every implementation written in between.
+   */
   progress?(input: unknown): AsyncIterable<string>;
 }
 

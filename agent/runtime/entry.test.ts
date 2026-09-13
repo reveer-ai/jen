@@ -29,11 +29,20 @@ let received: Record<string, unknown>[] = [];
 let server: Server;
 let baseURL = '';
 
-/** One streamed completion, in the chunk-and-`[DONE]` shape the wire uses. */
+/**
+ * One streamed completion, in the chunk-and-`[DONE]` shape the wire uses.
+ *
+ * `refusal` and `annotations` are here because OpenAI puts them on an ordinary reply, and a
+ * stub tidier than the thing it stands for is a stub that cannot fail. This one omitted
+ * them, and the rule that mistook every unprojected field for the provider's reasoning
+ * passed this suite all the way to review while writing phantom reasoning events and
+ * echoing `annotations` back at whatever gateway `baseURL` named.
+ */
 function completion(content: string): string {
   const head = { id: 'c-1', object: 'chat.completion.chunk', created: 1, model: 'stub-model' };
+  const delta = { role: 'assistant', content, refusal: null, annotations: [] };
   return [
-    `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta: { role: 'assistant', content }, finish_reason: null }] })}`,
+    `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta, finish_reason: null }] })}`,
     `data: ${JSON.stringify({
       ...head,
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -126,8 +135,14 @@ describe('an agent that thinks and does nothing else', () => {
     const second = await run(frameFor({}, first.events), { MODEL_API_KEY: 'sk-stub' });
 
     expect(second.code).toBe(0);
-    const sent = received[1]?.body as { messages: { role: string }[] };
+    const sent = received[1]?.body as { messages: Record<string, unknown>[] };
     expect(sent.messages.map((message) => message.role)).toEqual(['system', 'assistant']);
+
+    // What goes back out is the whole point: the assistant message the runtime replays
+    // carries the two fields the projection produces and not one field more. A response
+    // field that rode along here would be going to a real gateway against a request schema
+    // that does not define it, and every other test in this directory would stay green.
+    expect(Object.keys(sent.messages[1] ?? {})).toEqual(['role', 'content']);
   });
 });
 

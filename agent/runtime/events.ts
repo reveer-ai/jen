@@ -70,6 +70,12 @@ export interface ToolResultEvent extends Occurrence {
  * field: a provider that supplies no representation of its own gets none replayed, and the
  * text stays transcript-only.
  *
+ * Where a provider's representation *is* readable text, the same text is in both, and that
+ * is deliberate rather than redundant — replay carries every field the provider sent,
+ * because deciding that one of them was only meant for reading is the interpreting this is
+ * supposed to not do. What `opaque` never carries is a field of the *standard's* rather than
+ * the provider's; `model.ts` holds that line and says why.
+ *
  * Exactly one provider is exercised today, so this is a shape that anticipates the problem
  * rather than a solution to it. The second provider is what will actually test it.
  */

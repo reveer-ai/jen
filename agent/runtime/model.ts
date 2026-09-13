@@ -58,14 +58,40 @@ export class ModelError extends Error {
 }
 
 /**
- * The keys the projection produces itself.
+ * The fields the standard itself defines on a response message.
  *
- * Everything else on an assistant message is the provider's own, and is carried back as
- * `opaque` for replay without being read. Reasoning is the field this exists for, and the
- * representation differs by provider — so the rule is stated by exclusion rather than by a
- * list of the reasoning fields we happen to know about today.
+ * **`opaque` carries a provider's *extensions*, and this is how they are recognised.** The
+ * earlier rule — everything the projection does not produce — was wrong in a way nothing in
+ * this directory could see. `annotations` and `refusal` are ordinary OpenAI response fields
+ * that a real gateway sets on an ordinary reply, so a message with no reasoning anywhere in
+ * it produced a `reasoning` event with empty content, and `annotations` was then replayed
+ * onto the assistant message of every later request. `ChatCompletionAssistantMessageParam`
+ * does not define `annotations` at all — so that was a field the request schema rejects,
+ * going out on the live wire, while the resume comparison stayed green because both of its
+ * paths were wrong identically.
+ *
+ * The rule still names no reasoning field, which is the property worth keeping: a provider
+ * that invents one tomorrow is carried without a change here. What it names instead is the
+ * standard — knowable, finite, and versioned alongside the SDK that states it.
+ *
+ * A standard field is therefore either projected deliberately or not sent back at all.
+ * `refusal` is the one that gives something up: a refusal reaches the transcript as an
+ * assistant message with no content, and carrying its text is the projection's job rather
+ * than this one's. The loop already ends that turn; nothing in this change needs more.
  */
-const PROJECTED = new Set(['role', 'content', 'tool_calls', 'tool_call_id']);
+const STANDARD = new Set(['role', 'content', 'refusal', 'annotations', 'audio', 'function_call', 'tool_calls']);
+
+/**
+ * Where a provider states its reasoning as text a person can read, most specific first.
+ *
+ * This decides what the *transcript* shows and nothing else. A field read for its text is
+ * still carried in `opaque` and still replayed, so the same text can appear in both — which
+ * looks like duplication and is two jobs: `agent-runtime` requires provider reasoning to be
+ * replayed *without being interpreted*, and holding a field back because we found it
+ * readable would be exactly that interpretation. Only a string is read; a provider spelling
+ * `reasoning` as a structure means it for replay, and gets no transcript text from it.
+ */
+const READABLE = ['reasoning_content', 'reasoning'];
 
 /**
  * Build the client from the record, and read the secret from the environment.
@@ -107,14 +133,16 @@ export function openAIClient(record: AgentRecord, environment: NodeJS.ProcessEnv
         call.type === 'function' ? [{ id: call.id, name: call.function.name, arguments: call.function.arguments }] : [],
       );
 
+      const readable =
+        READABLE.map((key) => message[key]).find(
+          (value): value is string => typeof value === 'string' && value !== '',
+        ) ?? '';
+
       const opaque = Object.fromEntries(
-        Object.entries(message).filter(([key, value]) => !PROJECTED.has(key) && value !== null && value !== undefined),
+        Object.entries(message).filter(
+          ([key, value]) => !STANDARD.has(key) && value !== null && value !== undefined,
+        ),
       );
-      const readable = typeof message.reasoning_content === 'string'
-        ? message.reasoning_content
-        : typeof message.reasoning === 'string'
-          ? message.reasoning
-          : '';
 
       return {
         content: choice.message.content ?? '',

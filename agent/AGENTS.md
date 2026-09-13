@@ -345,3 +345,33 @@ Two things follow, and both are load-bearing:
 - **Key insertion order is part of the claim.** Providers key prompt caches on prefix
   content, so a re-ordered key is a cache miss rather than a cosmetic difference. The
   comparisons are on serialized bytes; `toEqual` would pass on a reordering and see nothing.
+
+## A response message is not a request message, and a tidy stub hides the difference
+
+`opaque` on a reasoning event carries a provider's *extension* fields so they can be replayed
+onto the assistant message. The first spelling of that rule captured everything the projection
+did not itself produce, which sounds equivalent and is not: `annotations` and `refusal` are
+ordinary fields of the OpenAI **response** schema, present on a reply that did no reasoning
+whatsoever. `ChatCompletionMessage` defines them; `ChatCompletionAssistantMessageParam` — the
+request side — defines `annotations` nowhere. So an ordinary reply wrote a `reasoning` event
+with empty content, and every later request echoed a field the request schema does not have.
+
+**What makes this worth a permanent note is how it survived a suite that was otherwise
+thorough.** Three separate guards were live and none could see it:
+
+- `resume.test.ts` compares the live path against the resumed one byte for byte. Both paths use
+  the one projection, so both were wrong *identically* and the comparison stayed green. That is
+  not a gap in the test — it is what a byte-identity comparison structurally cannot see, and it
+  is worth knowing about a test the whole design rests on.
+- `entry.test.ts` runs the real client against a local server, which is the right shape. Its
+  stub returned `{ role, content }` — tidier than any real gateway, which sends `refusal: null`
+  and `annotations: []` on the plainest possible reply. **A double cleaner than the thing it
+  stands for cannot fail.** The stub now sends what OpenAI sends.
+- The typecheck cannot help at all: what goes into `messages` is cast at the seam, because the
+  whole point of `opaque` is carrying fields no request type declares.
+
+So: when a rule is about what came back from a provider, state it against the **standard's own
+response fields** — knowable, finite, versioned with the SDK — and let anything outside that set
+be the extension. Stating it against what our own code produces is a different set, and the
+difference is exactly the standard fields nobody thought about. Test it against a message shaped
+the way a gateway shapes one, and mutate the rule to confirm the test can actually fail.

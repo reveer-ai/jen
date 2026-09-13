@@ -48,7 +48,15 @@ export class BootError extends Error {
  */
 function readLine(input: Readable): Promise<string> {
   return new Promise((resolve, reject) => {
-    let buffered: Buffer = Buffer.alloc(0);
+    // Chunks are kept as they arrive and joined once, rather than accumulated into one
+    // growing buffer. The distinction is the difference between linear and quadratic on
+    // exactly the input this whole mechanism exists for: concatenating per chunk copies
+    // everything received so far every time, and rescanning the accumulation for the
+    // newline does it again. A 10 MB log in 64 KB chunks is on the order of 160 copies
+    // averaging 5 MB — and an event log growing without bound is the stated reason the
+    // frame is on this channel instead of in an argument.
+    const chunks: Buffer[] = [];
+    let size = 0;
 
     const done = (): void => {
       input.off('data', onData);
@@ -58,10 +66,17 @@ function readLine(input: Readable): Promise<string> {
     };
 
     const onData = (chunk: Buffer): void => {
-      buffered = Buffer.concat([buffered, chunk]);
-      const newline = buffered.indexOf(0x0a);
-      if (newline === -1) return;
+      // Only what just arrived is scanned; everything before it was scanned as it arrived.
+      // A newline is a single byte in UTF-8 and cannot hide inside a multi-byte sequence,
+      // so nothing is missed by never looking across a chunk boundary.
+      const found = chunk.indexOf(0x0a);
+      chunks.push(chunk);
+      size += chunk.length;
+      if (found === -1) return;
       done();
+
+      const newline = size - chunk.length + found;
+      const buffered = Buffer.concat(chunks, size);
       const rest = buffered.subarray(newline + 1);
       if (rest.length > 0) input.unshift(rest);
       resolve(buffered.subarray(0, newline).toString('utf8'));
@@ -71,9 +86,9 @@ function readLine(input: Readable): Promise<string> {
       done();
       reject(
         new BootError(
-          buffered.length === 0
+          size === 0
             ? 'the boot frame is missing: standard input ended before anything arrived.'
-            : `the boot frame is incomplete: standard input ended after ${buffered.length} bytes with no line ending.`,
+            : `the boot frame is incomplete: standard input ended after ${size} bytes with no line ending.`,
         ),
       );
     };
