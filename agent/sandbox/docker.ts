@@ -31,7 +31,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { SandboxError } from './index.js';
 
 import type { Readable } from 'node:stream';
-import type { AgentRecord, CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver } from './index.js';
+import type { CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver, SandboxRequest } from './index.js';
 
 /** Prefixes and labels. `jen.run` and `jen.agent` are what an orphan sweep finds. */
 const SANDBOX_PREFIX = 'jen-sandbox';
@@ -229,17 +229,17 @@ export class DockerSandboxDriver implements SandboxDriver {
    * "remove the workspace": on a resume the workspace already existed and holds the agent's
    * work. So this tracks what *this call* brought into existence and unwinds only that.
    */
-  async create(record: AgentRecord): Promise<Sandbox> {
-    const workspace = workspaceName(record.id);
-    const name = `${SANDBOX_PREFIX}-${slug(record.id)}-${randomBytes(4).toString('hex')}`;
+  async create(request: SandboxRequest): Promise<Sandbox> {
+    const workspace = workspaceName(request.id);
+    const name = `${SANDBOX_PREFIX}-${slug(request.id)}-${randomBytes(4).toString('hex')}`;
     let mine = false;
     let credentials = '';
     let rooted = '';
 
     try {
-      mine = await this.#ensureWorkspace(workspace, record.id);
-      credentials = await this.#deliverable(record.credentials);
-      rooted = containerPath(record.workspace);
+      mine = await this.#ensureWorkspace(workspace, request.id);
+      credentials = await this.#deliverable(request.credentials);
+      rooted = containerPath(request.workspace);
 
       const args = [
         'run',
@@ -249,7 +249,7 @@ export class DockerSandboxDriver implements SandboxDriver {
         '--label',
         `${RUN_LABEL}=${this.#run}`,
         '--label',
-        `${AGENT_LABEL}=${record.id}`,
+        `${AGENT_LABEL}=${request.id}`,
         // The agent's workspace, and the only thing mounted. No directory of the machine's
         // is mounted in, and the runtime's own socket never is — that one is not one
         // measure among several, since mounting it grants trivial root outside the sandbox
@@ -278,9 +278,9 @@ export class DockerSandboxDriver implements SandboxDriver {
       // what holds where the terminator does not — that `--` ends option parsing is a fact
       // about *this* runtime's argument parser, and the driver is meant to run against
       // another one that nothing here tests.
-      args.push('--', operand(record.environment), ...IDLE);
+      args.push('--', operand(request.environment), ...IDLE);
 
-      await this.#must(args, `creating a sandbox for ${record.id}`);
+      await this.#must(args, `creating a sandbox for ${request.id}`);
     } catch (error) {
       await this.#unwind(name, mine ? workspace : undefined);
       throw error;

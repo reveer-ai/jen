@@ -24,7 +24,7 @@ import { DockerSandboxDriver, resolveFromEnvironment, spawner, type Spawner } fr
 import { SandboxError } from './index.js';
 
 import type { Readable } from 'node:stream';
-import type { AgentRecord, Sandbox } from './index.js';
+import type { Sandbox, SandboxRequest } from './index.js';
 
 const run = promisify(execFile);
 
@@ -42,7 +42,7 @@ const ON_THE_MACHINE = join(import.meta.dirname, '..', '..', 'package.json');
 
 let agents = 0;
 
-function record(overrides: Partial<AgentRecord> = {}): AgentRecord {
+function request(overrides: Partial<SandboxRequest> = {}): SandboxRequest {
   return {
     id: `${RUN}-agent-${++agents}`,
     environment: IMAGE,
@@ -127,7 +127,7 @@ afterAll(async () => {
 describe('a sandbox is created and destroyed', () => {
   it('creates an isolated environment and returns a handle to it', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     const names = await lines('ps', '--filter', `label=jen.agent=${agent.id}`, '--format', '{{.Names}}');
@@ -145,7 +145,7 @@ describe('a sandbox is created and destroyed', () => {
     // reading the declarations — so there is no second path for this to take. What is
     // demonstrated here is that the root's sandbox is as usable as any other's.
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     expect(await inside(sandbox, ['sh', '-c', 'echo rooted'])).toMatchObject({ out: 'rooted', code: 0 });
@@ -158,7 +158,7 @@ describe('a sandbox is created and destroyed', () => {
 describe('the workspace outlives the sandbox', () => {
   it('keeps a file across destruction, and reclaims it on release', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
 
     const first = await subject.create(agent);
     expect((await inside(first, ['sh', '-c', 'echo kept > /workspace/note'])).code).toBe(0);
@@ -195,7 +195,7 @@ describe('the workspace outlives the sandbox', () => {
     // is the place that persists — which is what a future change to either argument, or to
     // the default `cwd`, has to keep true.
     const subject = driver();
-    const agent = record();
+    const agent = request();
 
     const first = await subject.create(agent);
     expect((await inside(first, ['sh', '-c', 'echo relative > ./note'])).code).toBe(0);
@@ -214,7 +214,7 @@ describe('the workspace outlives the sandbox', () => {
 describe('a sandbox is isolated', () => {
   it('cannot see another sandbox’s workspace, or this machine’s files', async () => {
     const subject = driver();
-    const [one, two] = [record(), record()];
+    const [one, two] = [request(), request()];
     const first = await subject.create(one);
     const second = await subject.create(two);
 
@@ -233,7 +233,7 @@ describe('a sandbox is isolated', () => {
 
   it('mounts no directory of this machine’s, and never the runtime’s socket', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     const name = (await lines('ps', '--filter', `label=jen.agent=${agent.id}`, '--format', '{{.Names}}'))[0] ?? '';
@@ -261,7 +261,7 @@ describe('credentials reach the sandbox and nothing else', () => {
   const SECRET = 'sentinel-e3f1a9c7-not-a-real-key';
 
   it('resolves a reference into the environment, leaving the record holding the reference', async () => {
-    const agent = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
     const subject = driver({
       env: { ...process.env, JEN_TEST_TOKEN: SECRET },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
@@ -292,7 +292,7 @@ describe('credentials reach the sandbox and nothing else', () => {
       return spawner(command, args, env, input);
     };
 
-    const agent = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
     const subject = driver({
       env: { ...process.env, JEN_TEST_TOKEN: SECRET },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
@@ -322,7 +322,7 @@ describe('credentials reach the sandbox and nothing else', () => {
     // where `inspect` returned it in full for as long as the container lived. A source-level
     // check for file writes cannot see that, because the write is the runtime's and not
     // this driver's — so the assertion has to be made against the runtime's own record.
-    const agent = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
     const subject = driver({
       env: { ...process.env, JEN_TEST_TOKEN: SECRET },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
@@ -353,7 +353,7 @@ describe('credentials reach the sandbox and nothing else', () => {
     // truncated. The first is tested because it must work; the second is refused, because a
     // half-delivered secret arrives looking like a secret.
     const awkward = `${SECRET} with spaces\t$NOT_EXPANDED "quoted" 'single' \\backslash`;
-    const agent = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
     const subject = driver({
       env: { ...process.env, JEN_TEST_TOKEN: awkward },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: awkward }),
@@ -370,7 +370,7 @@ describe('credentials reach the sandbox and nothing else', () => {
       env: { ...process.env, JEN_TEST_TOKEN: multiline },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: multiline }),
     });
-    const second = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const second = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
 
     const failure = await refusing.create(second).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(SandboxError);
@@ -399,7 +399,7 @@ describe('credentials reach the sandbox and nothing else', () => {
   });
 
   it('leaves the secret readable nowhere once the sandbox is destroyed', async () => {
-    const agent = record({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
     const subject = driver({
       env: { ...process.env, JEN_TEST_TOKEN: SECRET },
       resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
@@ -413,7 +413,7 @@ describe('credentials reach the sandbox and nothing else', () => {
     expect((await ask('inspect', name)).code).not.toBe(0);
 
     // And the one thing that survived — the workspace — never had it.
-    const after = await subject.create(record({ id: agent.id }));
+    const after = await subject.create(request({ id: agent.id }));
     const swept = await inside(after, ['sh', '-c', `grep -rl ${SECRET} /workspace 2>/dev/null; printf done`]);
     expect(swept.out).toBe('done');
     expect(await inside(after, ['sh', '-c', 'printf %s "${AGENT_TOKEN-unset}"'])).toMatchObject({ out: 'unset' });
@@ -426,7 +426,7 @@ describe('credentials reach the sandbox and nothing else', () => {
 describe('the failure modes are defined', () => {
   it('reports a creation that fails partway, and leaves nothing it created', async () => {
     const subject = driver();
-    const agent = record({ environment: `jen-no-such-image-${RUN}:1` });
+    const agent = request({ environment: `jen-no-such-image-${RUN}:1` });
 
     await expect(subject.create(agent)).rejects.toBeInstanceOf(SandboxError);
 
@@ -438,7 +438,7 @@ describe('the failure modes are defined', () => {
     // `hello-world` carries no shell, so the runtime creates the sandbox and then fails to
     // start it — the one failure that really does leave a remnant behind to be unwound.
     const subject = driver();
-    const agent = record({ environment: UNSTARTABLE });
+    const agent = request({ environment: UNSTARTABLE });
 
     await expect(subject.create(agent)).rejects.toBeInstanceOf(SandboxError);
 
@@ -450,7 +450,7 @@ describe('the failure modes are defined', () => {
     // The case the unwind exists to get right. A resuming agent's workspace already holds
     // its work, and a transient failure must not be what destroys it.
     const subject = driver();
-    const agent = record();
+    const agent = request();
 
     const first = await subject.create(agent);
     expect((await inside(first, ['sh', '-c', 'echo earlier > /workspace/work'])).code).toBe(0);
@@ -469,7 +469,7 @@ describe('the failure modes are defined', () => {
 
   it('succeeds when destroying a sandbox that is already gone', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     await sandbox.destroy();
@@ -481,7 +481,7 @@ describe('the failure modes are defined', () => {
 
   it('stops a sandbox whose process is still running', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     const working = await sandbox.exec(['sh', '-c', 'while :; do sleep 1; done']);
@@ -499,13 +499,13 @@ describe('the failure modes are defined', () => {
   it('fails with the cause named when the runtime is unreachable', async () => {
     const subject = driver({ env: { ...process.env, DOCKER_HOST: 'unix:///jen/nowhere/runtime.sock' } });
 
-    await expect(subject.create(record())).rejects.toThrow(/nowhere\/runtime\.sock/);
+    await expect(subject.create(request())).rejects.toThrow(/nowhere\/runtime\.sock/);
   });
 
   it('fails with the cause named when the runtime is absent', async () => {
     const subject = driver({ docker: '/jen/nowhere/docker' });
 
-    await expect(subject.create(record())).rejects.toThrow(/\/jen\/nowhere\/docker/);
+    await expect(subject.create(request())).rejects.toThrow(/\/jen\/nowhere\/docker/);
   });
 });
 
@@ -532,7 +532,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     const before = await outstanding();
 
     for (const hostile of ['--help', '--privileged', '-v/:/host', '']) {
-      const agent = record({ environment: hostile });
+      const agent = request({ environment: hostile });
       const failure = await subject.create(agent).catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(SandboxError);
@@ -567,7 +567,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     };
 
     const subject = driver({ spawn: recording });
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     const creation = argvs.find((argv) => argv.includes('run')) ?? [];
@@ -601,7 +601,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     // The delimiter in both of its shapes — one that adds an option, one that adds a second
     // destination — and the two forms that are not one absolute path at all.
     for (const hostile of ['/workspace:ro', '/workspace:/elsewhere', 'workspace', '']) {
-      const agent = record({ workspace: hostile });
+      const agent = request({ workspace: hostile });
       const failure = await subject.create(agent).catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(SandboxError);
@@ -626,7 +626,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     const subject = holding();
 
     for (const name of ['1BAD', 'A-B', 'A B', '']) {
-      const agent = record({ credentials: [{ name, ref: 'env:JEN_TEST_TOKEN' }] });
+      const agent = request({ credentials: [{ name, ref: 'env:JEN_TEST_TOKEN' }] });
       const failure = await subject.create(agent).catch((error: unknown) => error);
 
       expect(failure).toBeInstanceOf(SandboxError);
@@ -647,7 +647,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     // credential it started rejecting would look like a configuration mistake rather than a
     // regression here. A leading underscore and a trailing digit are the two edges.
     const subject = holding();
-    const agent = record({
+    const agent = request({
       credentials: [
         { name: '_LEADING_UNDERSCORE', ref: 'env:JEN_TEST_TOKEN' },
         { name: 'TRAILING_9', ref: 'env:JEN_TEST_TOKEN' },
@@ -670,7 +670,7 @@ describe('the record is caller data, and cannot become the runtime’s instructi
     // happen after the workspace has been looked for, the unwind is the only thing between
     // the two.
     const subject = holding();
-    const agent = record();
+    const agent = request();
 
     const first = await subject.create(agent);
     expect((await inside(first, ['sh', '-c', 'echo earlier > /workspace/work'])).code).toBe(0);
@@ -701,7 +701,7 @@ describe('repetition accumulates nothing', () => {
     const before = { ...(await outstanding()), children: await descendants(), fds: descriptors() };
 
     for (let cycle = 0; cycle < 30; cycle++) {
-      const agent = record();
+      const agent = request();
       const sandbox = await subject.create(agent);
       await sandbox.destroy();
       await subject.releaseWorkspace(agent.id);
@@ -724,7 +724,7 @@ describe('exec hands back a running process', () => {
     // buffered implementation would fail silently: its output would arrive when the process
     // ends, which for a process built to stay up and converse is never.
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     const started = await sandbox.exec(['sh', '-c', 'echo first; sleep 5; echo second']);
@@ -745,7 +745,7 @@ describe('exec hands back a running process', () => {
 
   it('runs in the workspace unless told otherwise', async () => {
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
 
     expect(await inside(sandbox, ['pwd'])).toMatchObject({ out: '/workspace' });
@@ -795,7 +795,7 @@ describe('a broken pipe fails the process, not the caller', () => {
     // The way this is actually reached: the supervisor holds a handle, the container is
     // swept or dies, and the next process it starts finds nothing to start in.
     const subject = driver();
-    const agent = record();
+    const agent = request();
     const sandbox = await subject.create(agent);
     await sandbox.destroy();
 

@@ -1,0 +1,17 @@
+{
+  "name": "@reveer/jen-agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The agent substrate: the process an agent is while it works, and the sandbox it works in.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "jen-agent": "./runtime/main.ts"
+  },
+  "dependencies": {
+    "openai": "7.15.0"
+  }
+}

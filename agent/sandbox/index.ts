@@ -21,48 +21,29 @@
  * have a definite shape, and this file should take *that* shape rather than whichever one
  * seemed plausible beforehand.
  */
+import type { AgentRecord, CredentialReference } from '../record.js';
 import type { Readable } from 'node:stream';
 
-/**
- * Where a secret is to be found, never the secret itself.
- *
- * A record carrying values would have to be guarded wherever it was written down. Carrying
- * references instead makes it inert, and safe to persist beside the project.
- *
- * `name` is the variable the resolved value is delivered under; `ref` says where to resolve
- * it from, in a form the resolver understands.
- */
-export interface CredentialReference {
-  name: string;
-  ref: string;
-}
+export type { CredentialReference };
 
 /** Turns a reference into the secret it points at. Called during creation, never before. */
 export type CredentialResolver = (reference: CredentialReference) => Promise<string>;
 
 /**
- * What creation is given.
+ * What creation is given: the fields of an agent's record that provisioning reads, and no
+ * others.
  *
- * Nothing here describes the agent's place in a hierarchy — no parent, no depth, no flag
- * for the agent nobody spawned. That absence is the point rather than an omission: the
- * primitive is identical for every agent, and the caller is what differs between the root
- * and one spawned four levels down.
+ * **Derived from the record rather than declared beside it**, and that is not a stylistic
+ * preference. Handing the whole record over would deliver the agent's parent to a primitive
+ * this specification forbids from receiving it — the primitive is identical for every
+ * agent, and the caller is what differs between the agent nobody spawned and one spawned
+ * four levels down. Narrowing is what keeps that true by construction.
+ *
+ * Deriving also cannot drift. A second hand-written interface would agree with the record
+ * on the day it was written and stop agreeing the day a field was renamed, with nothing
+ * failing; a field renamed on the record fails to resolve here instead.
  */
-export interface AgentRecord {
-  /** Identifies the agent. Its workspace is keyed by this, and outlives any one sandbox. */
-  id: string;
-  /**
-   * The environment the agent's sandbox is built from, in whatever form the substrate's
-   * driver understands. The substrate supplies no default and builds nothing: a default
-   * here would quietly become the thing everyone used, and defining the toolchain is the
-   * project's job.
-   */
-  environment: string;
-  /** Where inside the sandbox the agent's workspace is rooted. */
-  workspace: string;
-  /** Resolved at creation and delivered into the sandbox's environment. */
-  credentials: CredentialReference[];
-}
+export type SandboxRequest = Pick<AgentRecord, 'id' | 'environment' | 'workspace' | 'credentials'>;
 
 /** How a process ended. Deliberately not a way to address it while it runs. */
 export interface Exit {
@@ -112,7 +93,7 @@ export interface Sandbox {
  * agent's work.
  */
 export interface SandboxDriver {
-  create(record: AgentRecord): Promise<Sandbox>;
+  create(request: SandboxRequest): Promise<Sandbox>;
   releaseWorkspace(agentId: string): Promise<void>;
 }
 

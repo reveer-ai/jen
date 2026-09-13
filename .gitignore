@@ -1,5 +1,8 @@
 # dependencies
 /node_modules/
+# the substrate carries its own manifest, so it installs its own tree beside it. Narrow
+# on purpose: a source file added under agent/ stays trackable with no edit here.
+/agent/node_modules/
 
 # build output: compiled CLI and the payload staged into dist/templates/ at pack time
 /dist/

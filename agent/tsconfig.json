@@ -8,6 +8,13 @@
   //
   // `noEmit` makes this a typecheck rather than a build, so there is no artifact to
   // ignore, clean, or accidentally publish.
+  //
+  // Which means the substrate's entry point is a `.ts` file that node runs directly, by
+  // stripping the types out of it. `erasableSyntaxOnly` is what keeps that possible: it
+  // refuses the constructs that have no runtime-free spelling — enums, namespaces,
+  // parameter properties — at the typecheck, rather than letting one land and turn the
+  // entry point into something that needs a build step after all. Nothing else would catch
+  // it, because `noEmit` means nothing here is ever compiled.
   "compilerOptions": {
     "target": "es2023",
     "lib": ["es2023"],
@@ -17,6 +24,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "noEmit": true
   },

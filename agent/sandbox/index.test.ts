@@ -7,9 +7,10 @@
  * else can reveal an assumption that leaked through. These tests are that reading, done by
  * something that does not get tired of doing it.
  */
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'index.ts'), 'utf8');
 
@@ -43,6 +44,13 @@ const FORBIDDEN = [
   'volume',
   'mount',
 ];
+
+/** The field names a `export type X = Pick<…, '…'>` selects, in the order they are written. */
+function picked(name: string): string[] {
+  const block = new RegExp(`export type ${name} = Pick<\\w+, ([^>]*)>`).exec(SOURCE);
+  expect(block, `${name} is declared as a projection of a record`).not.toBeNull();
+  return [...(block?.[1] ?? '').matchAll(/'(\w+)'/g)].map((match) => match[1] ?? '');
+}
 
 /** Every member named inside `export interface X { … }`. */
 function members(name: string): string[] {
@@ -80,8 +88,61 @@ describe('the interface exposes only what it needs', () => {
 });
 
 describe('the primitive is unaware of hierarchy', () => {
-  it('records nothing about an agent’s place in one', () => {
-    expect(members('AgentRecord')).toEqual(['id', 'environment', 'workspace', 'credentials']);
+  it('is given nothing about an agent’s place in one', () => {
+    expect(picked('SandboxRequest')).toEqual(['id', 'environment', 'workspace', 'credentials']);
     expect(DECLARATIONS).not.toMatch(/parent|depth|ancestor|hierarch/i);
+  });
+});
+
+/**
+ * That the narrowed form cannot drift from the record is a *compile-time* property, so the
+ * only thing that can test it is a compiler. Asserting it any other way — comparing two
+ * lists of field names, say — would be asserting the coincidence this is meant to rule out.
+ *
+ * The fixture is a copy of the two real files with one field of the record renamed, put
+ * where the substrate's own `node_modules` resolution still reaches `@types/node`, and
+ * typechecked with the substrate's own configuration. It is deleted afterwards; nothing
+ * about it is worth keeping or ignoring.
+ */
+describe('the narrowed form is derived rather than restated', () => {
+  const fixtures: string[] = [];
+
+  afterAll(() => {
+    for (const fixture of fixtures) rmSync(fixture, { recursive: true, force: true });
+  });
+
+  it('fails to resolve when a field of the record is renamed', () => {
+    const root = join(import.meta.dirname, '..', '..');
+    const fixture = mkdtempSync(join(root, 'node_modules', '.jen-record-drift-'));
+    fixtures.push(fixture);
+
+    mkdirSync(join(fixture, 'sandbox'));
+    cpSync(join(import.meta.dirname, '..', 'tsconfig.json'), join(fixture, 'tsconfig.json'));
+    cpSync(join(import.meta.dirname, 'index.ts'), join(fixture, 'sandbox', 'index.ts'));
+
+    const renamed = readFileSync(join(import.meta.dirname, '..', 'record.ts'), 'utf8')
+      .replace(/^  workspace: string;$/m, '  workspaceRoot: string;')
+      .replace("workspace: string(source, 'workspace', at),", "workspaceRoot: string(source, 'workspace', at),");
+    expect(renamed, 'the fixture renamed nothing — has the record’s field list changed?').toContain('workspaceRoot');
+    writeFileSync(join(fixture, 'record.ts'), renamed);
+
+    let diagnostics: string | undefined;
+    try {
+      execFileSync(join(root, 'node_modules', '.bin', 'tsc'), ['-p', join(fixture, 'tsconfig.json')], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      diagnostics = String((error as { stdout?: string }).stdout ?? '');
+    }
+
+    expect(
+      diagnostics,
+      'renaming a field of the record typechecked, so the two shapes agree only by coincidence',
+    ).toBeDefined();
+    // The narrowed form is where it fails, naming the field that no longer exists — not
+    // some downstream consumer, and not a runtime surprise.
+    expect(diagnostics).toContain('sandbox/index.ts');
+    expect(diagnostics).toContain('"workspace"');
   });
 });

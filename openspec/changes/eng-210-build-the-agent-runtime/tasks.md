@@ -1,18 +1,18 @@
 ## 1. The record, and the sandbox's narrowing
 
-- [ ] 1.1 Add `agent/record.ts` with the one `AgentRecord` and `CredentialReference`, moving the reference type out of `agent/sandbox/index.ts`. Owned by neither sandbox nor runtime, so neither imports the other.
-- [ ] 1.2 Remove `AgentRecord` from `agent/sandbox/index.ts` and replace `create`'s parameter with a `SandboxRequest` derived from the record, carrying only the fields provisioning reads.
-- [ ] 1.3 Update `agent/sandbox/docker.ts` and both sandbox test files for the rename. Behaviour is unchanged; this is the type moving, not the driver.
-- [ ] 1.4 Test that the derived form carries no indication of an agent's parent, and that renaming a record field fails to resolve rather than leaving two shapes agreeing by coincidence.
-- [ ] 1.5 Test that a serialized record carries every credential as a reference and no value, and that a credential named for a use names one the record already carries.
-- [ ] 1.6 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts`. Nothing automated covers `agent/`, so this is the only thing that catches a break in the sandbox from 1.2.
+- [x] 1.1 Add `agent/record.ts` with the one `AgentRecord` and `CredentialReference`, moving the reference type out of `agent/sandbox/index.ts`. Owned by neither sandbox nor runtime, so neither imports the other.
+- [x] 1.2 Remove `AgentRecord` from `agent/sandbox/index.ts` and replace `create`'s parameter with a `SandboxRequest` derived from the record, carrying only the fields provisioning reads.
+- [x] 1.3 Update `agent/sandbox/docker.ts` and both sandbox test files for the rename. Behaviour is unchanged; this is the type moving, not the driver.
+- [x] 1.4 Test that the derived form carries no indication of an agent's parent, and that renaming a record field fails to resolve rather than leaving two shapes agreeing by coincidence.
+- [x] 1.5 Test that a serialized record carries every credential as a reference and no value, and that a credential named for a use names one the record already carries.
+- [x] 1.6 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts`. Nothing automated covers `agent/`, so this is the only thing that catches a break in the sandbox from 1.2.
 
 ## 2. The substrate's manifest
 
-- [ ] 2.1 Add `agent/package.json` declaring the substrate's own dependencies and its entry point. Pin every dependency exactly.
-- [ ] 2.2 Add the model client as a dependency there, pinned. Nothing enters the repository's manifest.
-- [ ] 2.3 Test that the repository's manifest is unchanged, that nothing the substrate depends on resolves into the published package, and that no path under `agent/` appears in the tarball.
-- [ ] 2.4 Test that the CLI's import graph reaches no module under `agent/`, so the entry point stays the substrate's own.
+- [x] 2.1 Add `agent/package.json` declaring the substrate's own dependencies and its entry point. Pin every dependency exactly.
+- [x] 2.2 Add the model client as a dependency there, pinned. Nothing enters the repository's manifest.
+- [x] 2.3 Test that the repository's manifest is unchanged, that nothing the substrate depends on resolves into the published package, and that no path under `agent/` appears in the tarball.
+- [x] 2.4 Test that the CLI's import graph reaches no module under `agent/`, so the entry point stays the substrate's own.
 
 ## 3. Events and the projection
 
