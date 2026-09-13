@@ -16,8 +16,15 @@ import { describe, expect, it } from 'vitest';
 
 const ROOT = join(import.meta.dirname, '..');
 
-function manifest(path: string): Record<string, Record<string, string> & string[] & string> {
-  return JSON.parse(readFileSync(join(ROOT, path), 'utf8')) as never;
+interface Manifest {
+  files?: string[];
+  bin?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+function manifest(path: string): Manifest {
+  return JSON.parse(readFileSync(join(ROOT, path), 'utf8')) as Manifest;
 }
 
 const substrate = manifest('agent/package.json');

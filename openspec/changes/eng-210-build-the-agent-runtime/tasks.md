@@ -16,30 +16,30 @@
 
 ## 3. Events and the projection
 
-- [ ] 3.1 Define the event log: the event types, their ordering, and the fields that make it a verification surface — when a step occurred, tokens consumed, and each invocation's duration and outcome.
-- [ ] 3.2 Implement the projection from event log to the provider's message array. This is the only projection; it serves the working path and the resumed path alike.
-- [ ] 3.3 Carry provider-specific reasoning content in a form the projection replays without interpreting.
-- [ ] 3.4 Test that projecting the same log twice is byte-identical, including a log carrying reasoning content.
-- [ ] 3.5 Test that a log ending in a capability call with no result projects to a valid array — the synthesized result is appended as a real event, and projecting again does not add a second one.
+- [x] 3.1 Define the event log: the event types, their ordering, and the fields that make it a verification surface — when a step occurred, tokens consumed, and each invocation's duration and outcome.
+- [x] 3.2 Implement the projection from event log to the provider's message array. This is the only projection; it serves the working path and the resumed path alike.
+- [x] 3.3 Carry provider-specific reasoning content in a form the projection replays without interpreting.
+- [x] 3.4 Test that projecting the same log twice is byte-identical, including a log carrying reasoning content.
+- [x] 3.5 Test that a log ending in a capability call with no result projects to a valid array — the synthesized result is appended as a real event, and projecting again does not add a second one.
 
 ## 4. The capability surface
 
-- [ ] 4.1 Define the capability interface: name, description, input schema, invocation, optional progress.
-- [ ] 4.2 Build the registry from `record.tools`, failing construction with an error naming any capability that cannot be resolved.
-- [ ] 4.3 Project the registry into the model request's tool declarations, and dispatch a returned call by name.
-- [ ] 4.4 Record an invocation's failure as that invocation's result and continue the loop, rather than letting it end the run.
-- [ ] 4.5 Test with a trivial capability defined in the suite — nothing else exercises this interface in this change, which is the sandbox's one-driver problem again.
-- [ ] 4.6 Test that a runtime constructed with no capabilities is valid, and that a record naming an unresolvable capability fails construction rather than starting with a reduced set.
-- [ ] 4.7 Test that a capability invoked in-process and one that goes out over the channel dispatch through the same path, with nothing in the dispatch distinguishing them.
+- [x] 4.1 Define the capability interface: name, description, input schema, invocation, optional progress.
+- [x] 4.2 Build the registry from `record.tools`, failing construction with an error naming any capability that cannot be resolved.
+- [x] 4.3 Project the registry into the model request's tool declarations, and dispatch a returned call by name.
+- [x] 4.4 Record an invocation's failure as that invocation's result and continue the loop, rather than letting it end the run.
+- [x] 4.5 Test with a trivial capability defined in the suite — nothing else exercises this interface in this change, which is the sandbox's one-driver problem again.
+- [x] 4.6 Test that a runtime constructed with no capabilities is valid, and that a record naming an unresolvable capability fails construction rather than starting with a reduced set.
+- [x] 4.7 Test that a capability invoked in-process and one that goes out over the channel dispatch through the same path, with nothing in the dispatch distinguishing them.
 
 ## 5. The model client and the loop
 
-- [ ] 5.1 Wrap the client behind a seam narrow enough to substitute: a streamed step in, an assistant message with accumulated tool calls and usage out. The seam exists for the test double, not as an abstraction layer.
-- [ ] 5.2 Configure it from the record — `baseURL`, model, and the credential the record names — reading the value from the delivered environment, never from the record.
-- [ ] 5.3 Implement the loop: stream a step, dispatch any capability calls, append results, repeat; end the turn on content with nothing outstanding, and emit that content as the message to the parent.
-- [ ] 5.4 Add a source-level guard that the client's own loop-running facilities are not used, in the same spirit as the sandbox's no-`node:fs` guard. This failure would look like working code.
-- [ ] 5.5 Build the scripted client double: canned responses in, captured request bodies out. Every loop and resume test runs against this, never a live model.
-- [ ] 5.6 Test the turn boundary in both directions — content with no calls ends the turn, content with calls takes another step.
+- [x] 5.1 Wrap the client behind a seam narrow enough to substitute: a streamed step in, an assistant message with accumulated tool calls and usage out. The seam exists for the test double, not as an abstraction layer.
+- [x] 5.2 Configure it from the record — `baseURL`, model, and the credential the record names — reading the value from the delivered environment, never from the record.
+- [x] 5.3 Implement the loop: stream a step, dispatch any capability calls, append results, repeat; end the turn on content with nothing outstanding, and emit that content as the message to the parent.
+- [x] 5.4 Add a source-level guard that the client's own loop-running facilities are not used, in the same spirit as the sandbox's no-`node:fs` guard. This failure would look like working code.
+- [x] 5.5 Build the scripted client double: canned responses in, captured request bodies out. Every loop and resume test runs against this, never a live model.
+- [x] 5.6 Test the turn boundary in both directions — content with no calls ends the turn, content with calls takes another step.
 
 ## 6. Boot, and the entry point
 
