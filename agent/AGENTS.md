@@ -375,3 +375,14 @@ response fields** — knowable, finite, versioned with the SDK — and let anyth
 be the extension. Stating it against what our own code produces is a different set, and the
 difference is exactly the standard fields nobody thought about. Test it against a message shaped
 the way a gateway shapes one, and mutate the rule to confirm the test can actually fail.
+
+**And the other half of that rule is a hole: excluding a standard field from `opaque` drops it
+unless something else picks it up.** `refusal` is what taught this. Taking it out of the
+extensions was right, and it then reached nothing — no `ModelStep` field, so no event, so no
+assistant message at all for that step: the parent got an empty string, and the resumed model
+met the next message with no memory of having declined the last one. A refusal is the agent's
+message and is carried as one, flagged so the projection can put the text back in `refusal`
+rather than in `content`. Every other standard field is dropped on purpose, `audio` being the
+one a provider could really set. So the set in `model.ts` is a **list of decisions**, not a
+filter: adding to it silently discards whatever it names, and the field to check when something
+a provider sent goes missing.

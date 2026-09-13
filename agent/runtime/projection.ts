@@ -31,6 +31,7 @@ export interface ToolCall {
 export type Message = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  refusal?: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 } & Record<string, unknown>;
@@ -50,6 +51,7 @@ export function project(events: readonly Event[]): Message[] {
   const messages: Message[] = [];
 
   let content: string | null = null;
+  let refusal: string | null = null;
   let calls: ToolCall[] = [];
   let replayed: Record<string, unknown> = {};
   let pending = false;
@@ -57,6 +59,10 @@ export function project(events: readonly Event[]): Message[] {
   function flush(): void {
     if (!pending) return;
     const message: Message = { role: 'assistant', content };
+    // Back in the field it arrived in. A refusal put into `content` would be indistinguishable
+    // on the next step from something the model chose to say, and `refusal` is one of the
+    // fields the request schema defines — see `model.ts`, which holds that line.
+    if (refusal !== null) message.refusal = refusal;
     if (calls.length > 0) message.tool_calls = calls;
     // Last, and verbatim: whatever the provider gave back for its own reasoning goes on
     // exactly as it came, and this module never looks inside it. Applied after the known
@@ -64,6 +70,7 @@ export function project(events: readonly Event[]): Message[] {
     for (const [key, value] of Object.entries(replayed)) message[key] = value;
     messages.push(message);
     content = null;
+    refusal = null;
     calls = [];
     replayed = {};
     pending = false;
@@ -84,8 +91,14 @@ export function project(events: readonly Event[]): Message[] {
         }
         // The agent's own words. They belong to the assistant turn being accumulated —
         // whether they end it, or whether the model said something alongside the
-        // capabilities it called.
-        content = content === null ? event.content : `${content}${event.content}`;
+        // capabilities it called. A refusal accumulates separately for the same reason it is
+        // flagged rather than merged: the two are different fields on the wire. A provider
+        // does not send both, and keeping them apart means nothing here has to rely on that.
+        if (event.refusal === true) {
+          refusal = refusal === null ? event.content : `${refusal}${event.content}`;
+        } else {
+          content = content === null ? event.content : `${content}${event.content}`;
+        }
         pending = true;
         break;
 

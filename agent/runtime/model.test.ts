@@ -148,6 +148,32 @@ describe('what is carried back from a completion', () => {
     expect((await step({ role: 'assistant', content: 'hi', refusal: null, reasoning: null })).reasoning).toBeNull();
   });
 
+  /**
+   * A refusal is the one standard field this reads, and it has to survive.
+   *
+   * The rule above excludes it from `opaque` because it is the standard's field rather than
+   * a provider's extension — correct, and it left the text with nowhere to go until it was
+   * carried here. A refusal that vanishes gives the parent an empty answer and takes the
+   * turn out of the model's own history on the next step, which is the least diagnosable
+   * failure either of them could be handed.
+   */
+  it('carries a refusal as what the model said, nowhere near the reasoning', async () => {
+    const declined = { ...ORDINARY, content: null, refusal: 'I will not do that.' };
+    const carried = await step(declined);
+
+    expect(carried.refusal).toBe('I will not do that.');
+    expect(carried.content).toBe('');
+    expect(carried.reasoning).toBeNull();
+  });
+
+  it('marks nothing else as a refusal, an empty one included', async () => {
+    expect((await step(ORDINARY)).refusal).toBeNull();
+    // A gateway that spells "did not refuse" as an empty string rather than as null would
+    // otherwise produce a refusal with nothing in it — an answer flagged as declined that
+    // says why in no words at all.
+    expect((await step({ ...ORDINARY, refusal: '' })).refusal).toBeNull();
+  });
+
   it('carries a searching gateway’s citations nowhere near the reasoning', async () => {
     const annotated = {
       ...ORDINARY,
@@ -207,10 +233,14 @@ describe('what is carried back from a completion', () => {
       { ...ORDINARY, annotations: [{ type: 'url_citation' }] },
       { ...ORDINARY, reasoning: 'weighing it up', reasoning_details: [{ type: 'reasoning.encrypted', data: 'AAAA' }] },
       { ...ORDINARY, audio: { id: 'a-1' } },
+      { ...ORDINARY, content: null, refusal: 'I will not do that.' },
     ]) {
-      const { content, reasoning } = await step(message);
+      const { content, refusal, reasoning } = await step(message);
       const [projected] = project([
         ...(reasoning === null ? [] : [{ type: 'reasoning' as const, at: 'T', ...reasoning }]),
+        ...(refusal === null
+          ? []
+          : [{ type: 'message' as const, at: 'T', from: 'self' as const, content: refusal, refusal: true as const }]),
         { type: 'message' as const, at: 'T', from: 'self' as const, content },
       ]);
 

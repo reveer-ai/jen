@@ -40,6 +40,14 @@ export interface ModelRequest {
 /** What the model produced, with the provider's own shapes kept whole. */
 export interface ModelStep {
   content: string;
+  /**
+   * What the model declined to do, in its own words, or `null`.
+   *
+   * Separate from `content` because the provider keeps it separate, and because a refusal
+   * replayed as content would tell the model on its next step that it said something it did
+   * not say. It is still the agent's message to its parent — see `index.ts`.
+   */
+  refusal: string | null;
   calls: Call[];
   reasoning: { content: string; opaque?: Record<string, unknown> } | null;
   usage: { in: number; out: number; model: string };
@@ -74,10 +82,14 @@ export class ModelError extends Error {
  * that invents one tomorrow is carried without a change here. What it names instead is the
  * standard — knowable, finite, and versioned alongside the SDK that states it.
  *
- * A standard field is therefore either projected deliberately or not sent back at all.
- * `refusal` is the one that gives something up: a refusal reaches the transcript as an
- * assistant message with no content, and carrying its text is the projection's job rather
- * than this one's. The loop already ends that turn; nothing in this change needs more.
+ * A standard field is therefore either carried deliberately or not sent back at all, and
+ * dropping one is silent — so the set is worth reading as a list of decisions. `refusal` is
+ * carried: it arrives on `ModelStep` below, the loop records it as the agent's own message,
+ * and the projection replays it into the field it came from. The rest are dropped, `audio`
+ * being the one a provider could actually set: a text agent has nothing to do with it, and
+ * a reply carrying audio with null content would lose everything it said. That is the
+ * general rule and not a gap around one field — a standard field nothing here picks up
+ * reaches neither the transcript nor the next request.
  */
 const STANDARD = new Set(['role', 'content', 'refusal', 'annotations', 'audio', 'function_call', 'tool_calls']);
 
@@ -146,6 +158,9 @@ export function openAIClient(record: AgentRecord, environment: NodeJS.ProcessEnv
 
       return {
         content: choice.message.content ?? '',
+        // An empty string is not a refusal. Treating one as such would mark an ordinary
+        // message as declined and give a parent nothing to read for the reason.
+        refusal: typeof message.refusal === 'string' && message.refusal !== '' ? message.refusal : null,
         calls,
         reasoning:
           readable === '' && Object.keys(opaque).length === 0

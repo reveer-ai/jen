@@ -16,7 +16,7 @@
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { aRecord } from '../fixture.ts';
 
@@ -30,7 +30,7 @@ let server: Server;
 let baseURL = '';
 
 /**
- * One streamed completion, in the chunk-and-`[DONE]` shape the wire uses.
+ * What the stub replies with. An ordinary message unless a test says otherwise.
  *
  * `refusal` and `annotations` are here because OpenAI puts them on an ordinary reply, and a
  * stub tidier than the thing it stands for is a stub that cannot fail. This one omitted
@@ -38,9 +38,18 @@ let baseURL = '';
  * passed this suite all the way to review while writing phantom reasoning events and
  * echoing `annotations` back at whatever gateway `baseURL` named.
  */
-function completion(content: string): string {
+const ORDINARY = {
+  role: 'assistant',
+  content: 'There is nothing here but thought.',
+  refusal: null,
+  annotations: [],
+};
+
+let delta: Record<string, unknown> = ORDINARY;
+
+/** One streamed completion carrying `delta`, in the chunk-and-`[DONE]` shape the wire uses. */
+function completion(): string {
   const head = { id: 'c-1', object: 'chat.completion.chunk', created: 1, model: 'stub-model' };
-  const delta = { role: 'assistant', content, refusal: null, annotations: [] };
   return [
     `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta, finish_reason: null }] })}`,
     `data: ${JSON.stringify({
@@ -61,7 +70,7 @@ beforeAll(async () => {
     request.on('end', () => {
       received.push({ path: request.url, authorization: request.headers.authorization, body: JSON.parse(body) });
       response.writeHead(200, { 'content-type': 'text/event-stream' });
-      response.end(completion('There is nothing here but thought.'));
+      response.end(completion());
     });
   });
 
@@ -71,6 +80,11 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+beforeEach(() => {
+  received = [];
+  delta = ORDINARY;
 });
 
 function run(frame: string, environment: NodeJS.ProcessEnv = {}) {
@@ -94,7 +108,6 @@ function frameFor(overrides: Parameters<typeof aRecord>[0] = {}, events: unknown
 
 describe('an agent that thinks and does nothing else', () => {
   it('boots from a frame, takes a turn, and writes its message out', async () => {
-    received = [];
     const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
 
     expect(result.stderr).toBe('');
@@ -106,7 +119,6 @@ describe('an agent that thinks and does nothing else', () => {
   });
 
   it('sends the charter and offers no tools, because its record names none', async () => {
-    received = [];
     await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
 
     const sent = received[0]?.body as { messages: { role: string; content: string }[]; tools?: unknown };
@@ -115,13 +127,11 @@ describe('an agent that thinks and does nothing else', () => {
   });
 
   it('authenticates with the credential the record named, taken from the environment', async () => {
-    received = [];
     await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
     expect(received[0]?.authorization).toBe('Bearer sk-stub');
   });
 
   it('records what the step cost, from what the provider reported', async () => {
-    received = [];
     const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
     const out = JSON.parse(result.stdout) as { events: Record<string, unknown>[] };
     expect(out.events.at(-1)).toMatchObject({ type: 'usage', in: 31, out: 7, model: 'stub-model' });
@@ -130,7 +140,6 @@ describe('an agent that thinks and does nothing else', () => {
   // The log it emits is what a supervisor would hand back on a resume, so it has to be
   // enough on its own to continue from.
   it('continues from the log it emitted last time', async () => {
-    received = [];
     const first = JSON.parse((await run(frameFor(), { MODEL_API_KEY: 'sk-stub' })).stdout) as { events: unknown[] };
     const second = await run(frameFor({}, first.events), { MODEL_API_KEY: 'sk-stub' });
 
@@ -143,6 +152,42 @@ describe('an agent that thinks and does nothing else', () => {
     // field that rode along here would be going to a real gateway against a request schema
     // that does not define it, and every other test in this directory would stay green.
     expect(Object.keys(sent.messages[1] ?? {})).toEqual(['role', 'content']);
+  });
+});
+
+/**
+ * The model declining, all the way through: the real client, the real entry point, the log
+ * it emits, and what that log sends back.
+ *
+ * Every `refusal` in this directory was `null` until this test, which is how a fix that
+ * dropped a non-null one reached review with the suite green. It is the case the scripted
+ * client cannot stand in for, because the question is what the wire format does with it.
+ */
+describe('a model that declines is still an agent that answered', () => {
+  const DECLINED = { role: 'assistant', content: null, refusal: 'I will not do that.', annotations: [] };
+
+  it('writes the refusal out as its message rather than an empty string', async () => {
+    delta = DECLINED;
+    const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
+
+    expect(result.stderr).toBe('');
+    const out = JSON.parse(result.stdout) as { message: string; events: Record<string, unknown>[] };
+    expect(out.message).toBe('I will not do that.');
+    expect(out.events).toMatchObject([
+      { type: 'charter' },
+      { type: 'message', from: 'self', content: 'I will not do that.', refusal: true },
+      { type: 'usage' },
+    ]);
+  });
+
+  it('replays it from that log in the field it arrived in, and in no other', async () => {
+    delta = DECLINED;
+    const first = JSON.parse((await run(frameFor(), { MODEL_API_KEY: 'sk-stub' })).stdout) as { events: unknown[] };
+    const second = await run(frameFor({}, first.events), { MODEL_API_KEY: 'sk-stub' });
+
+    expect(second.code).toBe(0);
+    const sent = received[1]?.body as { messages: Record<string, unknown>[] };
+    expect(sent.messages[1]).toEqual({ role: 'assistant', content: null, refusal: 'I will not do that.' });
   });
 });
 

@@ -128,6 +128,16 @@ describe('a malformed frame fails before any model call is made', () => {
       frame({ record: aRecord(), events: [{ type: 'charter', content: 'x' }] }),
       /events\[0\]\.at is missing/,
     ],
+    [
+      // The flag is written only as `true`; anything else is a log this runtime did not
+      // write, and reading it as truthy would replay an ordinary message as a refusal.
+      'a message flagged as a refusal with anything but true',
+      frame({
+        record: aRecord(),
+        events: [{ type: 'message', at: '2026-01-01T00:00:00.000Z', from: 'self', content: 'x', refusal: 'yes' }],
+      }),
+      /events\[0\]\.refusal is present and is not true/,
+    ],
   ];
 
   for (const [description, text, message] of broken) {

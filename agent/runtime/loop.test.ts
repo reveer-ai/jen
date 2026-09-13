@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.ts';
+import { aCall, aCapability, aRecord, asks, declines, says, scripted } from '../fixture.ts';
 import { Runtime } from './index.ts';
 
 const CLOCK = () => 1_767_225_600_000;
@@ -48,6 +48,43 @@ describe('a turn ends on content with nothing outstanding', () => {
     await agent.turn('Go.');
     const types = new Set(agent.events.map((event) => event.type));
     expect([...types].sort()).toEqual(['charter', 'message', 'usage']);
+  });
+});
+
+/**
+ * A refusal ends the turn too, and is an answer rather than the absence of one.
+ *
+ * The model was asked for something and said what it would not do. Nothing about that is a
+ * failure of the loop, so it takes the ordinary path: recorded as the agent's message,
+ * returned to the parent, and replayed to the model on the next step — see `events.ts` for
+ * why it is this event rather than a channel of its own.
+ */
+describe('a refusal is the agent’s message like any other', () => {
+  it('goes back to the parent as the answer, rather than as an empty string', async () => {
+    const { agent, client } = runtime([declines('I will not do that.')]);
+    await expect(agent.turn('Do the thing.')).resolves.toBe('I will not do that.');
+    expect(client.taken).toBe(1);
+  });
+
+  it('is written into the log, flagged as the field it came back in', async () => {
+    const { agent } = runtime([declines('I will not do that.')]);
+    await agent.turn('Do the thing.');
+    expect(agent.events.filter((event) => event.type === 'message')).toMatchObject([
+      { from: 'parent', content: 'Do the thing.' },
+      { from: 'self', content: 'I will not do that.', refusal: true },
+    ]);
+  });
+
+  // The consequence that outlives the turn: a step missing from the log is a step missing
+  // from the conversation, and the model would meet the next message with no memory of
+  // having declined the last one.
+  it('is still in the conversation the next turn sends', async () => {
+    const { agent, client } = runtime([declines('I will not do that.'), says('That one I can.')]);
+    await agent.turn('Do the thing.');
+    await agent.turn('How about this instead?');
+
+    const sent = JSON.parse(client.requests[1] ?? '{}') as { messages: Record<string, unknown>[] };
+    expect(sent.messages).toContainEqual({ role: 'assistant', content: null, refusal: 'I will not do that.' });
   });
 });
 

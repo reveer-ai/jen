@@ -18,7 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.ts';
+import { aCall, aCapability, aRecord, asks, declines, says, scripted } from '../fixture.ts';
 import { INTERRUPTED, type Event } from './events.ts';
 import { Runtime } from './index.ts';
 
@@ -28,8 +28,16 @@ import type { ModelStep } from './model.ts';
 const LIVE = () => 1_767_225_600_000;
 const RESUMED = () => 1_798_761_600_000;
 
-/** Ten turns, with calls, results, reasoning and plain answers among them. */
-const TURNS = ['Start.', 'And then?', 'Look at the tree.', 'Read one.', 'Summarize.'];
+/** Ten turns, with calls, results, reasoning, a refusal and plain answers among them. */
+const TURNS = [
+  'Start.',
+  'And then?',
+  'Look at the tree.',
+  'Read one.',
+  'Summarize.',
+  'Now delete it all.',
+  'Then just list them.',
+];
 
 const SCRIPT: Partial<ModelStep>[] = [
   { content: 'Beginning.', reasoning: { content: 'The parent wants a start.' } },
@@ -45,6 +53,14 @@ const SCRIPT: Partial<ModelStep>[] = [
     },
   },
   says('In summary: two files.'),
+  // A refusal is a turn the model has to still remember declining, so it belongs in the
+  // comparison rather than in a test of its own: it reaches the wire in a field of its own,
+  // which is one more thing a reconstruction could spell differently.
+  declines('I will not delete anything.'),
+  // The turn after it is what makes the refusal observable at all: it is replayed in the
+  // request this step answers, and a refusal lost on the way back would leave the model
+  // meeting this message with no memory of having declined the last one.
+  says('README.md and package.json.'),
 ];
 
 function capabilities(): Capability[] {
@@ -107,6 +123,15 @@ describe('a resumed agent sends what an uninterrupted one would have sent', () =
   it('carries a provider’s own reasoning representation through the reconstruction', async () => {
     const other = await reconstructed([], TURNS);
     expect(other.some((request) => request.includes('reasoning.encrypted'))).toBe(true);
+  });
+
+  it('carries a refusal through it, still in the field it came back in', async () => {
+    const one = await live([], TURNS);
+    const other = await reconstructed([], TURNS);
+    expect(other).toEqual(one);
+
+    const sent = JSON.parse(other.at(-1)!) as { messages: Record<string, unknown>[] };
+    expect(sent.messages).toContainEqual({ role: 'assistant', content: null, refusal: 'I will not delete anything.' });
   });
 
   it('sends the same bytes however many times it is reconstructed', async () => {

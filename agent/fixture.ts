@@ -62,6 +62,7 @@ export function scripted(script: readonly Partial<ModelStep>[]): ScriptedClient 
       }
       return Promise.resolve({
         content: step.content ?? '',
+        refusal: step.refusal ?? null,
         calls: step.calls ?? [],
         reasoning: step.reasoning ?? null,
         usage: step.usage ?? { in: 0, out: 0, model: 'scripted' },
@@ -74,6 +75,11 @@ export function scripted(script: readonly Partial<ModelStep>[]): ScriptedClient 
 /** A step that ends the turn. */
 export function says(content: string): Partial<ModelStep> {
   return { content };
+}
+
+/** A step in which the model declined. It ends the turn the way any other answer does. */
+export function declines(refusal: string): Partial<ModelStep> {
+  return { refusal };
 }
 
 /** A step that calls capabilities and therefore does not end the turn. */

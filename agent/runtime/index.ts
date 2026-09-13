@@ -115,6 +115,13 @@ export class Runtime {
       if (step.content !== '') {
         this.#events.push({ type: 'message', at: this.#at(), from: 'self', content: step.content });
       }
+      // A refusal is the agent's message too — the model was asked for something and said
+      // what it would not do. Recorded as one so a parent reading the transcript finds an
+      // answer where the turn ended, and so the projection has it to replay; the flag is
+      // what keeps it out of `content` on the way back. See `events.ts`.
+      if (step.refusal !== null) {
+        this.#events.push({ type: 'message', at: this.#at(), from: 'self', content: step.refusal, refusal: true });
+      }
       for (const call of step.calls) {
         this.#events.push({ type: 'tool_call', at: this.#at(), id: call.id, name: call.name, arguments: call.arguments });
       }
@@ -122,8 +129,10 @@ export class Runtime {
 
       // Content with nothing outstanding is the whole of the ending. A model that produced
       // neither content nor a call has also ended it — there is nothing to take another
-      // step on, and looping would be looping forever.
-      if (step.calls.length === 0) return step.content;
+      // step on, and looping would be looping forever. A refusal ends it the same way and
+      // goes back as the answer: an empty string here would hand the parent the least
+      // diagnosable failure there is, a turn that finished and said nothing.
+      if (step.calls.length === 0) return step.content !== '' ? step.content : (step.refusal ?? '');
 
       for (const call of step.calls) {
         const result = await dispatch(this.#registry, call, signal, this.#clock);

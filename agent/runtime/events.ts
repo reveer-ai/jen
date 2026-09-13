@@ -31,11 +31,20 @@ export interface CharterEvent extends Occurrence {
  * `self` is what the agent said. It is the *only* completion signal there is: a turn ends
  * when the model produces content with nothing outstanding, and that content is the
  * message. There is no status field and no separate channel — see `loop.ts`.
+ *
+ * `refusal` marks the one case where the provider spells that content as a field of its
+ * own: the model declined, and said so. It is still the agent's message and still ends the
+ * turn, which is why it is this event rather than another one — a second completion signal
+ * would be the separate channel the design does without. The flag exists so the projection
+ * can put the text back in the field it arrived in; replaying a refusal as content would
+ * tell the model it said something it did not say, and dropping it loses the only
+ * explanation the parent is ever going to get.
  */
 export interface MessageEvent extends Occurrence {
   type: 'message';
   from: 'parent' | 'self';
   content: string;
+  refusal?: true;
 }
 
 /** The model asked for a capability. `arguments` is the provider's JSON string, unparsed. */
@@ -143,7 +152,13 @@ function one(value: unknown, index: number): Event {
       if (from !== 'parent' && from !== 'self') {
         throw new EventLogError(`events[${index}].from is neither "parent" nor "self"`);
       }
-      return { type: 'message', at: when, from, content: text(source, 'content', index) };
+      const event: MessageEvent = { type: 'message', at: when, from, content: text(source, 'content', index) };
+      if (source.refusal !== undefined) {
+        // Only ever written as `true`; an absent flag is what "not a refusal" looks like.
+        if (source.refusal !== true) throw new EventLogError(`events[${index}].refusal is present and is not true`);
+        event.refusal = true;
+      }
+      return event;
     }
     case 'tool_call':
       return {

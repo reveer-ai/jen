@@ -91,6 +91,46 @@ describe('a log becomes a conversation', () => {
   });
 });
 
+/**
+ * A refusal, which is the agent's message spelled in a field of its own.
+ *
+ * The provider keeps `content` and `refusal` apart, and so does this: replaying a refusal as
+ * content would tell the model on its next step that it said something it did not say, and
+ * dropping it would take the turn out of its history altogether.
+ */
+describe('a refusal goes back in the field it arrived in', () => {
+  const declined: Event[] = [
+    { type: 'message', at: AT, from: 'parent', content: 'Do the thing.' },
+    { type: 'message', at: AT, from: 'self', content: 'I will not do that.', refusal: true },
+  ];
+
+  it('leaves content null and puts the words in `refusal`', () => {
+    expect(JSON.stringify(project(declined).at(-1))).toBe(
+      JSON.stringify({ role: 'assistant', content: null, refusal: 'I will not do that.' }),
+    );
+  });
+
+  it('is byte-identical when projected twice', () => {
+    expect(bytes(declined)).toBe(JSON.stringify(project(structuredClone(declined))));
+  });
+
+  // The provider does not send both, and nothing here relies on that. Keeping the two
+  // accumulators apart is what makes the mixed case a shape rather than a special case.
+  it('keeps it separate from content the model produced in the same turn', () => {
+    const both = project([
+      { type: 'message', at: AT, from: 'self', content: 'Here is part of it.' },
+      { type: 'message', at: AT, from: 'self', content: 'The rest I will not do.', refusal: true },
+    ]);
+    expect(both).toEqual([
+      { role: 'assistant', content: 'Here is part of it.', refusal: 'The rest I will not do.' },
+    ]);
+  });
+
+  it('closes the turn the way any other message does', () => {
+    expect(project([...declined, { type: 'message', at: AT, from: 'parent', content: 'Then this.' }])).toHaveLength(3);
+  });
+});
+
 describe('the projection does not vary between runs', () => {
   it('is byte-identical when a log is projected twice', () => {
     expect(bytes(CONVERSATION)).toBe(bytes(CONVERSATION));
