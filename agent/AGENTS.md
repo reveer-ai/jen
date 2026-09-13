@@ -386,3 +386,23 @@ rather than in `content`. Every other standard field is dropped on purpose, `aud
 one a provider could really set. So the set in `model.ts` is a **list of decisions**, not a
 filter: adding to it silently discards whatever it names, and the field to check when something
 a provider sent goes missing.
+
+## The resume test never serializes; a real resume always does
+
+`resume.test.ts` hands the log from one runtime to the next as live objects. A real resume
+cannot: the log leaves one process as JSON on standard output and re-enters the next through
+`parseEvents` on standard input. **Everything an event carries has to survive that round trip,
+and the test that the whole design rests on does not cross it.**
+
+Nothing is broken here — the ten-turn process-level comparison was run and every request body
+is byte-identical to the uninterrupted run, `opaque` reasoning and the `refusal` flag included.
+The point is where the next hole would be. An `Event` field that `parseEvents` does not know
+about is dropped in transit, and the symptom is the one this directory has now produced twice:
+the suite stays green, the live wire is wrong, and the byte-identity comparison cannot see it
+because both of its paths are in the same process. So when an event gains a field, the question
+is not only what the projection does with it — it is whether `parseEvents` carries it, and the
+check is a log that has actually been through `JSON.stringify` and back.
+
+Worth knowing when writing that check: the runtime re-seeds the charter from the record when a
+log has none, so a log that loses its charter in transit is silently repaired and proves
+nothing. Break a field the record cannot supply.
