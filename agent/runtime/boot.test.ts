@@ -10,9 +10,9 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 
-import { aRecord, says, scripted } from '../fixture.js';
-import { BootError, readBootFrame } from './boot.js';
-import { Runtime } from './index.js';
+import { aRecord, says, scripted } from '../fixture.ts';
+import { BootError, readBootFrame } from './boot.ts';
+import { Runtime } from './index.ts';
 
 function pipe(...chunks: string[]): Readable {
   return Readable.from(chunks.map((chunk) => Buffer.from(chunk, 'utf8')));

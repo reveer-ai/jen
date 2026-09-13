@@ -58,6 +58,6 @@
 
 ## 8. Closing out
 
-- [ ] 8.1 Record in `agent/AGENTS.md` what a future session would otherwise rediscover the hard way — the shared pipe between credential delivery and the boot frame, why the client's loop is unused and how that is guarded, and why the projection lives in the runtime rather than the supervisor. Skip anything that does not clear the bar.
-- [ ] 8.2 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts` and confirm both clean. No automated check covers this directory.
-- [ ] 8.3 Run `npx openspec validate eng-210-build-the-agent-runtime --strict`.
+- [x] 8.1 Record in `agent/AGENTS.md` what a future session would otherwise rediscover the hard way — the shared pipe between credential delivery and the boot frame, why the client's loop is unused and how that is guarded, and why the projection lives in the runtime rather than the supervisor. Skip anything that does not clear the bar.
+- [x] 8.2 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts` and confirm both clean. No automated check covers this directory.
+- [x] 8.3 Run `npx openspec validate eng-210-build-the-agent-runtime --strict`.

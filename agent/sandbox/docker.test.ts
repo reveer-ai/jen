@@ -20,11 +20,11 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { DockerSandboxDriver, resolveFromEnvironment, spawner, type Spawner } from './docker.js';
-import { SandboxError } from './index.js';
+import { DockerSandboxDriver, resolveFromEnvironment, spawner, type Spawner } from './docker.ts';
+import { SandboxError } from './index.ts';
 
 import type { Readable } from 'node:stream';
-import type { Sandbox, SandboxRequest } from './index.js';
+import type { Sandbox, SandboxRequest } from './index.ts';
 
 const run = promisify(execFile);
 

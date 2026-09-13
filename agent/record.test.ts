@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aRecord } from './fixture.js';
-import { parseRecord, RecordError } from './record.js';
+import { aRecord } from './fixture.ts';
+import { parseRecord, RecordError } from './record.ts';
 
 describe('a record is inert', () => {
   it('carries every credential as a reference and no value', () => {

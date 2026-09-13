@@ -11,8 +11,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { answerInterrupted, type Event } from './events.js';
-import { project } from './projection.js';
+import { answerInterrupted, type Event } from './events.ts';
+import { project } from './projection.ts';
 
 const AT = '2026-01-01T00:00:00.000Z';
 

@@ -21,12 +21,12 @@
  * model returns content with no calls outstanding — that content *is* the message to the
  * parent. There is no completion channel and no status field an agent writes.
  */
-import { answerInterrupted, type Event } from './events.js';
-import { declare, dispatch, resolveCapabilities, type Capability } from './capability.js';
-import { project } from './projection.js';
+import { answerInterrupted, type Event } from './events.ts';
+import { declare, dispatch, resolveCapabilities, type Capability } from './capability.ts';
+import { project } from './projection.ts';
 
-import type { AgentRecord } from '../record.js';
-import type { ModelClient, ModelRequest } from './model.js';
+import type { AgentRecord } from '../record.ts';
+import type { ModelClient, ModelRequest } from './model.ts';
 
 export interface RuntimeOptions {
   record: AgentRecord;
@@ -144,6 +144,6 @@ export class Runtime {
   }
 }
 
-export { CapabilityError, type Capability, type CapabilityResult } from './capability.js';
-export { EventLogError, type Event } from './events.js';
-export { ModelError, openAIClient, type ModelClient, type ModelRequest, type ModelStep } from './model.js';
+export { CapabilityError, type Capability, type CapabilityResult } from './capability.ts';
+export { EventLogError, type Event } from './events.ts';
+export { ModelError, openAIClient, type ModelClient, type ModelRequest, type ModelStep } from './model.ts';

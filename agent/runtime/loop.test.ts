@@ -7,8 +7,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.js';
-import { Runtime } from './index.js';
+import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.ts';
+import { Runtime } from './index.ts';
 
 const CLOCK = () => 1_767_225_600_000;
 
@@ -155,5 +155,65 @@ describe('the root’s runtime holds nothing extra', () => {
   it('names no operation that provisions, destroys, or routes', () => {
     const operations = Object.getOwnPropertyNames(Runtime.prototype).join(' ');
     expect(operations).not.toMatch(/spawn|send|await|stop|sandbox|provision|destroy|route/i);
+  });
+});
+
+/**
+ * The log is the substrate's only verification surface: a parent that cannot reconstruct
+ * what a child did from it has no way to catch a confident lie, and a claim an agent writes
+ * about itself is exactly as forgeable as the prose beside it. What makes that possible is
+ * the part the provider's message array cannot carry — when a step happened, what it cost,
+ * and how each invocation went.
+ */
+describe('the log carries what the message array cannot', () => {
+  it('records when each step occurred and what it cost in tokens', async () => {
+    const client = scripted([
+      { content: '', calls: [aCall('c1', 'fs')], usage: { in: 412, out: 17, model: 'a-model' } },
+      { content: 'Done.', usage: { in: 480, out: 4, model: 'a-model' } },
+    ]);
+    const agent = new Runtime({
+      record: aRecord({ tools: ['fs'] }),
+      capabilities: [aCapability('fs')],
+      client,
+      clock: CLOCK,
+    });
+    await agent.turn('Go.');
+
+    expect(agent.events.filter((event) => event.type === 'usage')).toEqual([
+      { type: 'usage', at: new Date(CLOCK()).toISOString(), in: 412, out: 17, model: 'a-model' },
+      { type: 'usage', at: new Date(CLOCK()).toISOString(), in: 480, out: 4, model: 'a-model' },
+    ]);
+    expect(agent.events.every((event) => typeof event.at === 'string' && !Number.isNaN(Date.parse(event.at)))).toBe(true);
+  });
+
+  it('records each invocation’s duration and whether it succeeded', async () => {
+    let tick = 0;
+    const agent = new Runtime({
+      record: aRecord({ tools: ['fs', 'boom'] }),
+      capabilities: [
+        aCapability('fs'),
+        aCapability('boom', () => {
+          throw new Error('no');
+        }),
+      ],
+      client: scripted([asks(aCall('c1', 'fs'), aCall('c2', 'boom')), says('Done.')]),
+      // Advances once per reading, so a duration that was never measured reads as zero.
+      clock: () => 1_767_225_600_000 + tick++ * 5,
+    });
+    await agent.turn('Go.');
+
+    expect(agent.events.filter((event) => event.type === 'tool_result')).toMatchObject([
+      { id: 'c1', ok: true, ms: 5 },
+      { id: 'c2', ok: false, ms: 5 },
+    ]);
+  });
+
+  // None of it reaches the model. The transcript is richer than the conversation, which is
+  // the whole reason it is stored as events rather than as what was sent.
+  it('sends none of it to the model', async () => {
+    const client = scripted([says('Done.')]);
+    const agent = new Runtime({ record: aRecord({ tools: [] }), client, clock: CLOCK });
+    await agent.turn('Go.');
+    expect(client.requests[0]).not.toMatch(/"at"|"ms"|"ok"|"usage"|tokens/);
   });
 });

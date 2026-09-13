@@ -5,9 +5,9 @@
  * under a test directory because the substrate keeps its tests beside its sources, and a
  * builder that drifts from the type it builds is caught by the same typecheck as the rest.
  */
-import type { AgentRecord } from './record.js';
-import type { Call, Capability, CapabilityResult } from './runtime/capability.js';
-import type { ModelClient, ModelStep } from './runtime/model.js';
+import type { AgentRecord } from './record.ts';
+import type { Call, Capability, CapabilityResult } from './runtime/capability.ts';
+import type { ModelClient, ModelStep } from './runtime/model.ts';
 
 /**
  * A complete, valid record. Every field is filled, because a builder that left optional

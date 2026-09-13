@@ -12,8 +12,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { aRecord } from '../fixture.js';
-import { ModelError, openAIClient } from './model.js';
+import { aRecord } from '../fixture.ts';
+import { ModelError, openAIClient } from './model.ts';
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'model.ts'), 'utf8');
 

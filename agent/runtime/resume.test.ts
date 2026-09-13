@@ -18,12 +18,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.js';
-import { INTERRUPTED, type Event } from './events.js';
-import { Runtime } from './index.js';
+import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.ts';
+import { INTERRUPTED, type Event } from './events.ts';
+import { Runtime } from './index.ts';
 
-import type { Capability, CapabilityResult } from './capability.js';
-import type { ModelStep } from './model.js';
+import type { Capability, CapabilityResult } from './capability.ts';
+import type { ModelStep } from './model.ts';
 
 const LIVE = () => 1_767_225_600_000;
 const RESUMED = () => 1_798_761_600_000;

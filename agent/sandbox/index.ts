@@ -21,7 +21,7 @@
  * have a definite shape, and this file should take *that* shape rather than whichever one
  * seemed plausible beforehand.
  */
-import type { AgentRecord, CredentialReference } from '../record.js';
+import type { AgentRecord, CredentialReference } from '../record.ts';
 import type { Readable } from 'node:stream';
 
 export type { CredentialReference };

@@ -20,8 +20,8 @@
  * failure mode of a prologue that over-read is a *truncated frame*, and a truncated frame
  * reads as a malformed record.
  */
-import { parseRecord, RecordError, type AgentRecord } from '../record.js';
-import { EventLogError, parseEvents, type Event } from './events.js';
+import { parseRecord, RecordError, type AgentRecord } from '../record.ts';
+import { EventLogError, parseEvents, type Event } from './events.ts';
 
 import type { Readable } from 'node:stream';
 

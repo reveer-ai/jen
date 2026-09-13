@@ -21,9 +21,9 @@
  */
 import OpenAI from 'openai';
 
-import type { AgentRecord } from '../record.js';
-import type { Call, ToolDeclaration } from './capability.js';
-import type { Message } from './projection.js';
+import type { AgentRecord } from '../record.ts';
+import type { Call, ToolDeclaration } from './capability.ts';
+import type { Message } from './projection.ts';
 
 /**
  * One request, as it goes out.

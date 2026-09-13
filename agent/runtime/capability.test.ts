@@ -8,9 +8,9 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.js';
-import { CapabilityError, declare, dispatch, resolveCapabilities } from './capability.js';
-import { Runtime } from './index.js';
+import { aCall, aCapability, aRecord, asks, says, scripted } from '../fixture.ts';
+import { CapabilityError, declare, dispatch, resolveCapabilities } from './capability.ts';
+import { Runtime } from './index.ts';
 
 const NEVER = new AbortController().signal;
 const CLOCK = () => 1_767_225_600_000;

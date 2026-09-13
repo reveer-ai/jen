@@ -28,10 +28,10 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 
-import { SandboxError } from './index.js';
+import { SandboxError } from './index.ts';
 
 import type { Readable } from 'node:stream';
-import type { CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver, SandboxRequest } from './index.js';
+import type { CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver, SandboxRequest } from './index.ts';
 
 /** Prefixes and labels. `jen.run` and `jen.agent` are what an orphan sweep finds. */
 const SANDBOX_PREFIX = 'jen-sandbox';

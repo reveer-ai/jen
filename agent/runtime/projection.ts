@@ -14,7 +14,7 @@
  * anything outside the log it was handed; `at` is deliberately not projected, because the
  * message array has nowhere to put it and a resumed run would spell it differently.
  */
-import type { Event } from './events.js';
+import type { Event } from './events.ts';
 
 export interface ToolCall {
   id: string;
