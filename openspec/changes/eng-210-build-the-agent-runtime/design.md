@@ -101,13 +101,15 @@ One **step** is one model call plus the tool results it produced. One **turn** i
 
 ```
 loop:
-  stream a step  →  tool calls?  →  yes: dispatch all, append results, loop
-                                 →  no:  emit message to parent, turn ends
+  take a step  →  tool calls?  →  yes: dispatch all, append results, loop
+                                →  no:  emit message to parent, turn ends
 ```
 
-The `openai` client is used for one thing: a streamed chat completion, with its accumulated tool calls. Its agentic helpers — anything that runs the tool loop on our behalf — are **not** used, and a source-level test guards that, in the same spirit as the sandbox's no-`node:fs` guard. Delegating the loop would hand ENG-194's central decision to a library, and it would do so invisibly, because the behaviour would look correct.
+The `openai` client is used for one thing: a single chat completion. Its agentic helpers — anything that runs the tool loop on our behalf — are **not** used, and a source-level test guards that, in the same spirit as the sandbox's no-`node:fs` guard. Delegating the loop would hand ENG-194's central decision to a library, and it would do so invisibly, because the behaviour would look correct.
 
-Streaming from the first version rather than retrofitted: tool-call deltas arrive as index-keyed fragments whose `arguments` split at arbitrary boundaries, and accumulating them is the one part of this surface genuinely worth not owning.
+**Not streamed, which reverses this design's original call and is worth reading as a correction rather than an edit.** The first version streamed and read back the SDK's accumulated message, on the reasoning that tool-call deltas arrive as index-keyed fragments whose `arguments` split at arbitrary boundaries, and accumulating those is the one part of this surface genuinely worth not owning. That reasoning holds and is not what changed. What a live gateway showed is that the same accumulator *overwrites* every field outside the standard set — which is precisely the set `opaque` is built from, so 8,106 characters of provider reasoning reached the log as 2, with every test in the change green because every stub delivered an extension in one delta.
+
+The two ways out are owning a merge rule for shapes that are unknown by definition — interpretation, which is the one thing `opaque` may not do — or not streaming. One unstreamed call returns every extension whole *and* returns tool calls whole with them, so the reassembly streaming was chosen for does not arise instead of being taken on. It costs a token-by-token progress stream that nothing here reads; ENG-212 is where that would first have a consumer, and it would be re-opening this trade with the merge problem still attached. The detail, the figures, and the honest stubs are in `agent/AGENTS.md`.
 
 ### A capability is a name, a schema, and an invocation
 

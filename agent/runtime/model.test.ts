@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { join } from 'node:path';
+import OpenAI from 'openai';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { aRecord } from '../fixture.ts';
@@ -31,10 +32,7 @@ const SOURCE = readFileSync(join(import.meta.dirname, 'model.ts'), 'utf8');
 const CODE = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 describe('the client’s loop-running facilities are not used', () => {
-  // Every one of these dispatches tool calls and takes the next step on its own. `stream`
-  // is deliberately absent from the list: it accumulates chunks into one completion — which
-  // is the part worth not owning, since tool-call `arguments` arrive split at arbitrary
-  // byte boundaries — and it dispatches nothing.
+  // Every one of these dispatches tool calls and takes the next step on its own.
   for (const facility of [
     'runTools',
     'runFunctions',
@@ -51,10 +49,22 @@ describe('the client’s loop-running facilities are not used', () => {
   }
 
   it('takes exactly one step per call and returns it', () => {
-    // One `stream(` and one `finalChatCompletion(` — a second of either would be a loop
-    // spelled out by hand, which is the same delegation wearing different clothes.
-    expect(CODE.match(/\.stream\(/g)).toHaveLength(1);
-    expect(CODE.match(/finalChatCompletion\(/g)).toHaveLength(1);
+    // One `create(` — a second would be a loop spelled out by hand, which is the same
+    // delegation wearing different clothes.
+    expect(CODE.match(/\.create\(/g)).toHaveLength(1);
+  });
+
+  /**
+   * And it does not stream, which is a correctness rule rather than a preference.
+   *
+   * The SDK's accumulator overwrites every field outside the standard set with each
+   * successive delta, and that set is exactly what `opaque` is built from — see the block at
+   * the bottom of this file, which demonstrates it against the same server. A step that
+   * streams replays a fraction of a provider's reasoning and nothing says so.
+   */
+  it('never asks for a streamed completion', () => {
+    expect(CODE).not.toContain('.stream(');
+    expect(CODE).not.toContain('stream:');
   });
 });
 
@@ -97,11 +107,63 @@ describe('what is carried back from a completion', () => {
   let baseURL = '';
   let reply: Record<string, unknown> = {};
 
-  /** One streamed completion carrying `reply`, in the chunk-and-`[DONE]` shape the wire uses. */
+  /** One completion carrying `reply` whole, as a gateway answers a request that did not stream. */
+  function unstreamed(): string {
+    return JSON.stringify({
+      id: 'c-1',
+      object: 'chat.completion',
+      created: 1,
+      model: 'stub-model',
+      choices: [{ index: 0, message: reply, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+    });
+  }
+
+  /**
+   * The fields `ChatCompletionStream` accumulates by name.
+   *
+   * `content` and `refusal` are concatenated, `tool_calls` and `audio` have accumulators of
+   * their own, and everything else goes through `Object.assign` — so the set below is the
+   * one a delta can safely carry a piece of, and every other field is last-wins. It is the
+   * SDK's set rather than `model.ts`'s: `annotations` is standard on a response and is still
+   * overwritten, because the accumulator has never heard of it.
+   */
+  const ACCUMULATED = new Set(['role', 'content', 'refusal', 'function_call', 'tool_calls', 'audio']);
+
+  /**
+   * The same reply as the wire delivers it when streaming, which is not tidily.
+   *
+   * A gateway sends an extension field **a piece at a time across hundreds of deltas**, and
+   * `reasoning` ends on a `null`. A stub that puts the whole field in one delta cannot tell
+   * last-wins from accumulate-properly apart — which is how 8,106 characters of reasoning
+   * reached the log as 2 with every test in this directory green. Nothing in the substrate
+   * asks for this any more; it is served so that anything which starts asking again meets
+   * the wire's real behaviour rather than a stub's.
+   */
   function streamed(): string {
     const head = { id: 'c-1', object: 'chat.completion.chunk', created: 1, model: 'stub-model' };
+    const first: Record<string, unknown> = {};
+    const rest: Record<string, unknown>[] = [];
+
+    for (const [key, value] of Object.entries(reply)) {
+      if (ACCUMULATED.has(key)) {
+        first[key] = value;
+      } else if (typeof value === 'string') {
+        // One character per delta, the way tokens arrive, and the `null` a gateway ends on.
+        for (const character of value) rest.push({ [key]: character });
+        rest.push({ [key]: null });
+      } else if (Array.isArray(value)) {
+        // The parts of an array extension arrive keyed by `index`, one part per delta.
+        value.forEach((part, index) => rest.push({ [key]: [{ index, ...(part as object) }] }));
+      } else {
+        rest.push({ [key]: value });
+      }
+    }
+
     return [
-      `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta: reply, finish_reason: null }] })}`,
+      ...[first, ...rest].map(
+        (delta) => `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta, finish_reason: null }] })}`,
+      ),
       `data: ${JSON.stringify({
         ...head,
         choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -115,10 +177,18 @@ describe('what is carried back from a completion', () => {
 
   beforeAll(async () => {
     server = createServer((request, response) => {
-      request.on('data', () => {});
+      let body = '';
+      request.on('data', (chunk) => (body += String(chunk)));
       request.on('end', () => {
-        response.writeHead(200, { 'content-type': 'text/event-stream' });
-        response.end(streamed());
+        // The reply's shape follows the request's, as a gateway's does. Nothing here decides
+        // for the client which one it gets.
+        if ((JSON.parse(body) as { stream?: boolean }).stream === true) {
+          response.writeHead(200, { 'content-type': 'text/event-stream' });
+          response.end(streamed());
+        } else {
+          response.writeHead(200, { 'content-type': 'application/json' });
+          response.end(unstreamed());
+        }
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -202,6 +272,59 @@ describe('what is carried back from a completion', () => {
       reasoning: thinking.reasoning,
       reasoning_details: thinking.reasoning_details,
     });
+  });
+
+  /**
+   * The defect a live gateway found, and the only shape that can show it.
+   *
+   * OpenRouter sent 8,106 characters of `reasoning` across 1,200 deltas and 2 of them
+   * reached the log, with `reasoning_details` arriving as its last fragment alone. Every
+   * stub in this directory delivered an extension in one delta, where last-wins and
+   * accumulate-properly are indistinguishable — so nothing could fail. The stub above now
+   * splits one the way the wire does, which makes this test red for any step that goes back
+   * to streaming without owning the merge itself.
+   */
+  it('keeps an extension whole, however many pieces the wire sends it in', async () => {
+    const thinking = {
+      ...ORDINARY,
+      reasoning: 'weighing it up, '.repeat(500),
+      reasoning_details: [
+        { type: 'reasoning.text', text: 'the readable part' },
+        { type: 'reasoning.encrypted', data: 'AAAA' },
+      ],
+    };
+    const { reasoning } = await step(thinking);
+
+    expect(reasoning?.content).toBe(thinking.reasoning);
+    expect(reasoning?.opaque).toEqual({
+      reasoning: thinking.reasoning,
+      reasoning_details: thinking.reasoning_details,
+    });
+  });
+
+  /**
+   * What streaming would cost, kept executable rather than only written down.
+   *
+   * This asserts a property of the pinned SDK, not of our code: `ChatCompletionStream`
+   * accumulates the standard fields by name and `Object.assign`s the rest, so an extension
+   * ends up as whatever its final delta said — `null`, here, because that is what a gateway
+   * ends on. It is the whole reason `model.ts` does not stream. Should it ever go red, the
+   * accumulator has learned to merge extensions and the trade-off is worth re-opening.
+   */
+  it('loses all but the last delta of an extension when the same reply is streamed', async () => {
+    reply = {
+      ...ORDINARY,
+      reasoning: 'weighing it up at length',
+      reasoning_details: [{ type: 'reasoning.text', text: 'the readable part' }, { type: 'reasoning.encrypted' }],
+    };
+
+    const accumulated = await new OpenAI({ baseURL, apiKey: 'sk-stub' }).chat.completions
+      .stream({ model: 'stub-model', messages: [] })
+      .finalChatCompletion();
+    const message = accumulated.choices[0]?.message as unknown as Record<string, unknown>;
+
+    expect(message.reasoning).toBeNull();
+    expect(message.reasoning_details).toEqual([{ index: 1, type: 'reasoning.encrypted' }]);
   });
 
   it('carries a reasoning field the provider spells as a structure', async () => {

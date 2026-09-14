@@ -308,18 +308,67 @@ which sends a payload past 128 KB and compares every byte, and hence every parse
 
 ## The client's loop is not used, and that cannot be caught by behaviour
 
-`runtime/model.ts` uses the `openai` client for exactly one thing: a streamed chat
-completion, accumulated into one message. Its `runTools` and runner helpers will dispatch
-tool calls and take the next step for you, and **if one of them were used here everything
-would still work** — the tests would pass, the agent would answer, and the substrate's
-central decision (that the agent's loop is the agent's, not a vendor's and not the coding
-assistant's) would have been given away with nothing to show for it.
+`runtime/model.ts` uses the `openai` client for exactly one thing: one chat completion, whole.
+Its `runTools` and runner helpers will dispatch tool calls and take the next step for you, and
+**if one of them were used here everything would still work** — the tests would pass, the agent
+would answer, and the substrate's central decision (that the agent's loop is the agent's, not a
+vendor's and not the coding assistant's) would have been given away with nothing to show for it.
 
 So the guard is a source-level test, over the file's *declarations* with its prose stripped
 out. The prose has to stay free to name what it is avoiding, or the reason for avoiding it
-is the first thing lost. `stream()` is used and is not one of them: it accumulates chunks
-and dispatches nothing, and reassembling tool-call `arguments` that arrive split at
-arbitrary byte boundaries is the one part of this surface genuinely worth not owning.
+is the first thing lost.
+
+## The completion is not streamed, because the accumulator destroys extensions
+
+This one cost a live gateway to find, and it is the single most likely thing for a future
+session to undo on the reasoning the first version used.
+
+`stream()` looks like the obvious choice and the file said so for three passes: it accumulates
+chunks and dispatches nothing, and reassembling tool-call `arguments` that arrive split at
+arbitrary byte boundaries is genuinely worth not owning. **What it also does is overwrite every
+field the standard does not define.** `ChatCompletionStream` destructures each delta as
+`{ audio, content, refusal, function_call, role, tool_calls, ...rest }` — concatenating
+`content` and `refusal`, accumulating `tool_calls` and `audio`, and handing `rest` to
+`Object.assign`. So `opaque`, whose whole rule is *the fields outside that standard set*, was by
+construction the fields the accumulator does not accumulate.
+
+Against OpenRouter and `deepseek/deepseek-r1`, one prompt:
+
+```
+NOT streamed : reasoning_details[0].text  =  8106 chars
+streamed     : reasoning_details[0].text  =     2 chars   (".\n")
+
+1290 chunks, 1200 of them carrying reasoning_details,
+7971 chars of reasoning across the deltas — 2 of which reach the log.
+```
+
+`reasoning` came back `null` outright, because the last delta carries `null` and `null` wins —
+so the readable-text rule never fired either. The spec requires provider reasoning to be
+carried "in a form that projection replays without interpreting it"; 0.03% of it was.
+
+**The way out was not to own the merge.** Accumulating extension deltas here means inventing
+merge semantics for shapes that are unknown by definition — string-append for `reasoning`, but
+`reasoning_details` is an array whose parts merge by `index`, and the next extension a provider
+ships is a guess. Guessing is interpretation, which is the one thing `opaque` may not do. One
+unstreamed `create()` returns every extension whole **and** returns tool calls whole with them,
+so the reassembly that streaming was chosen for does not arise rather than being taken on.
+
+Two costs, both accepted knowingly:
+
+- **No token-by-token progress.** Nothing in the substrate reads one — `capability.ts` notes the
+  same about `progress`. ENG-212 is where transcript visibility lands; if it wants live tokens,
+  it is re-opening this trade with the merge problem still attached, not finding an oversight.
+- **A long generation sits on one open response** rather than a trickling one, so an idle
+  intermediary can cut it where a stream would have been kept alive. Not observed; worth knowing
+  if a long reasoning run ever dies on the wire for no stated reason.
+
+**And the reason no test could see it: every stub sent an extension in a single delta**, where
+last-wins and accumulate-properly are indistinguishable. Both stub servers now split one the way
+the wire does — a character per delta, ending on `null` — and serve the streamed shape only to a
+request that asks for it. So the doubles stay honest whichever way a future session goes, and
+`model.test.ts` keeps one test that streams the same reply through the SDK on purpose and asserts
+the loss. If *that* goes red, the accumulator has learned to merge extensions and this whole
+section is worth re-opening.
 
 ## The projection lives here, not in the supervisor
 

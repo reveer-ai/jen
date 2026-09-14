@@ -34,7 +34,7 @@
 
 ## 5. The model client and the loop
 
-- [x] 5.1 Wrap the client behind a seam narrow enough to substitute: a streamed step in, an assistant message with accumulated tool calls and usage out. The seam exists for the test double, not as an abstraction layer.
+- [x] 5.1 Wrap the client behind a seam narrow enough to substitute: a step in, an assistant message with its tool calls and usage out. The seam exists for the test double, not as an abstraction layer.
 - [x] 5.2 Configure it from the record — `baseURL`, model, and the credential the record names — reading the value from the delivered environment, never from the record.
 - [x] 5.3 Implement the loop: stream a step, dispatch any capability calls, append results, repeat; end the turn on content with nothing outstanding, and emit that content as the message to the parent.
 - [x] 5.4 Add a source-level guard that the client's own loop-running facilities are not used, in the same spirit as the sandbox's no-`node:fs` guard. This failure would look like working code.

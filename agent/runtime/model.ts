@@ -14,10 +14,25 @@
  * the result looks like working code — which is exactly why a source-level test guards
  * their absence. Delegating that loop would hand the substrate's central decision to a
  * library: the agent's loop is the agent's, not the coding assistant's and not a vendor's.
- * `stream()` is used and is not one of them; it accumulates chunks into one completion and
- * dispatches nothing. Tool-call deltas arrive as index-keyed fragments whose `arguments`
- * split at arbitrary byte boundaries, and reassembling those is the one part of this
- * surface genuinely worth not owning.
+ *
+ * **The completion is not streamed, and that is a correction rather than a preference.** The
+ * first version streamed and read back the accumulated message, on the reasoning that
+ * tool-call `arguments` arrive as index-keyed fragments split at arbitrary byte boundaries
+ * and reassembling those is the one part of this surface worth not owning. Against a live
+ * gateway that accumulator turned out to destroy the thing `opaque` exists to carry.
+ * `ChatCompletionStream` destructures each delta as `{ audio, content, refusal,
+ * function_call, role, tool_calls, ...rest }` — concatenating `content` and `refusal`,
+ * accumulating `tool_calls` and `audio`, and handing `rest` to `Object.assign`. Every field
+ * outside that set is therefore *overwritten* by each successive delta, and that set is
+ * precisely what `STANDARD` below excludes: `opaque` was by construction the fields the
+ * accumulator does not accumulate. 8,106 characters of provider reasoning reached the log
+ * as 2, and the final delta's `null` won for `reasoning` outright.
+ *
+ * A single unstreamed call returns every extension whole — and returns tool calls whole with
+ * them, so the reassembly the accumulator was kept for does not arise rather than being
+ * owned. What it costs is a token-by-token progress stream, which nothing in the substrate
+ * reads yet, and a long generation held on one open response instead of a live one. Both are
+ * recorded in `agent/AGENTS.md`; neither is worth replaying 0.03% of a model's reasoning.
  */
 import OpenAI from 'openai';
 
@@ -126,7 +141,7 @@ export function openAIClient(record: AgentRecord, environment: NodeJS.ProcessEnv
 
   return {
     async step(request, signal) {
-      const stream = client.chat.completions.stream(
+      const completion = await client.chat.completions.create(
         {
           model: request.model,
           messages: request.messages as never,
@@ -135,7 +150,6 @@ export function openAIClient(record: AgentRecord, environment: NodeJS.ProcessEnv
         { signal },
       );
 
-      const completion = await stream.finalChatCompletion();
       const choice = completion.choices[0];
       if (choice === undefined) throw new ModelError('the provider returned a completion with no choices.');
 

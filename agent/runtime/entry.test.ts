@@ -4,9 +4,9 @@
  *
  * Everything else here runs the loop against a scripted client, which is right for the
  * properties those tests are about. It leaves one seam untested — the client itself, and
- * how a streamed completion is accumulated — and that seam is the one place a mistake would
- * be invisible to every other test in this directory. So this runs the real entry point as
- * a real subprocess against a local server speaking the provider's wire format.
+ * what it carries out of a completion — and that seam is the one place a mistake would be
+ * invisible to every other test in this directory. So this runs the real entry point as a
+ * real subprocess against a local server speaking the provider's wire format.
  *
  * A local server rather than a live model: the wire format is what is under test, and a
  * live model would make it non-deterministic for reasons unrelated to any of it. It is also
@@ -45,13 +45,47 @@ const ORDINARY = {
   annotations: [],
 };
 
-let delta: Record<string, unknown> = ORDINARY;
+let reply: Record<string, unknown> = ORDINARY;
 
-/** One streamed completion carrying `delta`, in the chunk-and-`[DONE]` shape the wire uses. */
+/** One completion carrying `reply` whole, as a gateway answers a request that did not stream. */
 function completion(): string {
+  return JSON.stringify({
+    id: 'c-1',
+    object: 'chat.completion',
+    created: 1,
+    model: 'stub-model',
+    choices: [{ index: 0, message: reply, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 31, completion_tokens: 7, total_tokens: 38 },
+  });
+}
+
+/**
+ * The same reply streamed, one delta per field, ending the way a gateway ends.
+ *
+ * The runtime does not ask for this and the reason it does not is in `model.ts`: the SDK's
+ * accumulator overwrites every field outside the standard set with each successive delta, so
+ * a streamed extension arrives as its last piece. Serving it keeps the stub honest — a
+ * process that starts streaming again meets what the wire really does, here as well as in
+ * `model.test.ts`, rather than a stub tidy enough to pass either way.
+ */
+function streamed(): string {
   const head = { id: 'c-1', object: 'chat.completion.chunk', created: 1, model: 'stub-model' };
+  const standard = new Set(['role', 'content', 'refusal', 'function_call', 'tool_calls', 'audio']);
+  const first: Record<string, unknown> = {};
+  const rest: Record<string, unknown>[] = [];
+
+  for (const [key, value] of Object.entries(reply)) {
+    if (standard.has(key)) first[key] = value;
+    else if (typeof value === 'string') {
+      for (const character of value) rest.push({ [key]: character });
+      rest.push({ [key]: null });
+    } else rest.push({ [key]: value });
+  }
+
   return [
-    `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta, finish_reason: null }] })}`,
+    ...[first, ...rest].map(
+      (delta) => `data: ${JSON.stringify({ ...head, choices: [{ index: 0, delta, finish_reason: null }] })}`,
+    ),
     `data: ${JSON.stringify({
       ...head,
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
@@ -68,9 +102,16 @@ beforeAll(async () => {
     let body = '';
     request.on('data', (chunk) => (body += String(chunk)));
     request.on('end', () => {
-      received.push({ path: request.url, authorization: request.headers.authorization, body: JSON.parse(body) });
-      response.writeHead(200, { 'content-type': 'text/event-stream' });
-      response.end(completion());
+      const sent = JSON.parse(body) as { stream?: boolean };
+      received.push({ path: request.url, authorization: request.headers.authorization, body: sent });
+
+      if (sent.stream === true) {
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.end(streamed());
+      } else {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(completion());
+      }
     });
   });
 
@@ -84,7 +125,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   received = [];
-  delta = ORDINARY;
+  reply = ORDINARY;
 });
 
 function run(frame: string, environment: NodeJS.ProcessEnv = {}) {
@@ -131,6 +172,29 @@ describe('an agent that thinks and does nothing else', () => {
     expect(received[0]?.authorization).toBe('Bearer sk-stub');
   });
 
+  /**
+   * The whole completion, not a stream of it — asserted where the real process sends it.
+   *
+   * `model.test.ts` guards this over the source; this is the same rule seen from the other
+   * end of the wire, on the request a subprocess actually put on it. The pair is worth having
+   * because the defect underneath was found only on a live gateway: streamed, an extension
+   * field arrives in pieces the SDK's accumulator overwrites rather than joins.
+   */
+  it('asks the provider for the whole completion rather than a stream of it', async () => {
+    await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
+    expect((received[0]?.body as { stream?: boolean }).stream).toBeUndefined();
+  });
+
+  it('carries a provider’s reasoning into the log entire, not its last fragment', async () => {
+    reply = { ...ORDINARY, reasoning: 'weighing it up, '.repeat(500) };
+    const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
+
+    const out = JSON.parse(result.stdout) as { events: Record<string, unknown>[] };
+    const reasoning = out.events.find((event) => event.type === 'reasoning');
+    expect(reasoning?.content).toBe(reply.reasoning);
+    expect((reasoning?.opaque as Record<string, unknown> | undefined)?.reasoning).toBe(reply.reasoning);
+  });
+
   it('records what the step cost, from what the provider reported', async () => {
     const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
     const out = JSON.parse(result.stdout) as { events: Record<string, unknown>[] };
@@ -167,7 +231,7 @@ describe('a model that declines is still an agent that answered', () => {
   const DECLINED = { role: 'assistant', content: null, refusal: 'I will not do that.', annotations: [] };
 
   it('writes the refusal out as its message rather than an empty string', async () => {
-    delta = DECLINED;
+    reply = DECLINED;
     const result = await run(frameFor(), { MODEL_API_KEY: 'sk-stub' });
 
     expect(result.stderr).toBe('');
@@ -181,7 +245,7 @@ describe('a model that declines is still an agent that answered', () => {
   });
 
   it('replays it from that log in the field it arrived in, and in no other', async () => {
-    delta = DECLINED;
+    reply = DECLINED;
     const first = JSON.parse((await run(frameFor(), { MODEL_API_KEY: 'sk-stub' })).stdout) as { events: unknown[] };
     const second = await run(frameFor({}, first.events), { MODEL_API_KEY: 'sk-stub' });
 
