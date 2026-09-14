@@ -82,3 +82,14 @@ to correct a line of prose.
 **Usually: leave the heading and let the body carry the meaning.** ENG-190 did, deliberately, and
 review agreed. Worth knowing before you start, because the natural move — fix the wording, then
 validate — makes the change look broken and invites reworking a delta that was already correct.
+
+**The exception, and it is not rare: when the stale heading would assert the opposite of its
+body.** ENG-210 narrowed *"The substrate adds no dependency and no package manifest"* to cover
+only the repository's manifest, which left its scenario *No new manifest* standing over a body
+saying the substrate's own manifest exists. That is not a wording that has drifted, it is a
+heading that contradicts what it heads, and it would sit in the spec permanently to preserve a
+requirement identity whose stated purpose had already been served — the requirement named the
+condition of its own supersession and the condition had arrived. `REMOVED` was the answer, with
+the half that was still true restated in the requirement replacing it. The test for which case
+you are in: read the scenario heading alone, as a claim. If it is now false, `MODIFIED` cannot
+express what you mean.

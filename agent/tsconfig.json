@@ -8,7 +8,22 @@
   //
   // `noEmit` makes this a typecheck rather than a build, so there is no artifact to
   // ignore, clean, or accidentally publish.
+  //
+  // Which means the substrate's entry point is a `.ts` file that node runs directly, by
+  // stripping the types out of it. `erasableSyntaxOnly` is what keeps that possible: it
+  // refuses the constructs that have no runtime-free spelling — enums, namespaces,
+  // parameter properties — at the typecheck, rather than letting one land and turn the
+  // entry point into something that needs a build step after all. Nothing else would catch
+  // it, because `noEmit` means nothing here is ever compiled.
+  //
+  // Relative imports name the `.ts` file they actually are, which `allowImportingTsExtensions`
+  // permits and `noEmit` is the precondition for. It is not a style choice: node resolves a
+  // stripped module's specifiers literally, so an import spelled `./boot.js` looks for a
+  // `boot.js` that this directory never produces, and the entry point fails to load with a
+  // module-not-found naming a file nobody wrote. Nothing typechecks that — it is a runtime
+  // resolution, and `noEmit` means there is no build to notice.
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "target": "es2023",
     "lib": ["es2023"],
     "module": "nodenext",
@@ -17,6 +32,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "noEmit": true
   },

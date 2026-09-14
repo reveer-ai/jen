@@ -28,10 +28,10 @@
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 
-import { SandboxError } from './index.js';
+import { SandboxError } from './index.ts';
 
 import type { Readable } from 'node:stream';
-import type { AgentRecord, CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver } from './index.js';
+import type { CredentialReference, CredentialResolver, Exit, Process, Sandbox, SandboxDriver, SandboxRequest } from './index.ts';
 
 /** Prefixes and labels. `jen.run` and `jen.agent` are what an orphan sweep finds. */
 const SANDBOX_PREFIX = 'jen-sandbox';
@@ -229,17 +229,17 @@ export class DockerSandboxDriver implements SandboxDriver {
    * "remove the workspace": on a resume the workspace already existed and holds the agent's
    * work. So this tracks what *this call* brought into existence and unwinds only that.
    */
-  async create(record: AgentRecord): Promise<Sandbox> {
-    const workspace = workspaceName(record.id);
-    const name = `${SANDBOX_PREFIX}-${slug(record.id)}-${randomBytes(4).toString('hex')}`;
+  async create(request: SandboxRequest): Promise<Sandbox> {
+    const workspace = workspaceName(request.id);
+    const name = `${SANDBOX_PREFIX}-${slug(request.id)}-${randomBytes(4).toString('hex')}`;
     let mine = false;
     let credentials = '';
     let rooted = '';
 
     try {
-      mine = await this.#ensureWorkspace(workspace, record.id);
-      credentials = await this.#deliverable(record.credentials);
-      rooted = containerPath(record.workspace);
+      mine = await this.#ensureWorkspace(workspace, request.id);
+      credentials = await this.#deliverable(request.credentials);
+      rooted = containerPath(request.workspace);
 
       const args = [
         'run',
@@ -249,7 +249,7 @@ export class DockerSandboxDriver implements SandboxDriver {
         '--label',
         `${RUN_LABEL}=${this.#run}`,
         '--label',
-        `${AGENT_LABEL}=${record.id}`,
+        `${AGENT_LABEL}=${request.id}`,
         // The agent's workspace, and the only thing mounted. No directory of the machine's
         // is mounted in, and the runtime's own socket never is — that one is not one
         // measure among several, since mounting it grants trivial root outside the sandbox
@@ -278,9 +278,9 @@ export class DockerSandboxDriver implements SandboxDriver {
       // what holds where the terminator does not — that `--` ends option parsing is a fact
       // about *this* runtime's argument parser, and the driver is meant to run against
       // another one that nothing here tests.
-      args.push('--', operand(record.environment), ...IDLE);
+      args.push('--', operand(request.environment), ...IDLE);
 
-      await this.#must(args, `creating a sandbox for ${record.id}`);
+      await this.#must(args, `creating a sandbox for ${request.id}`);
     } catch (error) {
       await this.#unwind(name, mine ? workspace : undefined);
       throw error;
@@ -341,13 +341,20 @@ export class DockerSandboxDriver implements SandboxDriver {
        * Every process starts through DELIVER, whether or not this agent has a credential —
        * one path, so the path that carries them is the one every test here exercises.
        * `--interactive` is what keeps standard input attached long enough for the block to
-       * arrive; it is closed straight after, which the command sees as the end of its own
-       * input.
+       * arrive; it is closed after whatever follows it, which the command sees as the end
+       * of its own input.
+       *
+       * **The caller's input is concatenated onto the block rather than written after it**,
+       * and that is what makes the ordering unlosable — there is one write and one close,
+       * so nothing can interleave and nothing can arrive early. The prologue reads its
+       * lines one byte at a time, as POSIX requires of a shared descriptor, so it consumes
+       * the block and not a byte more; the command it `exec`s inherits the rest of the pipe
+       * exactly as the caller wrote it.
        */
       exec: async (command, options) =>
         this.#start(
           ['exec', '--interactive', '--workdir', options?.cwd ?? workspace, name, 'sh', '-c', DELIVER, 'sh', ...command],
-          credentials,
+          credentials + (options?.input ?? ''),
         ),
 
       /**
