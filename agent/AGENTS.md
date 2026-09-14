@@ -358,9 +358,37 @@ Two costs, both accepted knowingly:
 - **No token-by-token progress.** Nothing in the substrate reads one — `capability.ts` notes the
   same about `progress`. ENG-212 is where transcript visibility lands; if it wants live tokens,
   it is re-opening this trade with the merge problem still attached, not finding an oversight.
-- **A long generation sits on one open response** rather than a trickling one, so an idle
-  intermediary can cut it where a stream would have been kept alive. Not observed; worth knowing
-  if a long reasoning run ever dies on the wire for no stated reason.
+- **A long generation now has a wall-clock deadline, and the first thing that will cut one is
+  our own client.** This is the cost that was misfiled here for a pass as "an idle intermediary,
+  not observed", and the truth is nearer and measurable. `parseResponseWithTimeout` returns
+  early — unraced — when `options.stream` is set, so while this streamed, a step had no time
+  limit whatsoever. Unstreamed, the body read is raced against `startTime + timeout`, and
+  **expiry does not throw: it calls `retryRequest`**, re-issuing the entire completion
+  `maxRetries` times. Against a server holding the body back, with the deadline shortened to
+  stand in for a long generation:
+
+  ```
+  create()  ->  APIConnectionTimeoutError | Request timed out.
+  create()  ->  generations the server was asked for: 3
+  stream()  ->  OK "hi"
+  stream()  ->  generations the server was asked for: 1
+  ```
+
+  Three full generations, produced and billed and discarded, then an error — and the retries
+  cannot help, because a generation that was merely long is long again. Left at the SDK's
+  defaults that threshold is **ten minutes**, which a real reasoning run can reach, and nothing
+  in the change would have chosen it.
+
+  `model.ts` now names both numbers: thirty minutes, `maxRetries` 2, with the reasoning beside
+  them. The short version is that the deadline is set above any generation a model plausibly
+  produces so that expiry means *dead* rather than *slow* — which is what makes re-issuing a
+  retry again instead of a triple charge. **The cost that buys is a hung step taking ninety
+  minutes to surface**, three attempts at thirty, and it is bounded by suspension rather than
+  here. If a step ever needs cancelling sooner, the thing to reach for is the signal
+  `index.ts` already threads into `step` — a caller abort throws immediately and is not
+  retried, which the deadline path is not. Do not reach for `maxRetries: 0`: that counter also
+  governs 429s, 5xx and connection resets, which are the failures a gateway really produces,
+  and nothing else in the substrate retries anything.
 
 **And the reason no test could see it: every stub sent an extension in a single delta**, where
 last-wins and accumulate-properly are indistinguishable. Both stub servers now split one the way

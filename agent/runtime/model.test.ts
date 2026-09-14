@@ -66,6 +66,20 @@ describe('the client’s loop-running facilities are not used', () => {
     expect(CODE).not.toContain('.stream(');
     expect(CODE).not.toContain('stream:');
   });
+
+  /**
+   * And having stopped streaming, it states its own deadline instead of inheriting one.
+   *
+   * Source-level for the same reason as everything above it: nothing behavioural can see
+   * this. Not streaming is what makes the body read raced at all, so deleting either option
+   * restores the SDK's ten minutes and, with it, a long generation produced and billed three
+   * times before the caller hears anything — with every test in this suite still green,
+   * because no test here runs long enough to reach any deadline, inherited or chosen.
+   */
+  it('states the step deadline and the retry count rather than inheriting them', () => {
+    expect(CODE).toContain('timeout: STEP_DEADLINE_MS');
+    expect(CODE).toMatch(/maxRetries:\s*\d/);
+  });
 });
 
 describe('the credential is read from the environment, never from the record', () => {

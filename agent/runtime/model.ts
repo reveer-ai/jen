@@ -31,8 +31,10 @@
  * A single unstreamed call returns every extension whole — and returns tool calls whole with
  * them, so the reassembly the accumulator was kept for does not arise rather than being
  * owned. What it costs is a token-by-token progress stream, which nothing in the substrate
- * reads yet, and a long generation held on one open response instead of a live one. Both are
- * recorded in `agent/AGENTS.md`; neither is worth replaying 0.03% of a model's reasoning.
+ * reads yet, and a wall-clock deadline on a step, which streaming did not have at all: the
+ * SDK races the body read only when it is not streaming. That second cost is a number this
+ * file now chooses rather than inherits — see `STEP_DEADLINE_MS`. Both are recorded in
+ * `agent/AGENTS.md`; neither is worth replaying 0.03% of a model's reasoning.
  */
 import OpenAI from 'openai';
 
@@ -121,6 +123,37 @@ const STANDARD = new Set(['role', 'content', 'refusal', 'annotations', 'audio', 
 const READABLE = ['reasoning_content', 'reasoning'];
 
 /**
+ * How long a single step may take before the response is presumed dead. Thirty minutes.
+ *
+ * The number matters less than what it has to be *above*, and that is the part worth
+ * writing down: at a deadline a real generation can reach, expiry is not a failure and
+ * retrying it is not a recovery. `parseResponseWithTimeout` races the body read against
+ * `startTime + timeout`, and expiry does not throw — it calls `retryRequest`, which issues
+ * the whole completion again, `maxRetries` times. A generation that was merely long is
+ * therefore generated, billed, and discarded three times over before the caller is told
+ * anything, and the third attempt is as doomed as the first because length is not
+ * transient. Measured against a server holding the body back: three requests, then
+ * `APIConnectionTimeoutError`.
+ *
+ * So the deadline is set above any generation a model plausibly produces — a large reasoning
+ * model at ordinary token rates fills tens of minutes only if something has gone wrong — and
+ * that choice is what turns the retry back into a retry. Past thirty minutes the honest
+ * reading is not "slow" but "this response is never arriving", and re-issuing is the right
+ * response to that. The cost is the other side of the same coin: a genuinely dead connection
+ * now takes three attempts at thirty minutes to surface, so a hung step is a ninety-minute
+ * hang. That is the trade, and it is bounded by the suspension signal rather than here —
+ * `index.ts` threads one through for exactly this kind of reason.
+ *
+ * `maxRetries: 0` was the alternative and is not obviously wrong: it makes a doomed
+ * generation cost one instead of three. It was not taken because the same counter governs
+ * 429s, 5xx, and connection resets, which are the failures a gateway actually produces
+ * hourly, whose retries are cheap and usually succeed — and nothing else in the substrate
+ * retries anything. Losing those to bound a case this deadline is chosen to prevent trades a
+ * common failure for a rare one.
+ */
+const STEP_DEADLINE_MS = 30 * 60 * 1000;
+
+/**
  * Build the client from the record, and read the secret from the environment.
  *
  * The record names which credential to authenticate with; the *value* arrives in the
@@ -137,7 +170,19 @@ export function openAIClient(record: AgentRecord, environment: NodeJS.ProcessEnv
     );
   }
 
-  const client = new OpenAI({ baseURL: record.model.baseURL, apiKey });
+  const client = new OpenAI({
+    baseURL: record.model.baseURL,
+    apiKey,
+    // Both of these are chosen here rather than inherited. Unstreamed, the body read is
+    // raced against `startTime + timeout`; streamed, it is not raced at all — so switching
+    // away from `stream()` handed a step a wall-clock cap for the first time, and left
+    // unwritten it would have been the SDK's ten minutes. See `agent/AGENTS.md`.
+    timeout: STEP_DEADLINE_MS,
+    // The SDK's own default, restated because at this deadline it means something different
+    // from what it means at ten minutes, and the difference is the whole reason for the
+    // number above.
+    maxRetries: 2,
+  });
 
   return {
     async step(request, signal) {
