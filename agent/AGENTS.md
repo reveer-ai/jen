@@ -483,3 +483,46 @@ check is a log that has actually been through `JSON.stringify` and back.
 Worth knowing when writing that check: the runtime re-seeds the charter from the record when a
 log has none, so a log that loses its charter in transit is silently repaired and proves
 nothing. Break a field the record cannot supply.
+
+## The provider accepts the replayed reasoning and throws it away
+
+Measured against OpenRouter's chat-completions surface, which is the only live gateway this
+substrate has run on. **Replaying `opaque` onto the assistant message changes nothing about
+what the model is given.**
+
+The same conversation sent twice — once with the extension replayed exactly as
+`projection.ts` builds it, once with it stripped — bills the same prompt either way:
+
+```
+openai/o4-mini      extension 3809 B   with 62 tok   without 62 tok   difference 0
+deepseek/deepseek-r1  extension 2873 B   with 47 tok   without 47 tok   difference 0
+```
+
+Both shapes, so this is not a property of one model: `reasoning_details` comes back as
+`reasoning.encrypted` (a 2.3 KB opaque `data` blob, no readable text) from the o-series and
+as `reasoning.text` (4 KB of prose) from r1. Each is carried whole, replayed whole, accepted
+without complaint, and dropped before the prompt is counted.
+
+**The distinction this cost a pass to learn is that acceptance is not honouring.** The
+earlier live check established that the gateway does not *reject* a request carrying a
+replayed extension — which was the real risk, and the right thing to have checked, because
+`annotations` proved a field we invent onto a request can be refused outright. It says
+nothing about whether the field arrives anywhere. A 200 and a sensible answer look identical
+whether the provider read the block or discarded it on sight; the only thing that separates
+them is the token count, and you have to ask for it deliberately.
+
+So the current cost is about **2–3 KB per turn of request body, transmitted and dropped** —
+wire, not tokens, and it grows linearly with the conversation. Not a reason to stop:
+
+- The requirement is to replay without interpreting, and a provider that starts honouring
+  these is carried with no change here. Dropping the replay to save bandwidth would be a
+  spec change, and it would be reversed by the first provider that needs it.
+- It is genuinely load-bearing on the *native* Anthropic and OpenAI Responses surfaces,
+  where a thinking block has to be handed back for the chain to continue. This substrate
+  does not talk to those yet. `baseURL` is exactly what makes it able to later.
+
+**What would change the calculus is this measurement coming back non-zero**, so re-run it
+rather than assuming either way — one completion, then the same follow-up with and without
+the extension, comparing `usage.prompt_tokens`. If a provider begins counting them, replay
+stops being free and the per-turn growth becomes a prompt-cache and cost question worth its
+own decision.
