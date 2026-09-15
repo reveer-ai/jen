@@ -9,7 +9,7 @@
  * rule" that will keep looking reasonable. So they are read, the way `docker.test.ts` reads
  * for `node:fs`.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -94,5 +94,72 @@ describe('nothing in the supervisor releases a workspace', () => {
 
   it('says why, so the absence is not mistaken for an oversight', () => {
     expect(SOURCE).toMatch(/workspace is kept/i);
+  });
+});
+
+/**
+ * The two structural claims `agent-supervisor` opens with, read where they are made.
+ *
+ * Both are about what does *not* exist, and a behavioural test can only ever fail to find
+ * something. A runtime that grew a branch on an agent's place in the tree would pass every
+ * test in this repository, because every one of them runs a single agent's runtime at a
+ * time and never compares two.
+ */
+describe('the supervisor is outside every agent, and no agent is inside it', () => {
+  const RUNTIME = ['index.ts', 'main.ts', 'loop.ts', 'boot.ts', 'capability.ts', 'supervised.ts', 'projection.ts']
+    .map((name) => join(import.meta.dirname, '..', 'runtime', name))
+    .filter((path) => existsSync(path));
+
+  it('reads the runtime it is claiming this about', () => {
+    expect(RUNTIME.length).toBeGreaterThan(4);
+  });
+
+  /**
+   * An agent's place in the tree is on its record and the runtime never looks at it. That is
+   * what "the runtime of the agent nobody spawned is the same as the runtime of an agent at
+   * any depth" means concretely — not that they are configured alike, but that there is no
+   * construction path, argument or branch by which one could differ.
+   */
+  it('never branches on where an agent sits', () => {
+    for (const path of RUNTIME) {
+      const declarations = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(declarations, `${path} reads an agent's place in the tree`).not.toMatch(
+        /\.parent\b|\bisRoot\b|\bdepth\b|\bancestor/i,
+      );
+    }
+  });
+
+  /**
+   * Neither runtime contains the means to provision a sandbox, route a message, or read
+   * another agent's transcript — which is the other half of the same claim, and the half a
+   * `spawn` capability implemented locally would quietly undo.
+   */
+  it('holds none of what the supervisor holds', () => {
+    for (const path of RUNTIME) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} reaches the sandbox`).not.toMatch(/from '(\.\.\/)?sandbox\//);
+      expect(source, `${path} reaches the store`).not.toMatch(/from '(\.\.\/)?supervisor\//);
+    }
+  });
+});
+
+describe('there is no network path between agents', () => {
+  /**
+   * The channel is each agent's own standard streams and there is no second one. A broker, a
+   * port, a daemon or a bus would be machinery whose operational cost exceeds what it
+   * coordinates for a project holding tens of agents rather than thousands — and it would be
+   * a path between agents that does not go through the one component that may hold one.
+   */
+  it('opens nothing, listens on nothing, and speaks to nothing over a socket', () => {
+    for (const path of [join(import.meta.dirname, 'index.ts'), join(import.meta.dirname, '..', 'protocol.ts')]) {
+      const declarations = readFileSync(path, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(declarations, `${path} reaches the network`).not.toMatch(
+        /node:(net|http|https|dgram|tls)|WebSocket|\.listen\(|createServer|fetch\(/,
+      );
+    }
   });
 });
