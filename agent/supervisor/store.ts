@@ -202,8 +202,30 @@ export class Store {
 
     const store = new Store(directory, header);
     for (const id of await readdir(join(directory, 'agents')).catch(() => [])) {
-      store.#records.set(id, parseRecord(JSON.parse(await readFile(store.#path(id, 'record.json'), 'utf8'))));
-      store.#agents.set(id, parseStored(JSON.parse(await readFile(store.#path(id, 'state.json'), 'utf8')), id));
+      let record: AgentRecord;
+      let stored: StoredAgent;
+      try {
+        record = parseRecord(JSON.parse(await readFile(store.#path(id, 'record.json'), 'utf8')));
+        stored = parseStored(JSON.parse(await readFile(store.#path(id, 'state.json'), 'utf8')), id);
+      } catch (error) {
+        // **A half-written agent is one lost agent and must not be a lost run.** `add`
+        // creates the directory, writes the record, and writes the state, so a supervisor
+        // killed inside that sequence leaves a directory `readdir` returns and one of these
+        // files missing — and a throw here does not lose that agent, it loses the *run*:
+        // every other agent's record, state and transcript sits intact on disk and becomes
+        // unreachable. The window is open for as long as any agent is being spawned, which
+        // is most of a run's life, and this is the file whose whole purpose is surviving the
+        // loss of every process.
+        //
+        // Only absence is skipped. A file that is present and unreadable is a different
+        // thing — state is written by rename, so a torn one is not a shape this produces —
+        // and swallowing it would turn a corrupted store into a quietly smaller one.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        process.stderr.write(`skipping \`${id}\` in ${directory}: it has no record or no state, so it never finished being created.\n`);
+        continue;
+      }
+      store.#records.set(id, record);
+      store.#agents.set(id, stored);
     }
     return store;
   }

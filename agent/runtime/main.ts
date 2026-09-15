@@ -29,7 +29,6 @@ import { supervised } from './supervised.ts';
 import { encode, lines, parseToAgent, type FromAgent } from '../protocol.ts';
 
 import type { CapabilityResult } from './capability.ts';
-import type { Event } from './events.ts';
 import type { Raise, SupervisedCapability } from './supervised.ts';
 
 /**
@@ -46,27 +45,6 @@ const SUPERVISED: SupervisedCapability[] = [];
 /** One frame out, as one line. Every write in this file goes through here. */
 function say(frame: FromAgent): void {
   process.stdout.write(encode(frame));
-}
-
-/**
- * Whether the agent owes the model a step, read from the log and from nothing else.
- *
- * This is the only question the entry point asks of the log it was handed, and it is
- * deliberately not a question about how the agent came to be here. **There is no mode, flag
- * or frame that means "was resumed"** — an agent whose body was destroyed mid-turn and one
- * that never stopped arrive at exactly this predicate and get exactly the same answer,
- * because the only thing either can be asked about is what its log says.
- *
- * Something is owed when the log carries an input the model has not answered: a message
- * from the parent, or a capability result. Both appear after the `usage` that closed the
- * last step, and nothing else does — a step that ended the turn is followed by nothing, and
- * a log holding only a charter has had nothing arrive at all.
- */
-function owed(events: readonly Event[]): boolean {
-  const stepped = events.map((event) => event.type).lastIndexOf('usage');
-  return events
-    .slice(stepped + 1)
-    .some((event) => event.type === 'tool_result' || (event.type === 'message' && event.from === 'parent'));
 }
 
 try {
@@ -124,7 +102,32 @@ try {
     });
   };
 
-  if (owed(runtime.events)) take(() => runtime.run());
+  /**
+   * Whether a step is owed is the boot frame's to say, and this is worth knowing why.
+   *
+   * It used to be read from the log here: something is owed when an input sits after the
+   * `usage` that closed the last step. That is right for two of the three logs a body can
+   * boot on and silently wrong for the third. An agent suspended on `await` and one killed
+   * mid-call both leave a call with no result, and both get an answer — the supervisor's or
+   * `answerInterrupted`'s — so both read as owing a step. The third is an agent whose turn
+   * *ended* in a step the supervisor never heard the end of: its log ends at a `usage` with
+   * nothing after it, which is the same shape as a log at a turn boundary, and the predicate
+   * said wait. Nothing was ever going to arrive. The agent sat in a live container having
+   * emitted nothing, its stored state still saying `working`, every message addressed to it
+   * held for the boundary it would never reach — a tree stopped, with nothing reported
+   * anywhere.
+   *
+   * Which of the three this is lives in the supervisor's stored state, and the design put it
+   * there precisely because the log cannot carry it. A predicate here was inferring the one
+   * thing the design says is not inferable.
+   *
+   * **This is still not a flag that means "was resumed".** It is set for an ordinary
+   * delivery to a dormant agent, which is the common case and no more a resumption than any
+   * other message; it is unset for a body woken at a boundary, resumed or not. Nothing here
+   * has a resume path either way: there is one entry — `run()` — and it works from wherever
+   * the log stands, which is the property that mattered.
+   */
+  if (frame.owed) take(() => runtime.run());
 
   for await (const line of lines(process.stdin)) {
     if (failure !== undefined) break;

@@ -34,6 +34,28 @@ Two things follow, and both are load-bearing:
   | working | unanswered call | died mid-call | `answerInterrupted` does its job |
   | working | a complete step | died between steps | resumed, takes the next step |
 
+- **The third row of that table only works because the boot frame carries it.** Rows two and
+  three both say `working`, and the body is told so as `owed` on its boot frame — `#boot`'s
+  second argument. A log ending at a complete step is a log at a turn boundary *and* a log of
+  a turn whose end nobody heard, and the entry point cannot tell them apart: it used to try,
+  answering both "wait", and the second sat in a live container having emitted nothing while
+  every message addressed to it was held for a boundary it would never reach. `stalled` could
+  not see it either, because it is about agents that are *waiting*. A silent, permanent hang,
+  in exactly the window a `kill -9` on a process group opens.
+
+  What `owed` does *not* close is a message delivered as a frame rather than into the log: it
+  has left the mailbox and lives only in a running process until the agent's own `message`
+  event comes back and is stored. Kill both ends inside that window and it is gone. This is
+  the frame path's property wherever it is used — a resident agent's messages take it too —
+  rather than something the dormant wake introduced, which is why it is not narrowed here for
+  one case and left in place for the other.
+
+  `owed` is not a flag meaning "was resumed", and the requirement forbidding one still holds:
+  it is set for an ordinary delivery to a dormant agent, unset for a dormant agent woken at a
+  boundary, and unset for an agent's very first boot — so nothing a body receives tells it
+  whether it was ever interrupted. What it says is where the conversation stands, which is
+  the stored state, which is stored rather than inferred for this exact class of reason.
+
 - **The answer is appended to the log *before* the body boots.** `#answerInLog`. The runtime
   then constructs on a complete log and `answerInterrupted` finds nothing to do. This should
   read as ordinary rather than clever: for a supervisor-backed capability the supervisor *is*
@@ -104,6 +126,46 @@ by deleting data rather than by erroring.
 
 `TestDriver` refuses a second creation in flight for one agent, which is where a path that
 grew the ability to do it would find out.
+
+## `stop` ends a subtree, not an agent
+
+`#stopping` dismisses the target **and everything below it**, deepest first. A dismissed
+agent's mailbox is never read again, so a grandchild left running holds a body, keeps working,
+and keeps addressing a parent that has gone — every report it makes dropped, every `send` it
+makes refused. Without the cascade, the one call whose purpose is to end an agent is the call
+that leaks containers, and it leaks more of them the deeper the subtree; `resident` and the
+sweep would be the only things that ever cleaned them up.
+
+Dismissal keeps every workspace it reaches, at every depth. Releasing one is irreversible and
+nothing has asked for it — whether dismissing an agent should release its workspace is ENG-197's
+question, and it is recorded in `design.md` as open rather than answered here.
+
+A dismissed agent is left in its parent's `children`, which is why `#sending` checks for
+dismissal itself: routing passes for a dismissed child, and `#post` would drop the message
+while the sender was told it was delivered.
+
+## Only a request has somewhere to fail into
+
+A request frame that fails is answered to the agent that made it — a result it can read and act
+on. **An event or a turn frame has no such answer**: there is no id to attach a refusal to, and
+the agent asked for nothing. What reaches there from one is the supervisor's own trouble, so it
+goes to `onFailure` (standard error by default) and the channel carries on.
+
+It is not tidiness. `#listen` is started as `void`, so a rejection escaping it is an unhandled
+rejection, and under Node's default that ends this process — the one process holding every
+other agent in the run. The same argument narrowed `Input` away from a `Writable` in
+`sandbox/index.ts`. Anything added here that is reached from a body's channel needs somewhere
+to fail that is not a rethrow.
+
+## A half-written agent is one lost agent, never a lost run
+
+`Store.open` skips an agent directory missing its record or its state and says so on standard
+error, rather than throwing. `add` creates the directory, writes the record, then writes the
+state, so a supervisor killed inside that sequence leaves exactly that shape — and a throw
+there does not lose one agent, it loses the whole run: every other agent's record, state and
+transcript, intact on disk and unreachable. Only absence is skipped; a file that is present and
+unreadable still throws, because state is written by rename and a torn one is not a shape this
+produces.
 
 ## The human is a participant, not an exception
 

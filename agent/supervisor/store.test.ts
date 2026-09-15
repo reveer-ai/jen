@@ -6,7 +6,7 @@
  * line and nothing before it, that a supervisor constructed over a store is where it was —
  * is a property of what the filesystem actually did.
  */
-import { mkdtemp, readFile, readdir, truncate, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -188,6 +188,39 @@ describe('a store is read back whole by whoever opens it next', () => {
     });
     expect(reopened.record('b').parent).toBe('a');
     expect(await reopened.transcript('a')).toMatchObject([{ content: 'something' }]);
+  });
+
+  /**
+   * **One half-written agent must not be a lost run.**
+   *
+   * `add` makes the directory, writes the record and writes the state, so a supervisor
+   * killed inside that sequence leaves a directory `readdir` returns with one of the two
+   * files missing. Throwing on it does not lose that agent — it loses every *other* agent's
+   * record, state and transcript, all of it intact on disk and none of it reachable, in the
+   * file whose whole purpose is surviving the loss of every process. The window is open for
+   * as long as any agent is being spawned, which is most of a run's life.
+   */
+  it('skips an agent that never finished being created, and opens the run anyway', async () => {
+    const { store, root } = await aStore();
+    await store.add(aRecord({ id: 'a' }), waiting());
+    await store.add(aRecord({ id: 'b', parent: 'a' }), waiting('a'));
+    await store.append('a', anEvent('a day of work'));
+    await store.sync('a');
+
+    // The shape a kill between the record and the state leaves behind.
+    await store.add(aRecord({ id: 'c', parent: 'a' }), waiting('a'));
+    await store.close();
+    await rm(join(root, 'runs', 'r1', 'agents', 'c', 'state.json'));
+
+    const reopened = await Store.open(root, 'r1');
+    open.push(reopened);
+
+    expect(reopened.ids().sort()).toEqual(['a', 'b']);
+    expect(reopened.has('c')).toBe(false);
+    // The point of it: everything else came back, transcripts included.
+    expect(await reopened.transcript('a')).toMatchObject([{ content: 'a day of work' }]);
+    // And it is still on disk, so nothing was tidied away by being skipped.
+    expect(await readdir(join(root, 'runs', 'r1', 'agents', 'c'))).toContain('record.json');
   });
 
   it('keeps two runs under one root from seeing each other', async () => {

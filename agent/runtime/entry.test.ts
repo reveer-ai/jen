@@ -234,13 +234,13 @@ class Peer {
   }
 }
 
-function frameFor(overrides: Parameters<typeof aRecord>[0] = {}, events: unknown[] = []): string {
+function frameFor(overrides: Parameters<typeof aRecord>[0] = {}, events: unknown[] = [], owed = false): string {
   const record = aRecord({ model: { ...aRecord().model, baseURL, model: 'stub-model' }, ...overrides });
-  return `${JSON.stringify({ record, events })}\n`;
+  return `${JSON.stringify({ record, events, owed })}\n`;
 }
 
-function start(overrides: Parameters<typeof aRecord>[0] = {}, events: unknown[] = []): Peer {
-  return new Peer(frameFor(overrides, events), { MODEL_API_KEY: 'sk-stub' });
+function start(overrides: Parameters<typeof aRecord>[0] = {}, events: unknown[] = [], owed = false): Peer {
+  return new Peer(frameFor(overrides, events, owed), { MODEL_API_KEY: 'sk-stub' });
 }
 
 describe('an agent that thinks and does nothing else', () => {
@@ -358,6 +358,59 @@ describe('an agent that thinks and does nothing else', () => {
 });
 
 /**
+ * Whether a step is owed at boot, which is the one question about the log the entry point
+ * does not answer for itself.
+ *
+ * **These two boot on byte-identical logs and must do opposite things.** A log that ends at
+ * a complete step belongs either to an agent standing at a turn boundary, whose next move
+ * arrives as a message, or to one whose turn ended in a step its supervisor never heard the
+ * end of — and the second is owed a step that nothing else will ever prompt. Reading the log
+ * cannot separate them, and the entry point used to try: it answered both "wait", and the
+ * second sat in a live container having emitted nothing while every message addressed to it
+ * was held for a boundary it would never reach.
+ */
+describe('a step at boot is owed or it is not, and the log cannot say which', () => {
+  /** A whole turn, ending where the loop ends one: content, and the cost of the step. */
+  async function afterATurn(): Promise<unknown[]> {
+    const peer = start();
+    await peer.tell('Say something.');
+    const log = JSON.parse(JSON.stringify(peer.events)) as { type: string }[];
+    await peer.stop();
+
+    expect(log.map((event) => event.type)).toEqual(['charter', 'message', 'message', 'usage']);
+    return log;
+  }
+
+  it('waits on a log that ends at a complete step, taking no step of its own', async () => {
+    const log = await afterATurn();
+
+    const peer = start({}, log);
+    // Asserted by what reached the provider rather than by waiting to see nothing happen: a
+    // spurious step would be a second request, and it would arrive *before* this one.
+    expect(await peer.tell('And again.')).toBe('There is nothing here but thought.');
+    expect(received).toHaveLength(2);
+
+    const sent = received[1]?.body as { messages: { role: string; content: string }[] };
+    expect(sent.messages.at(-1)).toEqual({ role: 'user', content: 'And again.' });
+    await peer.stop();
+  });
+
+  it('takes one on that same log when the boot frame says a step is owed', async () => {
+    const log = await afterATurn();
+
+    const peer = start({}, log, true);
+    // Nothing is sent to it. Without this, the process stays alive having emitted nothing,
+    // called nothing and complained about nothing — which is what the supervisor's stored
+    // `working` reads as an agent still thinking.
+    await peer.until(() => peer.turns.length > 0);
+    expect(peer.turns).toEqual(['There is nothing here but thought.']);
+    expect(received).toHaveLength(2);
+    expect(peer.stderr).toBe('');
+    await peer.stop();
+  });
+});
+
+/**
  * The channel is whatever followed the boot frame on the same pipe.
  *
  * Written as **one** write, which is the case that matters: the sandbox hands the runtime
@@ -461,8 +514,10 @@ describe('an agent killed mid-turn has emitted what it already did', () => {
     expect(interrupted.at(-1)?.type).toBe('usage');
     expect(interrupted.some((event) => event.type === 'tool_call')).toBe(true);
 
+    // Booted the way a supervisor resumes one: the agent was mid-turn when its body went, so
+    // it owes a step, and the synthesized answer is what it takes that step on.
     replies = [ORDINARY];
-    const second = start({}, interrupted);
+    const second = start({}, interrupted, true);
     await second.until(() => second.events.length > 0);
 
     // Synthesized on construction, emitted like anything else, so the store has it — and so

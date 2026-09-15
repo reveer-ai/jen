@@ -113,6 +113,19 @@ export interface SupervisorOptions {
    * exists to prevent.
    */
   onStalled?: (waiting: readonly string[]) => void;
+  /**
+   * Where the supervisor's own trouble goes.
+   *
+   * Not an agent's failure — a bad request is answered to the agent that made it, and a body
+   * that dies is a message to its parent. This is what is left: a sandbox that could not be
+   * provisioned, a store that could not be written, a channel that broke while being read.
+   * None of it is anything an agent can act on and all of it is something a human needs to
+   * know, and the alternative to a destination is an unhandled rejection ending the one
+   * process that is holding every agent in the run.
+   *
+   * It defaults to standard error for the same reason {@link onStalled} does.
+   */
+  onFailure?: (agent: string, error: unknown) => void;
   /** Milliseconds since the epoch. Injected so a test can hold the transcript still. */
   clock?: () => number;
 }
@@ -123,6 +136,7 @@ export class Supervisor {
   readonly #command: string[];
   readonly #onMessage: (message: Message) => void;
   readonly #onStalled: (waiting: readonly string[]) => void;
+  readonly #onFailure: (agent: string, error: unknown) => void;
   readonly #clock: () => number;
   readonly #bodies = new Map<string, Body>();
   /**
@@ -153,6 +167,12 @@ export class Supervisor {
         process.stderr.write(
           `every agent in ${this.#store.run} is waiting and nothing is pending: ${waiting.join(', ')}\n`,
         );
+      });
+    this.#onFailure =
+      options.onFailure ??
+      ((agent, error) => {
+        const said = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`the supervisor could not carry on for ${agent}: ${said}\n`);
       });
     this.#clock = options.clock ?? Date.now;
   }
@@ -245,7 +265,10 @@ export class Supervisor {
   async #resume(): Promise<void> {
     await this.#driver.destroyAll();
     for (const id of this.#store.ids()) {
-      if (this.#store.agent(id).state.status === 'working') await this.#boot(id);
+      // `working` is the whole of the question: the agent was mid-turn when its supervisor
+      // went, so it owes the model a step whether its log ends in a call nobody answered or
+      // in a step whose end nobody heard.
+      if (this.#store.agent(id).state.status === 'working') await this.#boot(id, true);
     }
     await this.#settle();
   }
@@ -259,6 +282,21 @@ export class Supervisor {
     this.#closing = true;
     for (const id of [...this.#bodies.keys()]) await this.#suspend(id);
     await this.#store.close();
+  }
+
+  /**
+   * The supervisor's own trouble, said once and never rethrown from here.
+   *
+   * Reached from paths that have nowhere else to fail: a body's channel, and the exit
+   * handler. Both are promises nobody holds, so a throw from either is an unhandled
+   * rejection — which ends the one process holding every agent in the run.
+   */
+  #failed(id: string, error: unknown): void {
+    try {
+      this.#onFailure(id, error);
+    } catch {
+      // A destination that throws is not going to be told about it here.
+    }
   }
 
   #serial<T>(task: () => Promise<T>): Promise<T> {
@@ -277,10 +315,16 @@ export class Supervisor {
    * Provision from the record, boot a runtime on the stored transcript, and start listening.
    *
    * The boot frame carries the record and the log together on the sandbox's standard input,
-   * behind the credential block — see `runtime/boot.ts`. What the runtime does next it
-   * decides from that log and from nothing else.
+   * behind the credential block — see `runtime/boot.ts`.
+   *
+   * **`owed` is the one thing the runtime cannot work out for itself**, and it is this
+   * file's to answer. A log that ends at a complete step belongs either to an agent standing
+   * at a turn boundary or to one whose turn ended in a step this supervisor never heard the
+   * end of, and those two want opposite things — wait, and take a step. What separates them
+   * is the stored state, which is stored rather than inferred for exactly this class of
+   * reason. A runtime left to guess guesses wrong in silence.
    */
-  async #boot(id: string): Promise<Body> {
+  async #boot(id: string, owed: boolean): Promise<Body> {
     const record = this.#store.record(id);
     const sandbox = await this.#driver.create({
       id: record.id,
@@ -291,18 +335,24 @@ export class Supervisor {
 
     const events = await this.#store.transcript(id);
     const started = await sandbox.exec(this.#command, {
-      input: `${JSON.stringify({ record, events })}\n`,
+      input: `${JSON.stringify({ record, events, owed })}\n`,
     });
 
     const body: Body = { sandbox, process: started };
     this.#bodies.set(id, body);
 
-    void this.#listen(id, body);
-    void started.exit.then(
-      (exit) => this.#serial(() => this.#ended(id, body, exit.signal ?? `exit ${exit.code ?? 0}`)),
-      (error: unknown) =>
-        this.#serial(() => this.#ended(id, body, error instanceof Error ? error.message : String(error))),
-    );
+    // **Both of these are promises nobody holds**, so a rejection escaping either is an
+    // unhandled rejection — which under Node's default ends this process, and this process is
+    // holding every other agent in the run. The same argument narrowed `Input` away from a
+    // stream in `sandbox/index.ts`: one agent's failure must not be every agent's.
+    void this.#listen(id, body).catch((error: unknown) => this.#failed(id, error));
+    void started.exit
+      .then(
+        (exit) => this.#serial(() => this.#ended(id, body, exit.signal ?? `exit ${exit.code ?? 0}`)),
+        (error: unknown) =>
+          this.#serial(() => this.#ended(id, body, error instanceof Error ? error.message : String(error))),
+      )
+      .catch((error: unknown) => this.#failed(id, error));
 
     return body;
   }
@@ -337,7 +387,17 @@ export class Supervisor {
         // A request that could not be carried out is a result the agent can read and act
         // on, never a reason for the supervisor to stop — one agent's bad request must not
         // take the run with it.
-        if (frame.t !== 'request') throw error;
+        //
+        // An event or a turn frame has no such answer to fail into: there is no request id
+        // to attach a refusal to, and the agent asked for nothing. What reaches here from
+        // one is the supervisor's own trouble — a daemon that went away under a boot, a
+        // store it could not write — which no agent can act on and a human has to hear
+        // about. So it is reported and the channel carries on, rather than becoming a
+        // rejection that ends the run.
+        if (frame.t !== 'request') {
+          this.#failed(id, error);
+          continue;
+        }
         await this.#say(id, {
           t: 'answer',
           id: frame.id,
@@ -512,6 +572,21 @@ export class Supervisor {
       });
     }
 
+    // A dismissed agent is still in its parent's `children`, so the routing above passes for
+    // it and `#post` would drop the message while this answered `delivered`. A sender told
+    // its message landed waits on an answer that cannot come; a sender told it was refused
+    // has made a mistake it can reason about. Checked here, where the routing decision
+    // already is, rather than in `#post` — whose other caller is a termination report for an
+    // agent that was dismissed while its child was dying, and that one is a genuine drop.
+    if (this.#store.agent(to).state.status === 'dismissed') {
+      return this.#say(id, {
+        t: 'answer',
+        id: frame.id,
+        ok: false,
+        content: `"${to}" has been dismissed, so nothing was sent.`,
+      });
+    }
+
     // Durable first. `send` is fire-and-forget to the agent that calls it, so an
     // acknowledgement that outran the write would be the substrate lying about the one
     // thing the caller can check.
@@ -560,11 +635,17 @@ export class Supervisor {
   }
 
   /**
-   * Dismiss a child. The agent ends here and its body with it.
+   * Dismiss a child, and with it everything below that child.
    *
-   * **The workspace is kept**, which is the safe default until something asks otherwise:
-   * releasing it is irreversible, and whatever a dismissed agent built may be exactly what
-   * its parent dismissed it for.
+   * **The cascade is not a convenience.** A dismissed agent's mailbox is never read again,
+   * so a grandchild left running holds a body, keeps working, and addresses a parent that
+   * has gone — every report it makes dropped, every `send` it makes refused. The one call
+   * whose purpose is to end an agent would be the call that leaks containers, and the deeper
+   * the subtree the more of them.
+   *
+   * **The workspace is kept**, for every agent this reaches, which is the safe default until
+   * something asks otherwise: releasing it is irreversible, and whatever a dismissed agent
+   * built may be exactly what its parent dismissed it for.
    */
   async #stopping(id: string, frame: RequestFrame, input: Record<string, unknown>): Promise<void> {
     const agent = this.#store.agent(id);
@@ -579,11 +660,26 @@ export class Supervisor {
       });
     }
 
-    const child = this.#store.agent(target);
-    await this.#store.save(target, { ...child, state: { status: 'dismissed' }, mailbox: [] });
-    await this.#suspend(target);
+    // Deepest first, so that nothing is left addressing a parent that has already gone
+    // while this walk is still running.
+    for (const one of this.#below(target).reverse()) {
+      const agent = this.#store.agent(one);
+      if (agent.state.status === 'dismissed') continue;
+      await this.#store.save(one, { ...agent, state: { status: 'dismissed' }, mailbox: [] });
+      await this.#suspend(one);
+    }
+
     await this.#say(id, { t: 'answer', id: frame.id, ok: true, content: `stopped ${target}` });
     await this.#settle();
+  }
+
+  /** An agent and everything below it, nearest first. The tree walked downward. */
+  #below(id: string): string[] {
+    const found = [id];
+    for (let at = 0; at < found.length; at += 1) {
+      found.push(...this.#store.agent(found[at]!).children);
+    }
+    return found;
   }
 
   /**
@@ -697,9 +793,30 @@ export class Supervisor {
     // No body: the agent is dormant and is about to be woken in a fresh one. Where it was
     // waiting on a request, the answer is written into the log **first** — see this file's
     // header for why that ordering is the whole design.
-    if (answering !== null) await this.#answerInLog(id, content);
-    const woken = await this.#boot(id);
-    if (answering === null) await this.#say(id, { t: 'message', content }, woken);
+    try {
+      if (answering !== null) await this.#answerInLog(id, content);
+      // A body booted onto a log that now carries the answer has an input to work from and
+      // nothing coming on the channel, so it owes a step. A body woken at a turn boundary is
+      // about to be handed a message frame, and a step taken before that arrived would be a
+      // step on nothing.
+      const woken = await this.#boot(id, answering !== null);
+      if (answering === null) await this.#say(id, { t: 'message', content }, woken);
+    } catch (error) {
+      // **The message is now in no mailbox, no log and no living process.** It left the
+      // mailbox above, and the boot that was supposed to consume it did not happen — so
+      // without this, a daemon that went away costs a human's instruction or a child's whole
+      // turn of work, and what is left behind is an agent recorded as `working` that a later
+      // supervisor resumes into a body never told what it was woken for. The resident path
+      // needs none of this: `#say` swallows a write to a body that has gone and the exit
+      // already on its way becomes a termination its parent can act on.
+      //
+      // Restoring is exact rather than approximate. Where the answer reached the log before
+      // the boot failed, the retry finds the call already answered and appends nothing —
+      // `#answerInLog` returns on an outstanding call it cannot find — so the message is
+      // delivered once across both attempts rather than twice.
+      await this.#store.save(id, agent).catch(() => {});
+      throw error;
+    }
   }
 
   /**

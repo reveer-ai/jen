@@ -190,6 +190,117 @@ describe('a supervisor restarting over a store sweeps and resumes rather than mo
     expect(log).toHaveLength(3);
     expect(JSON.stringify(log)).not.toContain(INTERRUPTED);
   });
+
+  /**
+   * The row of the design's resume table that nothing else here covers, and the one whose
+   * failure is silent.
+   *
+   * An agent killed between steps leaves a log ending at a complete step — the same shape as
+   * a log at a turn boundary — and the stored `working` is the only thing that says it is
+   * not one. A body booted without that being passed on takes no step, emits nothing and
+   * complains about nothing, while the supervisor holds every message addressed to it for a
+   * boundary it will never reach and `stalled` cannot see it, because it is not waiting.
+   */
+  it('tells a body resumed mid-turn that it owes a step, whatever its log ends in', async () => {
+    const first = await aPair();
+    const peer = first.driver.latest('a')!;
+    await peer.until(() => peer.messages().length > 0);
+    for (const event of [
+      { type: 'charter', at: AT, content: aRecord().charter },
+      { type: 'message', at: AT, from: 'parent', content: 'Begin.' },
+      { type: 'message', at: AT, from: 'self', content: 'Nothing is here.' },
+      { type: 'usage', at: AT, in: 1, out: 1, model: 'scripted' },
+    ] satisfies Event[]) {
+      peer.append(event);
+    }
+    await untilStored(async () => (await first.store.length('a')) === 4, 'the log being stored');
+
+    // The turn ended in the agent and its end never reached the supervisor, which is the
+    // window a kill on a whole process group opens.
+    expect(first.store.agent('a').state).toEqual({ status: 'working' });
+    await first.store.close();
+
+    const driver = new TestDriver();
+    const second = await aRun({ directory: first.directory, driver });
+    runs.push(second);
+    await second.supervisor.resume();
+
+    expect((JSON.parse(driver.latest('a')!.boot) as { owed: boolean }).owed).toBe(true);
+    // And nothing is sent to it, so what it was told on the frame is all it will ever get.
+    expect(driver.latest('a')!.received).toEqual([]);
+  });
+});
+
+describe('the supervisor’s own trouble reaches a human rather than ending the run', () => {
+  /** A driver that cannot provision, which is what a daemon that went away looks like. */
+  function breaks(driver: TestDriver, why = 'no daemon'): void {
+    driver.create = async () => {
+      throw new Error(why);
+    };
+  }
+
+  /**
+   * **The failure that would take every agent with it.** Only a `request` frame has an
+   * agent-visible answer to fail into, so a failure reached from an event or a turn frame was
+   * rethrown out of the listening loop — which is started as a promise nobody holds, and is
+   * therefore an unhandled rejection, which under Node's default ends this process. This
+   * process is the one holding every other agent in the run.
+   */
+  it('reports a failure reached from a turn frame instead of rejecting into nothing', async () => {
+    const run = await aPair();
+    const parent = run.driver.latest('a')!;
+    const child = run.driver.latest('a-1')!;
+    await child.until(() => child.messages().length > 0);
+
+    // The parent goes dormant, so its child's report has to wake it — and provisioning is
+    // what fails.
+    parent.ask('a:1', 'await', {}, 0);
+    await until(() => parent.destroyed, 'the parent being torn down');
+    breaks(run.driver);
+
+    const unhandled: unknown[] = [];
+    const watch = (error: unknown): void => void unhandled.push(error);
+    process.on('unhandledRejection', watch);
+    try {
+      child.answered('here is my report');
+      await until(() => run.failures.length > 0, 'the failure being reported');
+      // Given time to become one if it were going to.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      process.off('unhandledRejection', watch);
+    }
+
+    expect(unhandled).toEqual([]);
+    expect(run.failures[0]?.agent).toBe('a-1');
+    expect((run.failures[0]?.error as Error).message).toBe('no daemon');
+    // The run is still standing: the child that spoke is still being listened to.
+    expect(run.store.agent('a-1').state).toEqual({ status: 'waiting', request: null });
+  });
+
+  /**
+   * The other half: the message a failed boot was supposed to carry is not lost.
+   *
+   * It leaves the mailbox before the boot, and the boot is what consumes it — so a
+   * provisioning failure in between puts it in no mailbox, no log and no living process,
+   * with the agent recorded as `working` for a later supervisor to resume into a body that
+   * is never told what it was woken for.
+   */
+  it('leaves a message a failed boot could not carry where it was', async () => {
+    const run = await aPair();
+    const root = run.driver.latest('a')!;
+    await root.until(() => root.messages().length > 0);
+    root.answered('nothing to report');
+    await until(() => root.destroyed, 'the root going dormant');
+
+    breaks(run.driver);
+    await expect(run.supervisor.tell('Another thing.')).rejects.toThrow('no daemon');
+
+    // Still where it was put, and the agent still recorded as an agent waiting for it —
+    // which is what makes the next attempt an ordinary delivery rather than a recovery.
+    expect(run.store.agent('a').mailbox).toEqual([{ from: null, content: 'Another thing.' }]);
+    expect(run.store.agent('a').state).toEqual({ status: 'waiting', request: null });
+    expect(run.driver.all('a')).toHaveLength(1);
+  });
 });
 
 describe('a stalled tree is surfaced and never resolved', () => {

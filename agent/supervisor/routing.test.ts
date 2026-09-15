@@ -339,6 +339,68 @@ describe('a dismissed agent ends, and its work does not', () => {
     expect(run.store.agent('a-1').mailbox).toEqual([]);
   });
 
+  /**
+   * A dismissed child stays in its parent's `children`, so routing passes for it and the
+   * message is dropped where it is stored — which the sender was told was a delivery.
+   *
+   * A parent that sent into a dismissed child and was told it landed will wait on an answer
+   * that cannot come, and will have been told by the substrate not to worry. A refusal is
+   * the more useful answer as well as the true one: a parent that dismissed a child and then
+   * addressed it has made a mistake it can reason about.
+   */
+  it('refuses a message addressed to a child it dismissed, rather than acknowledging it', async () => {
+    const run = await aTree(1);
+    const parent = run.driver.latest('a')!;
+    const child = run.driver.latest('a-1')!;
+    await child.until(() => child.messages().length > 0);
+
+    parent.ask('a:1', 'stop', { id: 'a-1' });
+    await parent.until(() => parent.answers().size === 1, 'the dismissal');
+
+    parent.ask('a:2', 'send', { to: 'a-1', content: 'are you there' });
+    await parent.until(() => parent.answers().size === 2, 'the answer to the send');
+
+    expect(parent.answers().get('a:2')).toEqual({
+      ok: false,
+      content: '"a-1" has been dismissed, so nothing was sent.',
+    });
+    expect(run.store.agent('a-1').mailbox).toEqual([]);
+  });
+
+  /**
+   * **Dismissal reaches the whole subtree, and the leak is why.**
+   *
+   * A dismissed agent's mailbox is never read again. A grandchild left running keeps a body,
+   * keeps working, and keeps addressing a parent that has gone — so the one call whose
+   * purpose is to end an agent would be the call that leaks containers, and would leak more
+   * of them the deeper the subtree.
+   */
+  it('dismisses everything below the agent it dismissed', async () => {
+    const run = await aTree(1);
+    const child = run.driver.latest('a-1')!;
+    await child.until(() => child.messages().length > 0);
+
+    child.ask('a-1:1', 'spawn', { name: 'below', charter: 'Look further.', opening: 'Begin.' });
+    await until(() => run.driver.latest('a-1-1') !== undefined, 'the grandchild being booted');
+    const grandchild = run.driver.latest('a-1-1')!;
+    await grandchild.until(() => grandchild.messages().length > 0);
+    run.driver.workspace('a-1-1').set('found.md', 'a day of work');
+
+    const parent = run.driver.latest('a')!;
+    parent.ask('a:1', 'stop', { id: 'a-1' });
+    await parent.until(() => parent.answers().size === 1, 'the dismissal');
+
+    expect(run.store.agent('a-1-1').state).toEqual({ status: 'dismissed' });
+    expect(grandchild.destroyed).toBe(true);
+    // Nothing of the subtree is left holding a body. The root is untouched, which is the
+    // half that must not change.
+    expect(run.driver.live.map((body) => body.agent)).toEqual(['a']);
+    // Every workspace kept, at every depth: releasing one is irreversible and nothing asked
+    // for it.
+    expect(run.driver.workspace('a-1-1').get('found.md')).toBe('a day of work');
+    expect(run.driver.released).toEqual([]);
+  });
+
   it('refuses to dismiss anything that is not its own child', async () => {
     const run = await aTree(2);
     const one = run.driver.latest('a-1')!;

@@ -268,6 +268,8 @@ export interface Run {
   toHuman: Message[];
   /** Every time the tree was reported stalled, and who was waiting. */
   stalls: string[][];
+  /** The supervisor's own trouble: what it could not do, and which agent it was doing it for. */
+  failures: { agent: string; error: unknown }[];
   end(): Promise<void>;
 }
 
@@ -279,6 +281,8 @@ export async function aRun(
     clock?: () => number;
     /** `null` leaves the supervisor's own default in place, which is what one test is about. */
     onStalled?: null;
+    /** The same, for the other destination the supervisor defaults to standard error. */
+    onFailure?: null;
   } = {},
 ): Promise<Run> {
   const directory = options.directory ?? (await mkdtemp(join(tmpdir(), 'jen-supervisor-')));
@@ -286,6 +290,7 @@ export async function aRun(
   const store = await Store.open(join(directory, '.jen'), options.run ?? 'r1');
   const toHuman: Message[] = [];
   const stalls: string[][] = [];
+  const failures: { agent: string; error: unknown }[] = [];
 
   const supervisor = new Supervisor({
     store,
@@ -293,6 +298,7 @@ export async function aRun(
     command: ['jen-agent'],
     onMessage: (message) => toHuman.push(message),
     ...(options.onStalled === null ? {} : { onStalled: (waiting: readonly string[]) => stalls.push([...waiting]) }),
+    ...(options.onFailure === null ? {} : { onFailure: (agent: string, error: unknown) => failures.push({ agent, error }) }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
 
@@ -303,6 +309,7 @@ export async function aRun(
     directory,
     toHuman,
     stalls,
+    failures,
     end: async () => {
       await supervisor.shutdown();
     },

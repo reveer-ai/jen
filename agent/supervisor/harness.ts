@@ -25,8 +25,9 @@ import type { AgentRecord } from '../record.ts';
  * this needs no build and no bespoke image.
  *
  * It decides what to do from its own boot frame and from nothing else, which is the same
- * decision the real entry point makes: a log that already carries steps is an agent that was
- * interrupted, and it continues. There is no flag here meaning "was resumed" either.
+ * decision the real entry point makes: a body the supervisor says owes a step takes one, and
+ * a body it says nothing about waits to be told something. Neither is a flag meaning "was
+ * resumed" — `owed` is set for an ordinary delivery to a dormant agent too.
  *
  * Its charter is how a test tells one agent from another: `STAY` asks for its body to be
  * kept, `HOLD` goes quiet mid-turn and never answers, anything else finishes its turn.
@@ -37,7 +38,7 @@ mode=GO
 case "$boot" in *HOLD*) mode=HOLD ;; *STAY*) mode=STAY ;; esac
 echo started >> /workspace/history
 case "$boot" in
-  *'"type":"usage"'*)
+  *'"owed":true'*)
     printf '%s\\n' '{"t":"event","event":{"type":"message","at":"2026-01-01T00:00:00.000Z","from":"self","content":"continued"}}'
     printf '%s\\n' '{"t":"turn","message":"continued","residency":0}'
     ;;

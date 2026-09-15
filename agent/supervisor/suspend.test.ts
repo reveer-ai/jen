@@ -40,6 +40,16 @@ function calling(id = 'c1', name = 'await'): Event[] {
   ];
 }
 
+/** The log of an agent that has answered: a complete step, and nothing outstanding in it. */
+function ended(): Event[] {
+  return [
+    { type: 'charter', at: AT, content: aRecord().charter },
+    { type: 'message', at: AT, from: 'parent', content: 'Begin.' },
+    { type: 'message', at: AT, from: 'self', content: 'Nothing is here.' },
+    { type: 'usage', at: AT, in: 10, out: 4, model: 'scripted' },
+  ];
+}
+
 /** What a model would be sent if this log were booted right now. */
 function wouldSend(events: readonly Event[]): string {
   return JSON.stringify(
@@ -120,6 +130,56 @@ describe('a message delivered to a dormant agent answers the call it suspended o
 
     const request = wouldSend(await run.store.transcript('a'));
     expect(request).toContain(INTERRUPTED);
+  });
+});
+
+/**
+ * The supervisor's half of a question the runtime cannot answer for itself.
+ *
+ * A log ending at a complete step is a log at a turn boundary and a log of a turn whose end
+ * nobody heard, and which one it is lives here, in the stored state, because that is where
+ * the design put it rather than leaving it to be inferred. Each of the three ways a body is
+ * booted answers it, and the runtime's half — that it does the right thing with either
+ * answer — is `runtime/entry.test.ts`'s.
+ */
+describe('a booted body is told whether it owes the model a step', () => {
+  /** What the supervisor wrote on the frame the body actually booted on. */
+  function owedOf(run: Run, id: string): boolean {
+    return (JSON.parse(run.driver.latest(id)!.boot) as { owed: boolean }).owed;
+  }
+
+  it('says so where the answer to the call it suspended on is already in its log', async () => {
+    const { run, peer } = await atACall();
+    await until(() => peer.destroyed, 'the body being torn down');
+
+    await run.supervisor.tell('Two files.');
+    await until(() => run.driver.all('a').length === 2, 'the agent being woken');
+
+    // Nothing is coming on the channel — the message went into the log — so a body that
+    // waited to be told something would wait forever.
+    expect(owedOf(run, 'a')).toBe(true);
+    expect(run.driver.latest('a')!.messages()).toEqual([]);
+  });
+
+  it('says the opposite where a message follows on the channel', async () => {
+    const run = await aRun({ clock: () => Date.parse(AT) });
+    runs.push(run);
+    await run.supervisor.add(aRecord({ id: 'a', parent: null }), 'Begin.');
+
+    const first = run.driver.latest('a')!;
+    await first.until(() => first.messages().length > 0);
+    // A turn that ended: content with nothing outstanding, and the step's cost after it. The
+    // log now ends exactly where a log killed between steps ends, which is the whole point.
+    for (const event of ended()) first.append(event);
+    first.answered('Nothing is here.');
+    await until(() => first.destroyed, 'the body being torn down');
+
+    await run.supervisor.tell('Try again.');
+    await until(() => run.driver.all('a').length === 2, 'the agent being woken');
+
+    expect(owedOf(run, 'a')).toBe(false);
+    await run.driver.latest('a')!.until((): boolean => run.driver.latest('a')!.messages().length > 0);
+    expect(run.driver.latest('a')!.messages()).toEqual(['Try again.']);
   });
 });
 
