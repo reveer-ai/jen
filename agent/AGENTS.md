@@ -31,10 +31,19 @@ The configs are the substrate's own and do not extend the repository's, on purpo
 root `tsconfig.json` sets `rootDir: "cli"` and `outDir: "dist"`, and `dist/` is what the
 published tarball is built from.
 
-## The sandbox tests need a running container runtime
+## Two suites need a running container runtime
 
 `sandbox/docker.test.ts` drives a real one. Nothing in it is mocked, because a driver whose
 only job is to drive another program proves nothing against a stub of that program.
+
+`supervisor/containers.test.ts` is the supervisor's integration tier and needs one too. Three
+of its assertions are about containers rather than about the state machine — that a fully
+dormant tree holds none, that an agent which asked to stay resident still holds its own, and
+that a run killed with containers live is swept and resumes — and a test double cannot make
+any of them, because the double is what decides what `docker ps` would have said. Its agents
+are a shell peer rather than the real runtime, so it needs no image beyond the `sh` a sandbox
+already has to provide; one of its tests starts a supervisor in a detached process group and
+`kill -9`s the group, because a test cannot do that to the process it is running in.
 
 - Start the runtime first. On Docker Desktop, `docker desktop start`, then check with
   `docker version --format '{{.Server.Version}}'`. The suite fails in `beforeAll` with a
