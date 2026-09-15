@@ -265,3 +265,34 @@ describe('a stalled tree is surfaced and never resolved', () => {
     }
   });
 });
+
+describe('a stalled tree is surfaced even where nobody said where to put it', () => {
+  /**
+   * A default of silence would make a stalled tree indistinguishable from a working one for
+   * every caller that has not thought about it — which is the one outcome the requirement
+   * exists to prevent. What "surfaced" should eventually mean is open; nothing is not among
+   * the candidates.
+   */
+  it('says so on standard error when no caller named a destination', async () => {
+    const said: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      said.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const run = await aRun({ clock: () => Date.parse(AT), onStalled: null });
+      runs.push(run);
+      await run.supervisor.add(aRecord({ id: 'a', parent: null }), 'Begin.');
+
+      const peer = run.driver.latest('a')!;
+      await peer.until(() => peer.messages().length > 0);
+      peer.ask('a:1', 'await', {}, 60_000);
+
+      await until(() => said.some((line) => line.includes('is waiting and nothing is pending')), 'the report');
+    } finally {
+      process.stderr.write = write;
+    }
+  });
+});

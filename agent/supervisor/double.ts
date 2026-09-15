@@ -272,7 +272,14 @@ export interface Run {
 }
 
 export async function aRun(
-  options: { directory?: string; driver?: TestDriver; run?: string; clock?: () => number } = {},
+  options: {
+    directory?: string;
+    driver?: TestDriver;
+    run?: string;
+    clock?: () => number;
+    /** `null` leaves the supervisor's own default in place, which is what one test is about. */
+    onStalled?: null;
+  } = {},
 ): Promise<Run> {
   const directory = options.directory ?? (await mkdtemp(join(tmpdir(), 'jen-supervisor-')));
   const driver = options.driver ?? new TestDriver();
@@ -285,7 +292,7 @@ export async function aRun(
     driver,
     command: ['jen-agent'],
     onMessage: (message) => toHuman.push(message),
-    onStalled: (waiting) => stalls.push([...waiting]),
+    ...(options.onStalled === null ? {} : { onStalled: (waiting: readonly string[]) => stalls.push([...waiting]) }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
 

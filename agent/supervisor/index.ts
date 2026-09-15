@@ -104,6 +104,13 @@ export interface SupervisorOptions {
    * Reported and nothing else: no agent is woken, messaged or terminated. Choosing how to
    * break a deadlock is a judgment about the work, and the human is who the substrate has
    * for that.
+   *
+   * It defaults to a line on standard error rather than to silence. What "surfaced to the
+   * human" should concretely mean is genuinely open — a log line, an exit, something an
+   * interface renders — and the interface that would consume it does not exist yet. But a
+   * default of nothing would make a stalled tree indistinguishable from a working one for
+   * every caller that has not thought about it, which is the one outcome the requirement
+   * exists to prevent.
    */
   onStalled?: (waiting: readonly string[]) => void;
   /** Milliseconds since the epoch. Injected so a test can hold the transcript still. */
@@ -140,7 +147,13 @@ export class Supervisor {
     this.#driver = options.driver;
     this.#command = options.command ?? ['jen-agent'];
     this.#onMessage = options.onMessage ?? (() => {});
-    this.#onStalled = options.onStalled ?? (() => {});
+    this.#onStalled =
+      options.onStalled ??
+      ((waiting) => {
+        process.stderr.write(
+          `every agent in ${this.#store.run} is waiting and nothing is pending: ${waiting.join(', ')}\n`,
+        );
+      });
     this.#clock = options.clock ?? Date.now;
   }
 

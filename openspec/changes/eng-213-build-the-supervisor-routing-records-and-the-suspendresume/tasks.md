@@ -72,13 +72,20 @@
 
 ## 8. The whole thing, against real containers
 
+> **Written, and never run.** No container runtime was reachable on the machine this was
+> implemented on, so `supervisor/containers.test.ts` — and `sandbox/docker.test.ts`, which
+> this change also adds to — have been typechecked and read and not executed. They are left
+> unchecked because an unrun test is not a passing one. Running both suites against a
+> runtime is test-task's, and it is the one thing standing between this change and having
+> been verified where it claims the most.
+
 - [ ] 8.1 Test that a fully dormant tree leaves no container running, and that an agent which asked to stay resident still holds its own — the assertion is that each was honoured, not that suspension always tears down.
 - [ ] 8.2 Test that a tree mid-flight survives killing the entire process group and resumes from records and transcripts alone, every agent continuing where it stopped.
 - [ ] 8.3 Test that a killed run is swept, leaves no container, keeps every workspace, and then resumes.
 
 ## 9. Notes and checks
 
-- [ ] 9.1 Write `agent/supervisor/AGENTS.md` for what a future session would otherwise rediscover: the `answerInterrupted` collision and why the answer is written before booting, the sweep that must never take a workspace, and the one-provisioning-at-a-time assumption the sandbox already records and this is the caller for.
-- [ ] 9.2 Note in `agent/AGENTS.md` that the supervisor's integration tier needs a running container runtime, alongside what is already said for the sandbox's.
-- [ ] 9.3 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts`. Nothing automated covers `agent/`, so this is the only thing that catches a break.
-- [ ] 9.4 Run `npx openspec validate eng-213-build-the-supervisor-routing-records-and-the-suspendresume --strict`.
+- [x] 9.1 Write `agent/supervisor/AGENTS.md` for what a future session would otherwise rediscover: the `answerInterrupted` collision and why the answer is written before booting, the sweep that must never take a workspace, and the one-provisioning-at-a-time assumption the sandbox already records and this is the caller for.
+- [x] 9.2 Note in `agent/AGENTS.md` that the supervisor's integration tier needs a running container runtime, alongside what is already said for the sandbox's.
+- [x] 9.3 Run `npx tsc -p agent/tsconfig.json` and `npx vitest run --config agent/vitest.config.ts`. Nothing automated covers `agent/`, so this is the only thing that catches a break. — typecheck clean; 236 tests pass across 18 files. The two files needing a container runtime fail in `beforeAll` for want of one and were excluded, which is the gap 8.1–8.3 record.
+- [x] 9.4 Run `npx openspec validate eng-213-build-the-supervisor-routing-records-and-the-suspendresume --strict`.
