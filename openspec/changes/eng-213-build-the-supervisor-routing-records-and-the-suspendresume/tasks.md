@@ -1,12 +1,12 @@
 ## 1. The sandbox's two new seams
 
-- [ ] 1.1 Change `ExecOptions.input` from the only thing written to the first thing written: `Process` gains a standard input that stays open, and `exec` no longer closes the pipe. The credential block and the caller's first input stay a single concatenated write.
-- [ ] 1.2 Add the fifth operation to `SandboxDriver`: end every sandbox belonging to this driver's run, taking no argument and naming nothing driver-specific. Implement it in the container driver over the marking it already applies at creation.
-- [ ] 1.3 Make the run-wide release leave workspaces alone. This is the one line in this change that destroys a day of work if it is wrong.
-- [ ] 1.4 Test that a caller sends twice and the process receives both in order, that credentials still arrive first and uninterleaved, and that ending the input is observed by the process.
-- [ ] 1.5 Test that a failed send is reported to the caller and does not end the caller's process — the caller is the supervisor, and one broken pipe must not take the tree with it.
-- [ ] 1.6 Test the run-wide release with every sandbox handle discarded, that it leaves every workspace with its contents, and that it does not reach another run.
-- [ ] 1.7 Update `sandbox/index.test.ts`'s reading of the interface for the fifth operation, keeping the declarations free of any driver's vocabulary.
+- [x] 1.1 Change `ExecOptions.input` from the only thing written to the first thing written: `Process` gains a standard input that stays open, and `exec` no longer closes the pipe. The credential block and the caller's first input stay a single concatenated write.
+- [x] 1.2 Add the fifth operation to `SandboxDriver`: end every sandbox belonging to this driver's run, taking no argument and naming nothing driver-specific. Implement it in the container driver over the marking it already applies at creation.
+- [x] 1.3 Make the run-wide release leave workspaces alone. This is the one line in this change that destroys a day of work if it is wrong.
+- [x] 1.4 Test that a caller sends twice and the process receives both in order, that credentials still arrive first and uninterleaved, and that ending the input is observed by the process.
+- [x] 1.5 Test that a failed send is reported to the caller and does not end the caller's process — the caller is the supervisor, and one broken pipe must not take the tree with it.
+- [x] 1.6 Test the run-wide release with every sandbox handle discarded, that it leaves every workspace with its contents, and that it does not reach another run.
+- [x] 1.7 Update `sandbox/index.test.ts`'s reading of the interface for the fifth operation, keeping the declarations free of any driver's vocabulary.
 
 ## 2. The runtime as a protocol peer
 

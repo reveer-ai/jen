@@ -877,3 +877,195 @@ describe('what follows the credential block arrives intact', () => {
     await subject.releaseWorkspace(agent.id);
   });
 });
+
+/**
+ * The input stays open, which is what makes a protocol possible at all.
+ *
+ * Every property the credential block established is re-asserted here rather than assumed,
+ * because what changed is the *closing* of the input and nothing else: the block is still
+ * one write, still first, and still uninterleaved. A test that only checked the new ability
+ * to send twice would pass against an implementation that had quietly started writing the
+ * block and the caller's first input as two operations.
+ */
+describe('a process can be conversed with while it runs', () => {
+  const SECRET = 'sentinel-6b2d40f1-not-a-real-key';
+
+  function delivering() {
+    return driver({
+      env: { ...process.env, JEN_TEST_TOKEN: SECRET },
+      resolve: resolveFromEnvironment({ ...process.env, JEN_TEST_TOKEN: SECRET }),
+    });
+  }
+
+  it('receives everything the caller sends, in the order it was sent', async () => {
+    const agent = request();
+    const subject = driver();
+    const sandbox = await subject.create(agent);
+
+    // `cat` rather than a shell loop: it echoes whatever arrives whenever it arrives, so
+    // what comes back is the byte order of what went in and nothing the receiver decided.
+    const started = await sandbox.exec(['cat']);
+    await started.stdin.send('first\n');
+    await started.stdin.send('second\n');
+    await started.stdin.end();
+
+    expect(await text(started.stdout)).toBe('first\nsecond\n');
+    expect((await started.exit).code).toBe(0);
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  it('is given its credentials before any of it, still in one piece', async () => {
+    const agent = request({ credentials: [{ name: 'AGENT_TOKEN', ref: 'env:JEN_TEST_TOKEN' }] });
+    const subject = delivering();
+    const sandbox = await subject.create(agent);
+
+    const opening = `${JSON.stringify({ record: { id: agent.id }, events: [] })}\n`;
+    const started = await sandbox.exec(['sh', '-c', 'printf %s "$AGENT_TOKEN"; printf "|"; cat'], { input: opening });
+    await started.stdin.send('after\n');
+    await started.stdin.end();
+
+    // One string, so there is nowhere for a second write to have landed in the middle of
+    // the block or ahead of it.
+    expect(await text(started.stdout)).toBe(`${SECRET}|${opening}after\n`);
+    expect((await started.exit).code).toBe(0);
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  it('observes the caller ending the input as its own input ending', async () => {
+    const agent = request();
+    const subject = driver();
+    const sandbox = await subject.create(agent);
+
+    // `cat` does not exit until its input ends, so an exit here is the ending being
+    // observed rather than anything the test asserted about itself.
+    const started = await sandbox.exec(['cat']);
+    let ended = false;
+    void started.exit.then(() => (ended = true));
+
+    await started.stdin.send('still going\n');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(ended).toBe(false);
+
+    await started.stdin.end();
+    expect((await started.exit).code).toBe(0);
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  /**
+   * The caller here is the supervisor, holding every other agent in the run. A send it
+   * cannot make has to come back to it as a failure — not as a success, and not as an
+   * uncaught `EPIPE` that ends the run.
+   */
+  it('reports a send to a process that is gone, and does not end the caller', async () => {
+    const agent = request();
+    const subject = driver();
+    const sandbox = await subject.create(agent);
+
+    const started = await sandbox.exec(['sh', '-c', 'exit 0']);
+    await started.exit;
+
+    await expect(started.stdin.send('nobody is listening\n')).rejects.toThrow(SandboxError);
+    // Still here, which is the other half of it and the half a crash would take away.
+    expect(process.exitCode).toBeUndefined();
+
+    await sandbox.destroy();
+    await subject.releaseWorkspace(agent.id);
+  });
+
+  it('reports a send made after the caller ended the input', async () => {
+    const started = spawner('cat', [], process.env, '');
+    await started.stdin.end();
+
+    await expect(started.stdin.send('too late\n')).rejects.toThrow(SandboxError);
+    expect((await started.exit).code).toBe(0);
+  });
+});
+
+/**
+ * The run-wide release: what a killed supervisor left, ended from the marking alone.
+ *
+ * Handles are discarded on purpose before it runs. A sweep driven by what the caller
+ * remembers passes a test that kept its handles and fails the only case it exists for.
+ */
+describe('a run’s sandboxes are released without a handle on any of them', () => {
+  /** What this run left, asked for by the agent's own marking rather than by the run's. */
+  async function bodies(agentId: string): Promise<number> {
+    return (await lines('ps', '-aq', '--filter', `label=jen.agent=${agentId}`)).length;
+  }
+
+  it('ends every sandbox of the run, holding none of them', async () => {
+    const subject = driver();
+    const agents = [request(), request(), request()];
+    for (const agent of agents) await subject.create(agent);
+
+    for (const agent of agents) expect(await bodies(agent.id)).toBe(1);
+
+    await subject.destroyAll();
+
+    for (const agent of agents) expect(await bodies(agent.id)).toBe(0);
+
+    for (const agent of agents) await subject.releaseWorkspace(agent.id);
+  });
+
+  /**
+   * The one line in this change that destroys a day of an agent's work if it is wrong.
+   *
+   * It runs after a failure, which is exactly when every agent's work is sitting in its
+   * workspace waiting to be resumed from — and the workspaces carry the same run label the
+   * sweep queries by, so the wrong query finds them.
+   */
+  it('leaves every workspace with what the agent wrote in it', async () => {
+    const subject = driver();
+    const agents = [request(), request()];
+
+    for (const agent of agents) {
+      const sandbox = await subject.create(agent);
+      expect(await inside(sandbox, ['sh', '-c', `echo ${agent.id} > /workspace/work`])).toMatchObject({ code: 0 });
+    }
+
+    await subject.destroyAll();
+
+    for (const agent of agents) {
+      const again = await subject.create(agent);
+      expect(await inside(again, ['cat', '/workspace/work'])).toMatchObject({ out: agent.id, code: 0 });
+      await again.destroy();
+      await subject.releaseWorkspace(agent.id);
+    }
+  });
+
+  it('does not reach another run’s sandboxes', async () => {
+    const other = `${RUN}-other`;
+    const mine = driver();
+    // A driver of its own, because a run id is not on the interface: this is the only way a
+    // second run exists at all, and it is what makes the isolation checkable.
+    const theirs = new DockerSandboxDriver({ run: other });
+
+    const ours = request();
+    const yours = request();
+    await mine.create(ours);
+    await theirs.create(yours);
+
+    try {
+      await mine.destroyAll();
+
+      expect(await bodies(ours.id)).toBe(0);
+      expect(await bodies(yours.id)).toBe(1);
+    } finally {
+      // The other run carries a label this file's own sweep does not match, so it is ended
+      // here rather than left for `afterAll`.
+      await theirs.destroyAll();
+      await mine.releaseWorkspace(ours.id);
+      await theirs.releaseWorkspace(yours.id);
+    }
+  });
+
+  it('succeeds when the run left nothing behind', async () => {
+    await expect(new DockerSandboxDriver({ run: `${RUN}-empty` }).destroyAll()).resolves.toBeUndefined();
+  });
+});
