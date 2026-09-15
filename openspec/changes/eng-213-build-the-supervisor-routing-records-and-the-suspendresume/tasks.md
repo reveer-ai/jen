@@ -10,14 +10,14 @@
 
 ## 2. The runtime as a protocol peer
 
-- [ ] 2.1 Give `Runtime` a callback invoked as each event is appended. The loop, the projection, the record and the capability surface are untouched, and `events` still returns the array.
-- [ ] 2.2 Rewrite `runtime/main.ts` to read the boot frame, construct a `Runtime`, then read and write frames until told to stop — instead of running one turn and printing a result.
-- [ ] 2.3 Emit each event on the channel as it is appended, before the next step begins.
-- [ ] 2.4 Report the end of a turn as a frame carrying the agent's message and its residency instruction, supplying zero where the agent expressed none.
-- [ ] 2.5 Build the helper that turns a supervisor-backed request into an ordinary `Capability` — `invoke` writes a request frame and awaits its answer. Register none of them; the set stays empty, as ENG-210 left it.
-- [ ] 2.6 Test that an agent killed mid-turn has already emitted the events for its completed steps.
-- [ ] 2.7 Test that the events emitted across a run, collected in order, are the transcript that run produced.
-- [ ] 2.8 Test that the boot frame's remainder is readable as the conversation, with nothing consumed by reading the frame.
+- [x] 2.1 Give `Runtime` a callback invoked as each event is appended. The loop, the projection, the record and the capability surface are untouched, and `events` still returns the array.
+- [x] 2.2 Rewrite `runtime/main.ts` to read the boot frame, construct a `Runtime`, then read and write frames until told to stop — instead of running one turn and printing a result.
+- [x] 2.3 Emit each event on the channel as it is appended, before the next step begins.
+- [x] 2.4 Report the end of a turn as a frame carrying the agent's message and its residency instruction, supplying zero where the agent expressed none.
+- [x] 2.5 Build the helper that turns a supervisor-backed request into an ordinary `Capability` — `invoke` writes a request frame and awaits its answer. Register none of them; the set stays empty, as ENG-210 left it.
+- [x] 2.6 Test that an agent killed mid-turn has already emitted the events for its completed steps.
+- [x] 2.7 Test that the events emitted across a run, collected in order, are the transcript that run produced.
+- [x] 2.8 Test that the boot frame's remainder is readable as the conversation, with nothing consumed by reading the frame.
 
 ## 3. The store
 
