@@ -65,9 +65,11 @@ The supervisor SHALL hold one mailbox per agent, addressed by that agent's id.
 
 A message SHALL be deliverable only between an agent and its parent, or an agent and one of its children. An agent SHALL NOT be able to send a message to its sibling, to its ancestor other than its parent, or to any agent it is not directly related to. The topology is a tree, so routing is a parent pointer and a list of children; there is no graph and there is no route to compute.
 
-A message delivered to an agent SHALL arrive in that agent's conversation as a turn from its parent occupies — the same position, through the same path, at every depth. A human addressing the agent nobody spawned and that agent addressing one of its children SHALL be the same operation. The human SHALL be a participant in this graph rather than an exception to it: the root's parent is the human, and a message the root addresses to its parent SHALL be surfaced to them.
+A message SHALL reach the recipient's conversation by one of exactly two paths, chosen by what that agent is doing and by nothing else. A message arriving for an agent that has asked to receive one SHALL be delivered as the result of that request. A message arriving for an agent that is at a turn boundary SHALL begin a new turn, in the position that agent's parent occupies in its conversation.
 
-A message addressed to an agent that is working SHALL be held and delivered at that agent's next turn boundary. An in-flight turn SHALL NOT be interrupted by a message's arrival.
+A message that begins a turn SHALL do so identically at every depth: a human addressing the agent nobody spawned and an agent addressing one of its children SHALL be the same operation, through the same path. The human SHALL be a participant in this graph rather than an exception to it — the root's parent is the human, and a message the root addresses to its parent SHALL be surfaced to them.
+
+A message addressed to an agent that is working SHALL be held and delivered when that agent next reaches one of those two points. An in-flight turn SHALL NOT be interrupted by a message's arrival.
 
 #### Scenario: A parent and a child exchange messages
 
@@ -85,11 +87,17 @@ A message addressed to an agent that is working SHALL be held and delivered at t
 - **WHEN** a human addresses the agent nobody spawned, and that agent addresses one of its children
 - **THEN** the message arrives in each recipient's conversation in the same position, by the same path
 
-#### Scenario: A message to a working agent waits for the turn boundary
+#### Scenario: A message answers an agent that asked for one
 
-- **WHEN** a message is delivered to an agent that is mid-turn
+- **WHEN** a message arrives for an agent that has asked to receive one
+- **THEN** it is delivered as the result of that request
+- **AND** the agent continues the turn it was in rather than beginning a new one
+
+#### Scenario: A message to a working agent waits
+
+- **WHEN** a message is delivered to an agent that is mid-turn and has not asked to receive one
 - **THEN** the turn in progress runs to its end uninterrupted
-- **AND** the message is delivered at the next turn boundary
+- **AND** the message is delivered when that agent next reaches a turn boundary
 
 ### Requirement: Records and transcripts are durable, and live outside the container
 
@@ -225,21 +233,36 @@ The message SHALL be distinguishable from a message the agent itself produced, s
 
 ### Requirement: Everything a run creates is labelled with that run and swept by that label
 
-The supervisor SHALL label every sandbox it provisions with an identifier for the run it belongs to, at the moment of creation, and SHALL be able to release everything belonging to a run by that label alone.
+The supervisor SHALL mark every sandbox it provisions as belonging to its run, at the moment of provisioning, and SHALL be able to end every sandbox of a run from that marking alone, holding no handle on any of them.
 
-The case this exists for is a supervisor that was killed while containers were live: nothing remains to walk the tree, so a sweep that works from the supervisor's own knowledge finds nothing, while a sweep by label finds exactly what leaked. Labelling at creation rather than afterwards is what makes this hold for a run that died between provisioning a sandbox and recording that it had.
+The case this exists for is a supervisor killed while sandboxes were running. Nothing remains to walk the tree, and a handle on a running sandbox is not something that survives the process that held it — so a sweep driven by what the supervisor remembers finds nothing, while one driven by the marking finds exactly what leaked. Marking at provisioning rather than afterwards is what makes this hold for a run that died between provisioning a sandbox and recording that it had.
 
-This SHALL be a sweep performed on demand, not a process that watches the tree.
+**The sweep SHALL end sandboxes and SHALL NOT release any workspace.** It runs after a failure, which is the moment every agent's work is sitting in its workspace waiting to be resumed from. A sweep that took workspaces with it would destroy that work exactly when it is least recoverable, through a call whose purpose reads as tidying up.
 
-#### Scenario: What a killed run left behind is found and released
+A swept run SHALL remain resumable: every agent's record, transcript and workspace survives the sweep, and an agent that was working continues from its stored transcript.
 
-- **WHEN** a run is killed with containers running, and a sweep by that run's label is performed
-- **THEN** every container and workspace-independent resource belonging to that run is released
+This SHALL be performed on demand, not by a process that watches the tree.
+
+#### Scenario: What a killed run left behind is found and ended
+
+- **WHEN** a run is killed with sandboxes running, and that run is swept
+- **THEN** every sandbox belonging to it is ended
+- **AND** no handle on any of them was needed to do it
+
+#### Scenario: A sweep leaves every workspace intact
+
+- **WHEN** agents have written to their workspaces and their run is swept
+- **THEN** every workspace still exists with its contents
+
+#### Scenario: A swept run resumes
+
+- **WHEN** a run is killed, swept, and then resumed
+- **THEN** each agent continues from its stored transcript, in its own workspace
 
 #### Scenario: A sweep does not reach another run
 
-- **WHEN** two runs have live containers and one is swept
-- **THEN** the other run's containers are untouched
+- **WHEN** two runs have sandboxes running and one is swept
+- **THEN** the other run's sandboxes are untouched
 
 ### Requirement: A stalled tree is detected and surfaced, never resolved
 

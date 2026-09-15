@@ -28,11 +28,13 @@ It is also where the epic is proven or broken. Suspend and resume is the decisio
 
 - **Termination synthesized into the parent's mailbox.** A child that dies produces nothing, so a parent suspended on a message that will never arrive waits forever and nothing notices. The supervisor detects exit-without-speaking and posts a message saying so. Failure becomes ordinary input the parent can reason about, which is the weights-native handling.
 
-- **Orphan sweep by run label.** Containers are labelled with their run at creation and teardown sweeps by label, which covers the case that actually leaks: a supervisor killed with containers live.
+- **Orphan sweep by run.** Sandboxes are marked with their run at creation and swept by that marking, which covers the case that actually leaks: a supervisor killed with sandboxes live. The sweep ends bodies and never touches a workspace — it runs after a failure, which is precisely when every agent's work is sitting in one.
 
 - **Deadlock detection.** Every agent suspended with nothing pending is a stalled tree. It is a read of the mailbox state, and it is surfaced to the human rather than resolved — resolving it would be the supervisor exercising judgment.
 
 - **Serving transcript reads.** The supervisor holds every transcript, so `read` is a query against the store plus one authorization rule — the target must be a descendant of the caller — and it pages rather than returning all or nothing.
+
+- **BREAKING — the sandbox gains a fifth operation: end every sandbox of a run.** ENG-196 marks everything with its run at creation and says in source that the marking exists so a sweep can find what a run left, but never exposed the operation, and a supervisor that was killed holds no handle to destroy anything with. The sweep ends bodies and leaves every workspace — it runs when an agent's work is least recoverable, and "release everything belonging to the run" taken literally would delete all of it.
 
 - **BREAKING — a process's standard input stays open for the life of the process.** `agent-sandbox`'s `exec` writes the caller's input once and closes it (`docker.ts:165`), which was right when the only thing to say was a boot frame. A protocol is a conversation, and there is no supervisor at all if the supervisor cannot answer. `Process` gains a writable standard input; the credential block and its ordering guarantee are unchanged.
 
@@ -47,15 +49,15 @@ It is also where the epic is proven or broken. Suspend and resume is the decisio
 ### Modified Capabilities
 
 - `agent-runtime`: The entry point becomes a peer on the supervisor's protocol instead of a program that prints a result and exits. Events are emitted as they occur rather than at the end of the turn, and a turn's end and a suspension are frames on that channel rather than process exit. The reasoning loop, the projection, the record and the capability surface are untouched.
-- `agent-sandbox`: A process's standard input stays open for the life of the process, so a caller can converse with it rather than send one thing. Everything the existing credential requirement establishes — nothing on a command line, nothing written to disk, the block arriving first and intact — is preserved.
+- `agent-sandbox`: A process's standard input stays open for the life of the process, so a caller can converse with it rather than send one thing. Everything the existing credential requirement establishes — nothing on a command line, nothing written to disk, the block arriving first and intact — is preserved. The interface also gains a fifth operation, ending every sandbox of a run without a handle on any of them, which is what an orphan sweep needs and what the existing four cannot express; the requirement holding the interface to four operations is modified rather than worked around.
 
 ## Impact
 
-**Code.** New `agent/supervisor/`. `agent/sandbox/index.ts` and `agent/sandbox/docker.ts` change `exec`'s contract from a one-shot `input` string to an input that stays writable; `agent/runtime/main.ts` is rewritten as a protocol peer. `agent/runtime/index.ts` gains a way to emit events as they are appended — the loop and the projection are not otherwise touched.
+**Code.** New `agent/supervisor/`. `agent/sandbox/index.ts` and `agent/sandbox/docker.ts` change `exec`'s contract from a one-shot `input` string to an input that stays writable and gain the run-wide sandbox release; `agent/runtime/main.ts` is rewritten as a protocol peer. `agent/runtime/index.ts` gains a way to emit events as they are appended — the loop and the projection are not otherwise touched.
 
 **Dependencies.** None. The supervisor drives the container runtime through the existing sandbox driver and speaks its own protocol over pipes; a broker, a port, a daemon or a message bus would each be the heavy fabric ENG-194 rules out for a project with tens of agents rather than thousands.
 
-**Scope, and why the tests can still run.** The agent-facing capability objects belong to ENG-197 (`spawn`) and ENG-198 (`send`/`await`), both of which are blocked by this change. So the supervisor's protocol is driven in test by a scripted peer standing in for a runtime — the same instrument ENG-210 used for the model client, and the thing that lets this change's own acceptance tests run here rather than waiting for ENG-199. Paired with ENG-196's in-process driver, the whole of it is testable with no Docker daemon and no model calls.
+**Scope, and why the tests can still run.** The agent-facing capability objects belong to ENG-197 (`spawn`) and ENG-198 (`send`/`await`), both of which are blocked by this change. So the supervisor's protocol is driven in test by a scripted peer standing in for a runtime — the same instrument ENG-210 used for the model client, and the thing that lets this change's own acceptance tests run here rather than waiting for ENG-199. The sandbox is reached through its interface, so the supervisor's own logic is driven against a test-double driver defined in the suite and needs neither a container runtime nor a model — which also gives `agent-sandbox`'s interface the independent exercise it has never had, exactly one driver having existed until now. The assertions that are about real containers — that a dormant tree holds none, that a killed run resumes — are integration tests against the container driver, and the epic's claim that ENG-196 left an in-process driver behind is stale: it shipped one driver, and the spec closed the set at one.
 
 **Downstream.** ENG-197 and ENG-198 add request kinds' agent-facing halves to a protocol this defines. ENG-212 reads transcripts through the `read` this serves. ENG-199 is the acceptance run over all of it.
 
