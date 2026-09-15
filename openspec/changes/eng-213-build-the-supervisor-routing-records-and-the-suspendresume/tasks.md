@@ -21,54 +21,54 @@
 
 ## 3. The store
 
-- [ ] 3.1 Lay out `.jen/runs/<run>/` with `run.json`, and per agent a write-once `record.json`, a rewritten `state.json`, and an appended `events.ndjson`.
-- [ ] 3.2 Add the `.gitignore` rule for the store, narrow enough that nothing else under the project is caught by it.
-- [ ] 3.3 Append events as frames arrive, one JSON object per line, never rewriting the file.
-- [ ] 3.4 Read a transcript in line ranges, and serve a range without parsing the rest of the file.
-- [ ] 3.5 Store state transitions: working, waiting and on which request, or dismissed, plus parent, children and pending mailbox.
-- [ ] 3.6 Flush and sync an agent's log before its container is destroyed, and destroy only after the sync returns.
-- [ ] 3.7 Test that a transcript truncated mid-write loses the last line and nothing before it.
-- [ ] 3.8 Test that a supervisor constructed over an existing store reads back every agent's state, parentage and mailbox.
+- [x] 3.1 Lay out `.jen/runs/<run>/` with `run.json`, and per agent a write-once `record.json`, a rewritten `state.json`, and an appended `events.ndjson`.
+- [x] 3.2 Add the `.gitignore` rule for the store, narrow enough that nothing else under the project is caught by it.
+- [x] 3.3 Append events as frames arrive, one JSON object per line, never rewriting the file.
+- [x] 3.4 Read a transcript in line ranges, and serve a range without parsing the rest of the file.
+- [x] 3.5 Store state transitions: working, waiting and on which request, or dismissed, plus parent, children and pending mailbox.
+- [x] 3.6 Flush and sync an agent's log before its container is destroyed, and destroy only after the sync returns.
+- [x] 3.7 Test that a transcript truncated mid-write loses the last line and nothing before it.
+- [x] 3.8 Test that a supervisor constructed over an existing store reads back every agent's state, parentage and mailbox.
 
 ## 4. The protocol and routing
 
-- [ ] 4.1 Define the frames: a request carrying an id and a kind, an answer carrying that id, and the runtime's event and turn-end frames. Adding a kind must not reshape the transport.
-- [ ] 4.2 Read and write frames over each agent's standard streams, correlating answers to outstanding requests by id.
-- [ ] 4.3 Report a frame that cannot be read to the agent that sent it, leaving its other outstanding requests alone.
-- [ ] 4.4 Hold one mailbox per agent and route parent-to-child only, refusing anything else observably rather than dropping it.
-- [ ] 4.5 Make a message durable before acknowledging it to its sender.
-- [ ] 4.6 Deliver by the two paths: a message for an agent with an outstanding `await` answers it; a message for an agent at a turn boundary begins a new turn. Hold a message for a working agent until it reaches one of the two.
-- [ ] 4.7 Surface a message the root addresses to its parent to the human, and deliver a human's message to the root by the same path a parent's takes.
-- [ ] 4.8 Build the scripted protocol peer: emits frames from a script, records what it receives, makes no model calls.
-- [ ] 4.9 Build the `SandboxDriver` double: containers as objects, `exec` returning pipes the test holds both ends of, destruction observable.
-- [ ] 4.10 Test that concurrent requests are told apart, and that a sibling cannot be addressed.
+- [x] 4.1 Define the frames: a request carrying an id and a kind, an answer carrying that id, and the runtime's event and turn-end frames. Adding a kind must not reshape the transport.
+- [x] 4.2 Read and write frames over each agent's standard streams, correlating answers to outstanding requests by id.
+- [x] 4.3 Report a frame that cannot be read to the agent that sent it, leaving its other outstanding requests alone.
+- [x] 4.4 Hold one mailbox per agent and route parent-to-child only, refusing anything else observably rather than dropping it.
+- [x] 4.5 Make a message durable before acknowledging it to its sender.
+- [x] 4.6 Deliver by the two paths: a message for an agent with an outstanding `await` answers it; a message for an agent at a turn boundary begins a new turn. Hold a message for a working agent until it reaches one of the two.
+- [x] 4.7 Surface a message the root addresses to its parent to the human, and deliver a human's message to the root by the same path a parent's takes.
+- [x] 4.8 Build the scripted protocol peer: emits frames from a script, records what it receives, makes no model calls.
+- [x] 4.9 Build the `SandboxDriver` double: containers as objects, `exec` returning pipes the test holds both ends of, destruction observable.
+- [x] 4.10 Test that concurrent requests are told apart, and that a sibling cannot be addressed.
 
 ## 5. Suspend and resume
 
-- [ ] 5.1 Provision from the record, boot a runtime with the stored transcript, and deliver the message so the agent continues as though its call returned.
-- [ ] 5.2 On a message for an agent suspended on `await`, append the answering `tool_result` to the stored log *before* booting.
-- [ ] 5.3 Test that a resumed agent's next request carries the delivered message and not `answerInterrupted`'s text. This is the test that catches the collision the design is built around.
-- [ ] 5.4 Test that an agent killed mid-call still gets `answerInterrupted`'s synthesized result, so fixing 5.2 has not disabled it.
-- [ ] 5.5 Test that a resumed agent's requests are byte-identical to an uninterrupted one's, and that its workspace still holds what it wrote.
-- [ ] 5.6 Arm a timer from the residency on the `await`: a message cancels it and answers in place, expiry syncs and destroys while leaving the agent's state untouched.
-- [ ] 5.7 Test that an agent asking to be kept is woken in its own container with nothing provisioned, and that one asking for nothing is torn down.
-- [ ] 5.8 Add the source-level test that no duration constant lives in the supervisor, in the spirit of the sandbox's no-`node:fs` guard.
+- [x] 5.1 Provision from the record, boot a runtime with the stored transcript, and deliver the message so the agent continues as though its call returned.
+- [x] 5.2 On a message for an agent suspended on `await`, append the answering `tool_result` to the stored log *before* booting.
+- [x] 5.3 Test that a resumed agent's next request carries the delivered message and not `answerInterrupted`'s text. This is the test that catches the collision the design is built around.
+- [x] 5.4 Test that an agent killed mid-call still gets `answerInterrupted`'s synthesized result, so fixing 5.2 has not disabled it.
+- [x] 5.5 Test that a resumed agent's requests are byte-identical to an uninterrupted one's, and that its workspace still holds what it wrote.
+- [x] 5.6 Arm a timer from the residency on the `await`: a message cancels it and answers in place, expiry syncs and destroys while leaving the agent's state untouched.
+- [x] 5.7 Test that an agent asking to be kept is woken in its own container with nothing provisioned, and that one asking for nothing is torn down.
+- [x] 5.8 Add the source-level test that no duration constant lives in the supervisor, in the spirit of the sandbox's no-`node:fs` guard.
 
 ## 6. Failure, and what the supervisor does with it
 
-- [ ] 6.1 Detect a container exiting while its agent's state says working, and deliver a message to the parent naming the child and what is known of the exit.
-- [ ] 6.2 Mark that message as the substrate's, so a parent can always tell a report of a death from a report by the deceased.
-- [ ] 6.3 Separate the two cases that look alike: a container lost while the supervisor is watching is a death to report, while a supervisor restarting over a store finds every agent bodiless and must sweep and resume rather than report the whole tree dead.
-- [ ] 6.4 Test that a killed child wakes a parent suspended on `await`, and that an agent which spoke before exiting produces no termination report.
-- [ ] 6.5 Test that a restart over a store of working agents resumes them and synthesizes no terminations.
-- [ ] 6.6 Detect the stalled tree — every agent waiting, every mailbox empty — after each state transition, and surface it without waking, messaging or dismissing anyone.
-- [ ] 6.7 Test that a run with a message still pending is not reported as stalled, and that residency timers do not affect the verdict.
+- [x] 6.1 Detect a container exiting while its agent's state says working, and deliver a message to the parent naming the child and what is known of the exit.
+- [x] 6.2 Mark that message as the substrate's, so a parent can always tell a report of a death from a report by the deceased.
+- [x] 6.3 Separate the two cases that look alike: a container lost while the supervisor is watching is a death to report, while a supervisor restarting over a store finds every agent bodiless and must sweep and resume rather than report the whole tree dead.
+- [x] 6.4 Test that a killed child wakes a parent suspended on `await`, and that an agent which spoke before exiting produces no termination report.
+- [x] 6.5 Test that a restart over a store of working agents resumes them and synthesizes no terminations.
+- [x] 6.6 Detect the stalled tree — every agent waiting, every mailbox empty — after each state transition, and surface it without waking, messaging or dismissing anyone.
+- [x] 6.7 Test that a run with a message still pending is not reported as stalled, and that residency timers do not affect the verdict.
 
 ## 7. Transcript reads
 
-- [ ] 7.1 Serve a read only where the target is a descendant of the caller, walking the stored parentage.
-- [ ] 7.2 Serve ranges, and report a refusal as a refusal rather than as an empty transcript.
-- [ ] 7.3 Test that a descendant's transcript is served, a non-descendant's is refused distinguishably, and a long one can be read in parts.
+- [x] 7.1 Serve a read only where the target is a descendant of the caller, walking the stored parentage.
+- [x] 7.2 Serve ranges, and report a refusal as a refusal rather than as an empty transcript.
+- [x] 7.3 Test that a descendant's transcript is served, a non-descendant's is refused distinguishably, and a long one can be read in parts.
 
 ## 8. The whole thing, against real containers
 
