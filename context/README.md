@@ -5,6 +5,8 @@ Read this file first. Then read only the files your task needs.
 | File | Holds | Read when |
 |---|---|---|
 | [product.md](product.md) | What jen is and its core concept | You need to understand the product; once per fresh context for any design work |
+| [plan.md](plan.md) | Current project, milestones, Linear map, cycles, status, open questions | You're starting or finishing work, or need to know what's next |
+| [conventions.md](conventions.md) | How work is done here | Always, before acting. It's kept short |
 | [decisions.md](decisions.md) | Dated decision log with reasons, newest first | Before re-opening a question, or when you need the reason behind something |
 | [environment.md](environment.md) | Repo, Linear workspace, OpenSpec, tool quirks | You're touching git, GitHub, Linear, OpenSpec or the harness |
 

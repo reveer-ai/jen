@@ -8,4 +8,6 @@
 
 ## Tool quirks
 
+- **The Linear MCP can't create cycles or change team settings.** Someone has to do that in the Linear UI. For example, the number of upcoming cycles is set under jen team settings → Cycles.
+- **Adding an issue to a cycle moves it from Backlog to Todo.**
 - **`openspec init` deletes OpenSpec's old global Codex prompts** in `~/.codex/prompts/opsx-*.md`. That's outside the repo, and it does it without asking.
