@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-10-24.
+Last updated 2026-10-26.
 
 ## Current project: Agent harness & UI engine
 
@@ -22,11 +22,11 @@ Each opening issue is done when its decisions are written down and every remaini
 ## Status
 
 - 2026-10-24: [JEN-5](https://linear.app/reveer/issue/JEN-5) initialized OpenSpec and this record. [JEN-6](https://linear.app/reveer/issue/JEN-6) scoped the project: its milestones, their opening issues and the cycles. All four opening issues are in Todo. JEN-5 and JEN-6 sit in the project with no milestone.
+- 2026-10-26: [JEN-1](https://linear.app/reveer/issue/JEN-1) recorded the agent's core design (see [decisions.md](decisions.md)) and scoped the Agent container milestone at 8 points in cycle 1: JEN-1 (1), [JEN-7](https://linear.app/reveer/issue/JEN-7) Build the agent loop and model port (3), [JEN-8](https://linear.app/reveer/issue/JEN-8) Run the agent in a container (2), and [JEN-9](https://linear.app/reveer/issue/JEN-9) Design and build agent invocation (2). JEN-8 is blocked by JEN-7, and JEN-9 by both.
 
 ## Open questions, held for their tasks
 
 These are recorded so they aren't lost. Don't settle them ahead of the task that owns them.
 
-- **JEN-1:** the language and framework. This is the project's first real decision, and everything else builds on it. The agent's design should leave room for an agent being started by another agent, not only by a user, so JEN-2 doesn't force a redesign.
 - **JEN-3:** where generated UI renders. This needs to be explored deliberately in the task. Keep in view that an agent and whatever renders it may end up on different machines, so JEN-4 doesn't force a redesign.
 - **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface).
