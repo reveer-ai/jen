@@ -4,7 +4,7 @@
 
 - [x] 1.1 Create `package.json` (ESM, Node ≥ 26, scripts `check`, `test`, `test:live`) and install `openai`, `typescript`, `vitest` and `@types/node`. Verify with `npm ci` from a clean checkout.
 - [x] 1.2 Add `tsconfig.json` (strict, `noEmit`, `erasableSyntaxOnly`, `verbatimModuleSyntax`, `.ts` import extensions) and the Vitest config, with `npm test` excluding `*.live.test.ts` and `test:live` running only those files. Verify that `npm run check` passes and that a non-erasable construct such as an `enum` fails it.
-- [ ] 1.3 Add `.github/workflows/ci.yml` running `npm ci`, `npm run check` and `npm test` on Node 26 for every push and pull request. Verify the workflow passes on this branch's pull request.
+- [x] 1.3 Add `.github/workflows/ci.yml` running `npm ci`, `npm run check` and `npm test` on Node 26 for every push and pull request. Verify the workflow passes on this branch's pull request.
 - [x] 1.4 Record the layout and the `check`, `test` and `test:live` commands in `context/environment.md`. Verify each documented command runs as written.
 
 ## 2. Model port and scripted model
