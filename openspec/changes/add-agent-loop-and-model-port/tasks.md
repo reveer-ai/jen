@@ -19,7 +19,7 @@
 ## 4. OpenAI Responses adapter
 
 - [x] 4.1 Write `src/model/openai-responses.ts` (`OpenAIResponsesModel`) with unit tests against a stubbed `fetch` passed to the SDK client. Cover the request shape (all items, `store: false`, no stored ids, non-strict function tools, base URL), the output mapping, dropped reasoning, unmapped types, malformed arguments and wrapped errors. Verify with `npm test`, and with a search showing `openai` is imported only in this file.
-- [ ] 4.2 Write `src/model/openai-responses.live.test.ts` per the design's live check, skipped without `JEN_LIVE_API_KEY` and `JEN_LIVE_MODEL`. Verify that it reports as skipped with no credentials, and that it passes against a real model through OpenRouter or OpenAI.
+- [x] 4.2 Write `src/model/openai-responses.live.test.ts` per the design's live check, skipped without `JEN_LIVE_API_KEY` and `JEN_LIVE_MODEL`. Verify that it reports as skipped with no credentials, and that it passes against a real model through OpenRouter or OpenAI.
 
 ## 5. Record
 
