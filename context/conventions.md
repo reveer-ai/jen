@@ -10,3 +10,7 @@ How work is done on this project. These apply to anyone working on it.
 - **Wording.** Titles describe the work, not Linear's structure. Write "Design and scope the UI engine", not "...and scope the UI engine milestone". Don't call the work a "proof of concept" or a "skeleton". It's the real thing, designed in depth.
 - **Cycles** are one week, starting Monday. Plan conservatively and pull work in if it moves faster.
 - **Estimates measure the maintainer's time, not the agents'.** Agents write the code, or nearly all of it. The maintainer's time goes to everything else the task needs, and that is what a point sizes. 1 point is about 4 hours of the maintainer's time. Capacity is about 8–9 points a week: 4 hours each weekday plus 12–16 hours over the weekend. Check estimates against actuals at the end of each cycle and recalibrate.
+
+## Feature work (OpenSpec)
+
+- **Virtually all feature work goes through an OpenSpec change.** Write the proposal first and align on it with the maintainer before writing anything else. Then write the design, specs and tasks, and only then implement. Name the change for what it builds. Its Linear issue goes in the proposal.

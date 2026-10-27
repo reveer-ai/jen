@@ -4,7 +4,17 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-10-26
 
-Made in [JEN-1](https://linear.app/reveer/issue/JEN-1), designing the jen agent.
+Made in [JEN-7](https://linear.app/reveer/issue/JEN-7), building the agent loop and model port. The full design is in `openspec/specs/` (capabilities `agent-loop`, `model-port` and `openai-responses-adapter`):
+
+- **jen keeps the conversation, and never relies on the provider keeping it.** Every model call sends the whole conversation. The Responses adapter sets `store: false`, which turns off OpenAI's stored response state, and never refers to a stored response or item. That isn't a retention guarantee: what a provider keeps otherwise, such as OpenAI's abuse-monitoring logs, depends on its policies and the account's data controls. *Why:* jen can then change model or provider partway through a conversation, and any agent can read it. Provider-side state exists only on OpenAI, and jen would still need its own copy for every other API.
+- **The model port is request/response, with no streaming yet.** *Why:* nothing reads a partial turn until the UI engine ([JEN-3](https://linear.app/reveer/issue/JEN-3)). Streaming is added then.
+- **The port and the loop carry only what something uses.** System instructions, token usage, cancellation, typed model errors, reasoning across turns and a step limit are each added when a caller needs them. *Why:* every field added speculatively is one each future adapter has to map, and guessing ahead is how a port ends up copying one vendor's shape.
+- **TypeScript runs directly on Node 26, with no build output.** `tsc --noEmit` is the build, and `erasableSyntaxOnly` keeps the code to what Node can strip. *Why:* nothing consumes emitted JavaScript yet. Node won't strip types inside `node_modules`, so publishing to npm will need an emit step, which [JEN-4](https://linear.app/reveer/issue/JEN-4) adds.
+- **The Responses adapter authenticates with an API key only, for now.** It doesn't yet support OpenAI's [Sign in with ChatGPT plan usage](https://developers.openai.com/siwc/token-sharing-open-source), which bills a user's ChatGPT plan through an OAuth token. *Why:* it's in preview, and an API key covers everything JEN-7 needed. It can be added later as a second auth option on the adapter, with no change to the port.
+
+- **Virtually all feature work goes through OpenSpec, and the proposal is aligned on before anything else.** Set by the maintainer at the start of [JEN-7](https://linear.app/reveer/issue/JEN-7). *Why:* the proposal is where agent and maintainer agree on what's being built before design and code commit to it. See [conventions.md](conventions.md).
+
+Made in [JEN-1](https://linear.app/reveer/issue/JEN-1), designing the jen agent:
 
 - **A point is about 4 hours of the maintainer's time, and capacity is about 8–9 points a week.** *Why:* agents write nearly all the code, so the scarce resource is the maintainer's time, not the coding. Estimating that resource is what makes cycle planning honest. See [conventions.md](conventions.md).
 - **A jen agent is written in TypeScript on Node.** *Why:* the agents are the UI, and generated UI will almost certainly be web tech, so one language runs from the agent to the renderer. The strongest model-client options and npm distribution are TypeScript-native too.
