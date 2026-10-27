@@ -23,11 +23,12 @@ Each opening issue is done when its decisions are written down and every remaini
 
 - 2026-10-24: [JEN-5](https://linear.app/reveer/issue/JEN-5) initialized OpenSpec and this record. [JEN-6](https://linear.app/reveer/issue/JEN-6) scoped the project: its milestones, their opening issues and the cycles. All four opening issues are in Todo. JEN-5 and JEN-6 sit in the project with no milestone.
 - 2026-10-26: [JEN-1](https://linear.app/reveer/issue/JEN-1) recorded the agent's core design (see [decisions.md](decisions.md)) and scoped the Agent container milestone at 8 points in cycle 1: JEN-1 (1), [JEN-7](https://linear.app/reveer/issue/JEN-7) Build the agent loop and model port (3), [JEN-8](https://linear.app/reveer/issue/JEN-8) Run the agent in a container (2), and [JEN-9](https://linear.app/reveer/issue/JEN-9) Design and build agent invocation (2). JEN-8 is blocked by JEN-7, and JEN-9 by both.
-- 2026-10-26: [JEN-7](https://linear.app/reveer/issue/JEN-7) built the TypeScript project, the model port, the scripted model, the OpenAI Responses adapter and the agent loop, through the OpenSpec change `add-agent-loop-and-model-port`. It's in review.
+- 2026-10-26: [JEN-7](https://linear.app/reveer/issue/JEN-7) built the TypeScript project, the model port, the scripted model, the OpenAI Responses adapter and the agent loop, through the OpenSpec change `add-agent-loop-and-model-port` (archived; its specs are in `openspec/specs/`). The loop passes its live check against `openai/gpt-6-luna` through OpenRouter. JEN-7 is done, which unblocks JEN-8.
 
 ## Open questions, held for their tasks
 
 These are recorded so they aren't lost. Don't settle them ahead of the task that owns them.
 
 - **JEN-3:** where generated UI renders. This needs to be explored deliberately in the task. Keep in view that an agent and whatever renders it may end up on different machines, so JEN-4 doesn't force a redesign.
+- **Responses adapter auth, raised in JEN-7 and not decided:** whether to support OpenAI's [Sign in with ChatGPT plan usage](https://developers.openai.com/siwc/token-sharing-open-source) (preview), where an app calls the Responses API with an OAuth token billed to the user's ChatGPT plan instead of an API key. It would be a second auth option on the adapter, with no change to the port.
 - **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface).
