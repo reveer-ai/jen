@@ -2,7 +2,12 @@
 // It reaches OpenAI, or a compatible endpoint such as OpenRouter by base URL.
 
 import OpenAI from "openai";
-import type { ResponseInputItem, ResponseOutputItem, Tool as FunctionTool } from "openai/resources/responses/responses";
+import type {
+  Response as OpenAIResponse,
+  ResponseInputItem,
+  ResponseOutputItem,
+  Tool as FunctionTool,
+} from "openai/resources/responses/responses";
 import type { Item, Json, Model, ToolSpec } from "./port.ts";
 
 export interface OpenAIResponsesOptions {
@@ -23,19 +28,23 @@ export class OpenAIResponsesModel implements Model {
   }
 
   async next(items: readonly Item[], tools: readonly ToolSpec[]): Promise<Item[]> {
-    let output: ResponseOutputItem[];
+    let response: OpenAIResponse;
     try {
-      const response = await this.#client.responses.create({
+      response = await this.#client.responses.create({
         model: this.#model,
         input: items.map(toInput),
         tools: tools.map(toFunctionTool),
         store: false,
       });
-      output = response.output;
     } catch (error) {
       throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
     }
-    return output.flatMap(fromOutput);
+    // A generation can fail inside a successful HTTP response.
+    if (response.status === "failed" || response.error) {
+      const message = response.error?.message ?? "generation failed";
+      throw new Error(`OpenAIResponsesModel: ${message}`, { cause: response.error });
+    }
+    return response.output.flatMap(fromOutput);
   }
 }
 
@@ -63,7 +72,8 @@ function toFunctionTool(tool: ToolSpec): FunctionTool {
 function fromOutput(item: ResponseOutputItem): Item[] {
   switch (item.type) {
     case "message": {
-      const text = item.content.flatMap((part) => (part.type === "output_text" ? [part.text] : [])).join("");
+      // A refusal's explanation is the reply, so it's kept as text.
+      const text = item.content.map((part) => (part.type === "output_text" ? part.text : part.refusal)).join("");
       return [{ type: "message", role: "assistant", text }];
     }
     case "function_call": {

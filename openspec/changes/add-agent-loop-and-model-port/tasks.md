@@ -18,12 +18,12 @@
 
 ## 4. OpenAI Responses adapter
 
-- [x] 4.1 Write `src/model/openai-responses.ts` (`OpenAIResponsesModel`) with unit tests against a stubbed `fetch` passed to the SDK client. Cover the request shape (all items, `store: false`, no stored ids, non-strict function tools, base URL), the output mapping, dropped reasoning, unmapped types, malformed arguments and wrapped errors. Verify with `npm test`, and with a search showing `openai` is imported only in this file.
+- [x] 4.1 Write `src/model/openai-responses.ts` (`OpenAIResponsesModel`) with unit tests against a stubbed `fetch` passed to the SDK client. Cover the request shape (all items, `store: false`, no stored ids, non-strict function tools, base URL), the output mapping, refusals, dropped reasoning, unmapped types, malformed arguments, wrapped errors and failed generations in successful responses. Verify with `npm test`, and with a search showing `openai` is imported only in this file.
 - [x] 4.2 Write `src/model/openai-responses.live.test.ts` per the design's live check, skipped without `JEN_LIVE_API_KEY` and `JEN_LIVE_MODEL`. Verify that it reports as skipped with no credentials, and that it passes against a real model through OpenRouter or OpenAI.
 
 ## 5. Record
 
-- [x] 5.1 Add the project-level decisions to `context/decisions.md`: jen keeps the conversation and the provider stores nothing; the port is request/response with no streaming yet; it carries only what's needed; and TypeScript runs with no build output. Update the JEN-7 status in `context/plan.md`. Verify each file stays within its size budget in `context/README.md`.
+- [x] 5.1 Add the project-level decisions to `context/decisions.md`: jen keeps the conversation and never relies on the provider keeping it; the port is request/response with no streaming yet; it carries only what's needed; and TypeScript runs with no build output. Update the JEN-7 status in `context/plan.md`. Verify each file stays within its size budget in `context/README.md`.
 
 ## Workflow follow-up
 

@@ -85,12 +85,14 @@ function runTurn(model: Model, tools: readonly Tool[], conversation: readonly It
 
 | jen item | Responses input | Responses output → jen |
 |---|---|---|
-| `message` (`user` or `assistant`) | `{ role, content: text }` | a `message` item's `output_text` parts, joined → an assistant `message` |
+| `message` (`user` or `assistant`) | `{ role, content: text }` | a `message` item's `output_text` and `refusal` parts, joined in order → an assistant `message` |
 | `tool_call` | `{ type: "function_call", call_id: id, name, arguments: JSON.stringify(input) }` | `function_call` → `tool_call`, with `input` parsed from `arguments` |
 | `tool_result` | `{ type: "function_call_output", call_id: callId, output }` | n/a |
 | `ToolSpec` | `{ type: "function", name, description, parameters: inputSchema, strict: false }` | n/a |
 
-- **`store: false`** means OpenAI keeps nothing, which matches the stateless port. Function call items go back without their output `id`, so the API never looks up a stored item.
+- **`store: false`** turns off OpenAI's stored response state, which matches the stateless port. Function call items go back without their output `id`, so the API never looks up a stored item. It isn't a retention guarantee: OpenAI may still keep abuse-monitoring logs that hold prompts and responses, depending on its policies and the account's data controls.
+- **A refusal's explanation becomes the assistant's text.** The port has no refusal item, and dropping the explanation would leave an empty reply.
+- **A failed generation throws.** A response can arrive with a successful HTTP status but `status: "failed"` and an `error`. The adapter throws a plain `Error` with that message, holding the provider's error as `cause`. An `incomplete` response, such as one cut off at the token limit, is truncation reporting, which is deferred.
 - **`reasoning` output items are dropped.** Reasoning models still work, but they lose their reasoning between turns. Carrying it across turns is a later addition.
 - **Any other output type throws.** jen only requests function tools, so anything else means the mapping is incomplete. Failing loudly beats quietly dropping it.
 - **Arguments that aren't valid JSON throw.** This is a model failure, not a tool failure, and with function calling it's rare.

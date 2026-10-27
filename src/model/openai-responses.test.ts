@@ -106,6 +106,15 @@ test("maps output messages and function calls in order, and drops reasoning", as
   ]);
 });
 
+test("keeps a refusal's explanation as the assistant's text", async () => {
+  const { fetch } = stubFetch(
+    200,
+    response([{ ...outputMessage(""), content: [{ type: "refusal", refusal: "I can't help with that." }] }]),
+  );
+  const items = await new OpenAIResponsesModel({ model: "m", apiKey: "k", fetch }).next(exchange, []);
+  expect(items).toEqual([{ type: "message", role: "assistant", text: "I can't help with that." }]);
+});
+
 test("fails on an output type it doesn't map, naming the type", async () => {
   const { fetch } = stubFetch(200, response([{ type: "web_search_call", id: "ws_1", status: "completed" }]));
   await expect(new OpenAIResponsesModel({ model: "m", apiKey: "k", fetch }).next(exchange, [])).rejects.toThrow(
@@ -130,4 +139,13 @@ test("wraps provider failures in a plain Error with the provider's message and e
   expect(error.message).toMatch(/Incorrect API key provided/);
   expect(error.cause).toBeInstanceOf(Error);
   expect(error.cause.constructor.name).toBe("AuthenticationError");
+});
+
+test("fails when the provider reports a failed generation in a successful response", async () => {
+  const providerError = { code: "server_error", message: "Generation failed" };
+  const { fetch } = stubFetch(200, { ...response([]), status: "failed", error: providerError });
+  const error = await new OpenAIResponsesModel({ model: "m", apiKey: "k", fetch }).next(exchange, []).catch((e) => e);
+  expect(error.constructor).toBe(Error);
+  expect(error.message).toMatch(/Generation failed/);
+  expect(error.cause).toEqual(providerError);
 });
