@@ -2,6 +2,18 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-10-27
+
+- **Finished implementation is committed and opened as a pull request without asking.** Set by the maintainer after JEN-8's implementation. It covers only a clean finish: every task done and verified. *Why:* review happens on the pull request, so asking first only adds a round-trip. See [conventions.md](conventions.md).
+
+Made in [JEN-8](https://linear.app/reveer/issue/JEN-8), running the agent in a container. The design and delta specs are in `openspec/changes/run-agent-in-container/` until the change is archived (capabilities `agent-store` and `agent-container`):
+
+- **The container is the only supported way to run an agent.** The store and the entrypoint's `respond` are unit-tested in-process, because CI has no container runtime, but the host isn't a place to run agents. *Why:* as an agent gains tools and preinstalled software, its image is what makes it that agent. Code run anywhere else isn't the same agent.
+- **The conversation is stored as one JSON row per item**, in a single `items` table in `/state/agent.db`, with each turn appended in one transaction. *Why:* items stay exactly in the port's shape for whatever reads them later. Turn boundaries can be derived, since each turn starts with a user message, and nothing queries inside items yet. A column per field would change every time the item union does.
+- **The one-shot entrypoint (one message per run, from the arguments) stands until [JEN-9](https://linear.app/reveer/issue/JEN-9).** JEN-9 replaces its interface rather than extending it. *Why:* it's the smallest thing that proves an agent exists and remembers. The store and `respond` carry over unchanged.
+
+- **The maintainer opens each proposal discussion, and the agent drafts only after they've aligned.** Set by the maintainer at the start of [JEN-8](https://linear.app/reveer/issue/JEN-8). *Why:* it shows early whether agent and maintainer see the problem the same way. The maintainer's view isn't the default answer, and the agent is expected to push back where it disagrees. See [conventions.md](conventions.md).
+
 ## 2026-10-26
 
 Made in [JEN-7](https://linear.app/reveer/issue/JEN-7), building the agent loop and model port. The full design is in `openspec/specs/` (capabilities `agent-loop`, `model-port` and `openai-responses-adapter`):
