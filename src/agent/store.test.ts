@@ -71,3 +71,48 @@ describe("a turn is saved whole or not at all", () => {
     reopened.close();
   });
 });
+
+describe("each saved item has a stable position", () => {
+  test("the items after a position are the later ones, in order, with their positions", () => {
+    const store = openStore(path);
+    store.append([user("hello"), assistant("hi")]);
+    store.append([user("how are you?"), assistant("fine")]);
+    const [, second] = store.after(0);
+    expect(store.after(second!.seq)).toEqual([
+      { seq: second!.seq + 1, item: user("how are you?") },
+      { seq: second!.seq + 2, item: assistant("fine") },
+    ]);
+    store.close();
+  });
+
+  test("positions survive reopening, and new items come after all of them", () => {
+    const store = openStore(path);
+    store.append([user("hello"), assistant("hi")]);
+    const before = store.after(0);
+    store.close();
+
+    const reopened = openStore(path);
+    reopened.append([user("again"), assistant("hi again")]);
+    const after = reopened.after(0);
+    expect(after.slice(0, 2)).toEqual(before);
+    const last = Math.max(...before.map((entry) => entry.seq));
+    expect(after.slice(2).every((entry) => entry.seq > last)).toBe(true);
+    expect(after.slice(2).map((entry) => entry.item)).toEqual([user("again"), assistant("hi again")]);
+    reopened.close();
+  });
+
+  test("a limit returns only the first items after the position", () => {
+    const store = openStore(path);
+    store.append([user("hello"), assistant("hi"), user("again"), assistant("hi again")]);
+    const all = store.after(0);
+    expect(store.after(all[0]!.seq, 2)).toEqual(all.slice(1, 3));
+    store.close();
+  });
+
+  test("nothing comes after the last item", () => {
+    const store = openStore(path);
+    store.append([user("hello"), assistant("hi")]);
+    expect(store.after(store.after(0).at(-1)!.seq)).toEqual([]);
+    store.close();
+  });
+});

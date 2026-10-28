@@ -11,8 +11,9 @@
 One npm package (ESM, Node ≥ 26) at the repo root. Node runs the TypeScript in `src/` directly, so there's no build output. Unit tests sit next to the code as `*.test.ts`. Live checks against real models are `*.live.test.ts`.
 
 - `src/model/`: the model port (`port.ts`), the scripted fake (`scripted.ts`) and the adapters. Only an adapter imports a model SDK.
-- `src/agent/`: the agent loop and its store (`store.ts`, the conversation in SQLite).
-- `src/main.ts`: the agent's entrypoint, one message per run. The container is the only supported way to run it.
+- `src/agent/`: the agent loop, its store (`store.ts`, the conversation in SQLite) and `respond.ts`, which runs and saves one turn.
+- `src/server.ts`: the agent's protocol over HTTP: `POST /messages`, the `GET /events` stream and the bearer token.
+- `src/main.ts`: the agent's entrypoint. It serves the protocol on port 8080. The container is the only supported way to run it.
 
 Commands:
 
@@ -20,13 +21,17 @@ Commands:
 - `npm test` runs the unit tests and never the live checks. CI (`.github/workflows/ci.yml`) runs `npm ci`, `check` and `test` on every push and pull request, with no secrets.
 - `npm run test:live` runs only the live checks. Each skips unless `JEN_LIVE_API_KEY` and `JEN_LIVE_MODEL` are set, either in the environment or in a git-ignored `.env` at the repo root, which only `test:live` loads. Add `JEN_LIVE_BASE_URL=https://openrouter.ai/api/v1` to go through OpenRouter, with a model ID such as `openai/<model>`.
   The container check (`src/container.live.test.ts`) also needs Docker running. With credentials set and no Docker, it fails rather than skips.
-- `docker build -t jen .` builds the agent's image. Run it on a named volume, which keeps the conversation between containers. The model comes from `JEN_MODEL`, `JEN_API_KEY` and the optional `JEN_BASE_URL`, passed by name so the key stays off the command line:
+- `docker build -t jen .` builds the agent's image. Run it detached on a named volume, which keeps the conversation between containers. The model comes from `JEN_MODEL`, `JEN_API_KEY` and the optional `JEN_BASE_URL`, and every request must carry `JEN_TOKEN` as a bearer token. Pass them by name so they stay off the command line, and publish the port on `127.0.0.1` to keep the agent local:
 
   ```sh
+  export JEN_TOKEN=$(openssl rand -hex 32)
   docker volume create jen-state
-  docker run --rm -v jen-state:/state -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen "Remember the word heron."
-  docker run --rm -v jen-state:/state -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen "What word did I ask you to remember?"
+  docker run -d --name jen -p 127.0.0.1:8080:8080 -v jen-state:/state -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL -e JEN_TOKEN jen
+  curl -H "Authorization: Bearer $JEN_TOKEN" -d '{"text":"Remember the word heron."}' localhost:8080/messages
+  curl -N -H "Authorization: Bearer $JEN_TOKEN" localhost:8080/events
   ```
+
+  `POST /messages` answers with `{"reply": "…"}` once the turn is saved. `/events` streams every saved item as Server-Sent Events, and resumes after the item named by a `Last-Event-ID` header. Stop the agent with `docker rm -f jen`.
 
   Use a named volume, not a bind mount: the agent runs as uid 1000, which may not own a host directory.
 
