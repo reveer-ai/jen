@@ -6,4 +6,5 @@ COPY src ./src
 RUN mkdir /state && chown node:node /state
 USER node
 VOLUME /state
+EXPOSE 8080
 ENTRYPOINT ["node", "src/main.ts"]

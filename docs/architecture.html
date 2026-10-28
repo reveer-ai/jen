@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jen Agent Components</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one wide component diagram, then the turn it depicts as a short ordered list. */
+:root {
+  --bg: #f7f8fa; --fg: #1b2230; --muted: #5a6475; --line: #b9c1ce; --surface: #ffffff; --accent: #2f6fd6;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161d; --fg: #e3e8f0; --muted: #98a3b5; --line: #3a4352; --surface: #1a1f28; --accent: #6ea2f5; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12161d; --fg: #e3e8f0; --muted: #98a3b5; --line: #3a4352; --surface: #1a1f28; --accent: #6ea2f5; color-scheme: dark }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+main { max-width: 1160px; margin: 0 auto; padding-block: 32px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 24px; }
+h1 { font-size: 1.6rem; font-weight: 600; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 600; margin: 0 0 8px; }
+.lede { color: var(--muted); margin: 6px 0 0; max-width: 65ch; }
+code { font-family: var(--mono); font-size: 0.9em; }
+figure { margin: 0; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+svg { display: block; width: 100%; min-width: 820px; height: auto; color: var(--muted); }
+figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 10px; max-width: 75ch; }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; }
+.ghost { fill: none; stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.zone { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.edge { fill: none; stroke: currentColor; stroke-width: 1.4; }
+.dash { stroke-dasharray: 5 4; }
+.port { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 2 4; }
+.t { font: 600 13.5px var(--sans); fill: var(--fg); text-anchor: middle; }
+.f { font: 11px var(--mono); fill: var(--muted); text-anchor: middle; }
+.d { font: 11.5px var(--sans); fill: var(--muted); text-anchor: middle; }
+.lbl { font: 11px var(--mono); fill: var(--fg); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.zl { font: 600 16px var(--sans); fill: var(--accent); }
+.zs { font: 11px var(--mono); fill: var(--muted); }
+.pl { font: 500 11px var(--mono); fill: var(--accent); text-anchor: end; }
+ol { margin: 0; padding-left: 1.4em; display: grid; gap: 6px; max-width: 75ch; }
+li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>jen Agent Components</h1>
+    <p class="lede">What runs inside one agent container on <code>main</code> as of JEN-9: an HTTP server in front of a turn loop, a SQLite conversation store, and a model port with one adapter.</p>
+  </header>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1130 480" role="img" aria-label="Component diagram of the jen agent. A client calls the HTTP server, which calls respond; respond loads the conversation from the SQLite store, runs the agent loop, and appends the turn. The loop calls the model through the Model port and the OpenAI Responses adapter, which reaches an external model provider. Tools are not wired yet. The server streams saved items from the store to clients over SSE.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <!-- agent boundary -->
+        <rect class="zone" x="180" y="20" width="740" height="440" rx="10"/>
+        <text class="zl" x="200" y="48">agent</text>
+        <text class="zs" x="200" y="66">Docker container · node src/main.ts · :8080</text>
+
+        <!-- outside: client, provider -->
+        <rect class="box" x="20" y="160" width="120" height="90" rx="6"/>
+        <text class="t" x="80" y="200">Client</text>
+        <text class="d" x="80" y="220">any HTTP caller</text>
+
+        <rect class="box" x="980" y="340" width="130" height="90" rx="6"/>
+        <text class="t" x="1045" y="380">Model provider</text>
+        <text class="d" x="1045" y="400">OpenAI · OpenRouter</text>
+
+        <!-- row 1 -->
+        <rect class="box" x="220" y="160" width="160" height="90" rx="6"/>
+        <text class="t" x="300" y="195">HTTP server</text>
+        <text class="f" x="300" y="213">server.ts</text>
+        <text class="d" x="300" y="232">auth · one turn at a time</text>
+
+        <rect class="box" x="480" y="160" width="140" height="90" rx="6"/>
+        <text class="t" x="550" y="195">respond</text>
+        <text class="f" x="550" y="213">respond.ts</text>
+        <text class="d" x="550" y="232">load · run · save</text>
+
+        <rect class="box" x="720" y="160" width="160" height="90" rx="6"/>
+        <text class="t" x="800" y="195">Agent loop</text>
+        <text class="f" x="800" y="213">loop.ts · runTurn</text>
+        <text class="d" x="800" y="232">until no tool calls</text>
+
+        <rect class="ghost" x="720" y="84" width="160" height="40" rx="6"/>
+        <text class="t" x="800" y="101" style="font-size:12.5px">Tools</text>
+        <text class="d" x="800" y="117">none wired yet</text>
+
+        <!-- row 2 -->
+        <rect class="box" x="480" y="340" width="140" height="90" rx="6"/>
+        <text class="t" x="550" y="375">Store</text>
+        <text class="f" x="550" y="393">store.ts</text>
+        <text class="d" x="550" y="412">SQLite on /state volume</text>
+
+        <rect class="box" x="720" y="340" width="160" height="90" rx="6"/>
+        <text class="t" x="800" y="375">Responses adapter</text>
+        <text class="f" x="800" y="393">openai-responses.ts</text>
+        <text class="d" x="800" y="412">only module with the SDK</text>
+
+        <!-- client <-> server -->
+        <line class="edge" x1="140" y1="190" x2="218" y2="190" marker-end="url(#arrow)"/>
+        <text class="lbl" x="180" y="183" text-anchor="middle">POST /messages</text>
+        <line class="edge" x1="220" y1="222" x2="142" y2="222" marker-end="url(#arrow)"/>
+        <text class="lbl" x="180" y="240" text-anchor="middle">reply, SSE</text>
+
+        <!-- server <-> respond -->
+        <line class="edge" x1="380" y1="190" x2="478" y2="190" marker-end="url(#arrow)"/>
+        <text class="lbl" x="430" y="183" text-anchor="middle">respond(text)</text>
+        <line class="edge" x1="480" y1="222" x2="382" y2="222" marker-end="url(#arrow)"/>
+        <text class="lbl" x="430" y="240" text-anchor="middle">reply</text>
+
+        <!-- respond <-> loop -->
+        <line class="edge" x1="620" y1="190" x2="718" y2="190" marker-end="url(#arrow)"/>
+        <text class="lbl" x="670" y="183" text-anchor="middle">runTurn</text>
+        <line class="edge" x1="720" y1="222" x2="622" y2="222" marker-end="url(#arrow)"/>
+        <text class="lbl" x="670" y="240" text-anchor="middle">turn items</text>
+
+        <!-- loop <-> tools -->
+        <line class="edge dash" x1="785" y1="160" x2="785" y2="126" marker-end="url(#arrow)"/>
+        <text class="lbl" x="777" y="147" text-anchor="end">call</text>
+        <line class="edge dash" x1="815" y1="124" x2="815" y2="158" marker-end="url(#arrow)"/>
+        <text class="lbl" x="823" y="147">result</text>
+
+        <!-- loop <-> adapter, across the model port -->
+        <line class="port" x1="700" y1="312" x2="900" y2="312"/>
+        <text class="pl" x="692" y="316">Model port</text>
+        <line class="edge" x1="785" y1="250" x2="785" y2="338" marker-end="url(#arrow)"/>
+        <text class="lbl" x="777" y="282" text-anchor="end">next(items, tools)</text>
+        <line class="edge" x1="815" y1="340" x2="815" y2="252" marker-end="url(#arrow)"/>
+        <text class="lbl" x="823" y="282">new items</text>
+
+        <!-- adapter <-> provider -->
+        <line class="edge" x1="880" y1="370" x2="978" y2="370" marker-end="url(#arrow)"/>
+        <text class="lbl" x="930" y="363" text-anchor="middle">responses.create</text>
+        <line class="edge" x1="980" y1="402" x2="882" y2="402" marker-end="url(#arrow)"/>
+        <text class="lbl" x="930" y="420" text-anchor="middle">output</text>
+
+        <!-- respond <-> store -->
+        <line class="edge" x1="530" y1="250" x2="530" y2="338" marker-end="url(#arrow)"/>
+        <text class="lbl" x="522" y="284" text-anchor="end">append(turn)</text>
+        <line class="edge" x1="570" y1="340" x2="570" y2="252" marker-end="url(#arrow)"/>
+        <text class="lbl" x="578" y="300">load()</text>
+
+        <!-- store -> server (SSE delivery) -->
+        <path class="edge" d="M480,400 H300 V252" marker-end="url(#arrow)"/>
+        <text class="lbl" x="308" y="330">after(seq)</text>
+      </svg>
+    </div>
+    <figcaption>Solid arrows are calls that exist today; dashed arrows are the tool path, which the loop supports but <code>respond</code> passes an empty tool list to. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type.</figcaption>
+  </figure>
+
+  <section>
+    <h2>One turn, in order</h2>
+    <ol>
+      <li>The client sends <code>POST /messages</code> with a bearer token. The server rejects it with 409 if a turn is already running.</li>
+      <li><code>respond</code> loads the whole conversation from the store and hands it to <code>runTurn</code> with the new text.</li>
+      <li>The loop calls <code>model.next</code> through the port. The adapter maps items to an OpenAI Responses request and maps the output back.</li>
+      <li>If the model asked for tools, the loop runs them and calls the model again. With no tool calls, the turn ends.</li>
+      <li><code>respond</code> appends the turn's items to SQLite in one transaction. A failed turn saves nothing.</li>
+      <li>The server replies with the assistant text and pushes the new items to every open <code>GET /events</code> stream, read from the store with <code>after(seq)</code>.</li>
+    </ol>
+  </section>
+</main>
+</body>
+</html>

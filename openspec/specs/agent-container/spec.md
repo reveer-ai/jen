@@ -34,27 +34,27 @@ The agent SHALL read its model ID from `JEN_MODEL` and API key from `JEN_API_KEY
 - **WHEN** `JEN_BASE_URL` is set
 - **THEN** model calls go to that endpoint
 
-### Requirement: Each run handles one message
-The agent SHALL take its message from its command-line arguments, joined with spaces, run one turn, print the reply to standard output, and exit zero. The reply is the text of the assistant messages that end the turn, separated by blank lines. With no message, it SHALL exit non-zero and save nothing.
-
-#### Scenario: One message
-- **WHEN** the container runs with the argument `hello`
-- **THEN** it runs one turn on `hello`, prints the assistant's reply, and exits zero
-
-#### Scenario: No message
-- **WHEN** the container runs with no arguments
-- **THEN** it exits non-zero and the stored conversation is unchanged
-
-### Requirement: A failed turn exits non-zero
-If the turn fails, the agent SHALL write the error to standard error, exit non-zero, and save nothing.
-
-#### Scenario: Model unreachable
-- **WHEN** the model call fails
-- **THEN** the agent writes the error to standard error, exits non-zero, and the stored conversation is unchanged
-
 ### Requirement: The agent stops promptly when signalled
 On an interrupt or termination signal, the agent SHALL exit promptly, saving nothing from an unfinished turn.
 
 #### Scenario: Stopped mid-turn
 - **WHEN** the container is stopped while a turn is waiting on the model
 - **THEN** the agent exits without waiting for the stop timeout, and the stored conversation is unchanged
+
+### Requirement: The agent serves its protocol on port 8080
+The agent SHALL run as a long-running server that listens on port 8080 on every interface in its container, serving the `agent-protocol` capability until it is stopped. It SHALL keep serving across messages and failed turns.
+
+#### Scenario: Two messages to one container
+- **WHEN** the container is started with its port published, and a client posts two messages in turn
+- **THEN** both get replies from the same running container
+
+#### Scenario: Restarted on the same volume
+- **WHEN** a message is handled, the container is removed, and a new container on the same volume is sent a second message
+- **THEN** the second turn sees the first
+
+### Requirement: The agent requires a token
+The agent SHALL read its token from `JEN_TOKEN`. If `JEN_TOKEN` is missing or empty, it SHALL exit non-zero at startup with an error naming the variable, and SHALL serve nothing.
+
+#### Scenario: Missing token
+- **WHEN** the agent starts without `JEN_TOKEN`
+- **THEN** it exits non-zero and its error names `JEN_TOKEN`

@@ -2,15 +2,25 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-10-28
+
+Made in [JEN-9](https://linear.app/reveer/issue/JEN-9), designing and building agent invocation. The full design is in `openspec/specs/` (capabilities `agent-protocol`, `agent-container` and `agent-store`), and the design document in `openspec/changes/archive/2026-10-28-serve-agent-over-http/`:
+
+- **Agents speak jen's own protocol, over HTTP with Server-Sent Events.** `POST /messages` runs a turn and answers with its reply, and `GET /events` streams the conversation. Every client uses it, with no privileged path: a person with curl, a self-hoster, and later a parent agent, the UI and the npm package. *Why:* sending and watching are separate, so a client can send while its stream is open, and HTTP and SSE pass through the proxies, TLS and load balancers self-hosters already run. *Rejected:* WebSocket, since nothing needs the client to push on the stream, and it would mean writing our own framing and reconnection. A2A, which is built for interop between opaque agents from different vendors, and whose task model would shape jen's protocol around someone else's concepts. If interop matters later, A2A can be a facade at the edge.
+- **The stream carries saved conversation items only, and resumes by position.** Each event's ID is the item's position in the store, and `Last-Event-ID` resumes after it. A turn's items are sent once it's saved, so a failed turn sends nothing. *Why:* every event is durable and never retracted, so reconnecting is exact and several clients can watch at once. Progress within a turn and token deltas become separate event types when the UI engine ([JEN-3](https://linear.app/reveer/issue/JEN-3)) needs them.
+- **Every request needs the bearer token in `JEN_TOKEN`, and the agent won't start without it.** This is explicitly a minimum, not an auth design. *Why:* an exposed agent spends its owner's model credits, and later runs its tools. Auth gets designed in depth later, with hosting and with agents calling agents (see [plan.md](plan.md)).
+- **An agent runs one turn at a time, and a message during a turn gets `409`.** It's a placeholder. *Why:* what a busy agent does with a message belongs to [JEN-2](https://linear.app/reveer/issue/JEN-2), along with how delegation works.
+- **No `jen` CLI until distribution.** Starting an agent is `docker run`. *Why:* a wrapper belongs with packaging in [JEN-4](https://linear.app/reveer/issue/JEN-4), and starting an agent from another agent belongs to JEN-2.
+
 ## 2026-10-27
 
 - **Finished implementation is committed and opened as a pull request without asking.** Set by the maintainer after JEN-8's implementation. It covers only a clean finish: every task done and verified. *Why:* review happens on the pull request, so asking first only adds a round-trip. See [conventions.md](conventions.md).
 
-Made in [JEN-8](https://linear.app/reveer/issue/JEN-8), running the agent in a container. The design and delta specs are in `openspec/changes/run-agent-in-container/` until the change is archived (capabilities `agent-store` and `agent-container`):
+Made in [JEN-8](https://linear.app/reveer/issue/JEN-8), running the agent in a container. The full design is in `openspec/specs/` (capabilities `agent-store` and `agent-container`):
 
-- **The container is the only supported way to run an agent.** The store and the entrypoint's `respond` are unit-tested in-process, because CI has no container runtime, but the host isn't a place to run agents. *Why:* as an agent gains tools and preinstalled software, its image is what makes it that agent. Code run anywhere else isn't the same agent.
+- **The container is the only supported way to run an agent.** The store and `respond` are unit-tested in-process, because CI has no container runtime, but the host isn't a place to run agents. *Why:* as an agent gains tools and preinstalled software, its image is what makes it that agent. Code run anywhere else isn't the same agent.
 - **The conversation is stored as one JSON row per item**, in a single `items` table in `/state/agent.db`, with each turn appended in one transaction. *Why:* items stay exactly in the port's shape for whatever reads them later. Turn boundaries can be derived, since each turn starts with a user message, and nothing queries inside items yet. A column per field would change every time the item union does.
-- **The one-shot entrypoint (one message per run, from the arguments) stands until [JEN-9](https://linear.app/reveer/issue/JEN-9).** JEN-9 replaces its interface rather than extending it. *Why:* it's the smallest thing that proves an agent exists and remembers. The store and `respond` carry over unchanged.
+- *Superseded 2026-10-28 by jen's own protocol over HTTP:* **The one-shot entrypoint (one message per run, from the arguments) stands until [JEN-9](https://linear.app/reveer/issue/JEN-9).** JEN-9 replaces its interface rather than extending it. *Why:* it's the smallest thing that proves an agent exists and remembers. The store and `respond` carry over unchanged.
 
 - **The maintainer opens each proposal discussion, and the agent drafts only after they've aligned.** Set by the maintainer at the start of [JEN-8](https://linear.app/reveer/issue/JEN-8). *Why:* it shows early whether agent and maintainer see the problem the same way. The maintainer's view isn't the default answer, and the agent is expected to push back where it disagrees. See [conventions.md](conventions.md).
 

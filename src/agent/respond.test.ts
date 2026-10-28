@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { openStore, type Store } from "./agent/store.ts";
-import { respond } from "./main.ts";
-import type { Item, Json } from "./model/port.ts";
-import { ScriptedModel } from "./model/scripted.ts";
+import type { Item, Json } from "../model/port.ts";
+import { ScriptedModel } from "../model/scripted.ts";
+import { respond } from "./respond.ts";
+import { openStore, type Store } from "./store.ts";
 
 const user = (text: string): Item => ({ type: "message", role: "user", text });
 const assistant = (text: string): Item => ({ type: "message", role: "assistant", text });
@@ -14,7 +14,7 @@ const call = (id: string, name: string, input: Json): Item => ({ type: "tool_cal
 let dir: string;
 let store: Store;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "jen-main-"));
+  dir = mkdtempSync(join(tmpdir(), "jen-respond-"));
   store = openStore(join(dir, "agent.db"));
 });
 afterEach(() => {
