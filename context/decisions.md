@@ -2,6 +2,10 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-10-27
+
+- **The maintainer opens each proposal discussion, and the agent drafts only after they've aligned.** Set by the maintainer at the start of [JEN-8](https://linear.app/reveer/issue/JEN-8). *Why:* it shows early whether agent and maintainer see the problem the same way. The maintainer's view isn't the default answer, and the agent is expected to push back where it disagrees. See [conventions.md](conventions.md).
+
 ## 2026-10-26
 
 Made in [JEN-7](https://linear.app/reveer/issue/JEN-7), building the agent loop and model port. The full design is in `openspec/specs/` (capabilities `agent-loop`, `model-port` and `openai-responses-adapter`):

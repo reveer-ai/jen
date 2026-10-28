@@ -14,3 +14,4 @@ How work is done on this project. These apply to anyone working on it.
 ## Feature work (OpenSpec)
 
 - **Virtually all feature work goes through an OpenSpec change.** Write the proposal first and align on it with the maintainer before writing anything else. Then write the design, specs and tasks, and only then implement. Name the change for what it builds. Its Linear issue goes in the proposal.
+- **The maintainer opens the proposal discussion.** Before drafting, ask for the maintainer's view of the problem and what needs doing. Then discuss it: compare it with your own view, and disagree where you see it differently. Their view goes first to check you're on the same page, not because it wins. Draft the proposal only once you've aligned.
