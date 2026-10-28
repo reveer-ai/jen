@@ -10,6 +10,8 @@ import type { Store } from "./agent/store.ts";
 import type { Model } from "./model/port.ts";
 
 const KEEPALIVE_MS = 15_000;
+// How many items a stream reads from the store at a time.
+const PAGE = 100;
 
 export function createServer({ store, model, token }: { store: Store; model: Model; token: string }): http.Server {
   const expected = digest(`Bearer ${token}`);
@@ -17,19 +19,26 @@ export function createServer({ store, model, token }: { store: Store; model: Mod
   const streams = new Map<http.ServerResponse, number>();
   let busy = false;
 
-  // Sends each stream the items saved since its last one. Called when a
-  // stream opens and after each saved turn; the store is synchronous, so no
-  // turn can be saved partway through.
+  // Sends a stream the items saved since its last one. Called when a stream
+  // opens, after each saved turn, and when a slow reader's socket drains; the
+  // store is synchronous, so no turn can be saved partway through. A stream
+  // whose buffer is full gets nothing more until it drains, so a reader that
+  // stops reading holds at most one item beyond the socket's buffer.
   function deliver(res: http.ServerResponse) {
-    let last = streams.get(res)!;
-    for (const { seq, item } of store.after(last)) {
-      res.write(`id: ${seq}\nevent: item\ndata: ${JSON.stringify(item)}\n\n`);
-      last = seq;
+    while (!res.writableNeedDrain) {
+      const page = store.after(streams.get(res)!, PAGE);
+      if (page.length === 0) return;
+      for (const { seq, item } of page) {
+        streams.set(res, seq);
+        if (!res.write(`id: ${seq}\nevent: item\ndata: ${JSON.stringify(item)}\n\n`)) return;
+      }
     }
-    streams.set(res, last);
   }
 
   async function messages(req: http.IncomingMessage, res: http.ServerResponse) {
+    // Checked on arrival and again once the body is in, since a body can
+    // finish after a turn that started while it was uploading.
+    if (busy) return json(res, 409, { error: "a turn is already running" });
     let text: unknown;
     try {
       text = JSON.parse(await readBody(req))?.text;
@@ -61,24 +70,36 @@ export function createServer({ store, model, token }: { store: Store; model: Mod
     // An empty conversation writes nothing yet, so send the headers now.
     res.flushHeaders();
     streams.set(res, Number.isSafeInteger(lastEventId) && lastEventId > 0 ? lastEventId : 0);
+    res.on("drain", () => deliver(res));
     deliver(res);
-    const keepalive = setInterval(() => res.write(": keepalive\n\n"), KEEPALIVE_MS);
+    // A stream waiting to drain is still alive, and has data queued anyway.
+    const keepalive = setInterval(() => res.writableNeedDrain || res.write(": keepalive\n\n"), KEEPALIVE_MS);
     res.on("close", () => {
       clearInterval(keepalive);
       streams.delete(res);
     });
   }
 
-  return http.createServer((req, res) => {
+  async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     const given = digest(req.headers.authorization ?? "");
     if (!timingSafeEqual(given, expected)) {
       res.setHeader("WWW-Authenticate", "Bearer");
       return json(res, 401, { error: "a valid bearer token is required" });
     }
-    const path = new URL(req.url ?? "/", "http://agent").pathname;
-    if (req.method === "POST" && path === "/messages") return void messages(req, res);
+    // The path is the request target up to its query. Parsing it as a URL
+    // would read a target such as "//" as a host, and throw.
+    const path = (req.url ?? "/").split("?")[0];
+    if (req.method === "POST" && path === "/messages") return messages(req, res);
     if (req.method === "GET" && path === "/events") return events(req, res);
     json(res, 404, { error: `no route for ${req.method} ${path}` });
+  }
+
+  // A request that fails unexpectedly ends with that request, never the agent.
+  return http.createServer((req, res) => {
+    route(req, res).catch((error) => {
+      if (res.headersSent) return void res.destroy();
+      json(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    });
   });
 }
 

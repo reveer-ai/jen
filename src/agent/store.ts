@@ -5,8 +5,9 @@ import type { Item } from "../model/port.ts";
 export interface Store {
   load(): Item[];
   // Returns the items saved after position seq, in order, each with its
-  // position. Positions only grow and never change, so after(0) is everything.
-  after(seq: number): { seq: number; item: Item }[];
+  // position, and at most limit of them when it's given. Positions only grow
+  // and never change, so after(0) is everything.
+  after(seq: number, limit?: number): { seq: number; item: Item }[];
   // Saves a turn's items whole, or none of them.
   append(items: readonly Item[]): void;
   close(): void;
@@ -17,13 +18,14 @@ export function openStore(path: string): Store {
   const db = new DatabaseSync(path);
   db.exec("CREATE TABLE IF NOT EXISTS items (seq INTEGER PRIMARY KEY, item TEXT NOT NULL)");
   const select = db.prepare("SELECT item FROM items ORDER BY seq");
-  const selectAfter = db.prepare("SELECT seq, item FROM items WHERE seq > ? ORDER BY seq");
+  const selectAfter = db.prepare("SELECT seq, item FROM items WHERE seq > ? ORDER BY seq LIMIT ?");
   const insert = db.prepare("INSERT INTO items (item) VALUES (?)");
 
   return {
     load: () => select.all().map((row) => JSON.parse(row.item as string) as Item),
-    after: (seq) =>
-      selectAfter.all(seq).map((row) => ({ seq: row.seq as number, item: JSON.parse(row.item as string) as Item })),
+    // LIMIT -1 is no limit in SQLite.
+    after: (seq, limit = -1) =>
+      selectAfter.all(seq, limit).map((row) => ({ seq: row.seq as number, item: JSON.parse(row.item as string) as Item })),
     append(items) {
       db.exec("BEGIN");
       try {

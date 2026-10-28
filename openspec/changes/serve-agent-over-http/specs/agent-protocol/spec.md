@@ -40,11 +40,15 @@ A `POST /messages` whose body isn't JSON, or whose `text` isn't a non-empty stri
 - **THEN** it gets 400 and the stored conversation is unchanged
 
 ### Requirement: The agent runs one turn at a time
-While a turn is running, any further `POST /messages` SHALL get status 409 with a JSON error body, and SHALL run no turn. Once the running turn ends, the agent SHALL accept messages again.
+A `POST /messages` that arrives while a turn is running SHALL get status 409 with a JSON error body, and SHALL run no turn, however long its body takes to arrive. Once the running turn ends, the agent SHALL accept messages that arrive after it.
 
 #### Scenario: Message during a turn
 - **WHEN** a client posts a message while another message's turn is still running
 - **THEN** the second post gets 409, and only the first turn is saved
+
+#### Scenario: Body finishes after the turn
+- **WHEN** a client starts posting a message while another message's turn is running, and its body finishes arriving after that turn ends
+- **THEN** it gets 409, and only the first turn is saved
 
 #### Scenario: Message after a turn
 - **WHEN** a turn has ended and a client posts a message
@@ -97,6 +101,13 @@ Every open stream SHALL receive a turn's items once the turn is saved, in order,
 - **WHEN** a stream is open and a turn fails
 - **THEN** the stream receives no events for it
 
+### Requirement: A watcher that stops reading doesn't grow the agent's memory
+When a client stops reading its event stream, the agent SHALL stop sending to that stream once the stream's buffer is full, and SHALL resume where it stopped once the client reads again. What it holds for the stream SHALL stay bounded, however many items are saved meanwhile. Other streams and requests SHALL be served normally.
+
+#### Scenario: Stalled watcher
+- **WHEN** a client opens the stream on a long conversation and reads nothing while more turns are saved
+- **THEN** the agent's buffer for that stream stays bounded, other watchers and messages are served normally, and once the client reads it receives every item in order, with none missed or repeated
+
 ### Requirement: A quiet event stream is kept alive
 While a stream has nothing to send, the agent SHALL write an SSE comment line at least every 15 seconds.
 
@@ -107,6 +118,12 @@ While a stream has nothing to send, the agent SHALL write an SSE comment line at
 ### Requirement: Unknown routes are not found
 A request with a valid token to any route other than `POST /messages` and `GET /events` SHALL get status 404 with a JSON error body.
 
+Any request that fails unexpectedly SHALL end with that request, and SHALL NOT stop the agent.
+
 #### Scenario: Unknown path
 - **WHEN** a client sends `GET /status` with the token
 - **THEN** it gets 404
+
+#### Scenario: A target that looks like a host
+- **WHEN** a client sends a request whose target is `//`, with the token
+- **THEN** it gets 404, and the agent keeps serving

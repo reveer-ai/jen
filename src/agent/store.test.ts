@@ -101,6 +101,14 @@ describe("each saved item has a stable position", () => {
     reopened.close();
   });
 
+  test("a limit returns only the first items after the position", () => {
+    const store = openStore(path);
+    store.append([user("hello"), assistant("hi"), user("again"), assistant("hi again")]);
+    const all = store.after(0);
+    expect(store.after(all[0]!.seq, 2)).toEqual(all.slice(1, 3));
+    store.close();
+  });
+
   test("nothing comes after the last item", () => {
     const store = openStore(path);
     store.append([user("hello"), assistant("hi")]);

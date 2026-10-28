@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import type http from "node:http";
-import type { AddressInfo } from "node:net";
+import http from "node:http";
+import { connect, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -167,6 +167,31 @@ describe("the agent runs one turn at a time", () => {
     expect(store.load()).toEqual([user("hello"), assistant("hi")]);
   });
 
+  test("a message that arrives during a turn gets 409 even if its body finishes after it", async () => {
+    let calls = 0;
+    const held = heldModel([assistant("hi")]);
+    await serve({ next: (items, tools) => (calls++, held.model.next(items, tools)) });
+    const first = post("hello");
+    await held.started;
+
+    // All but the body's last byte is sent during the first turn.
+    const body = JSON.stringify({ text: "again" });
+    const second = http.request(`${base}/messages`, { method: "POST", headers: { ...auth, "Content-Length": body.length } });
+    const response = new Promise<http.IncomingMessage>((resolve) => second.on("response", resolve));
+    // The agent answers without reading the rest of the body, then closes the
+    // connection, so the last byte may meet a reset.
+    second.on("error", () => {});
+    second.write(body.slice(0, -1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    held.release();
+    expect((await first).status).toBe(200);
+    second.end(body.slice(-1));
+
+    expect((await response).statusCode).toBe(409);
+    expect(calls).toBe(1);
+    expect(store.load()).toEqual([user("hello"), assistant("hi")]);
+  });
+
   test("a message after a turn has ended is run", async () => {
     await serve(new ScriptedModel([[assistant("hi")], [assistant("again")]]));
     await post("hello");
@@ -295,6 +320,42 @@ describe("the event stream sends only saved items", () => {
   });
 });
 
+describe("a watcher that stops reading is sent no more than it can take", () => {
+  test("its buffer stays bounded, others are served, and it gets everything once it reads", async () => {
+    const big = (n: number) => `${n} ${"x".repeat(64 * 1024)}`;
+    for (let n = 0; n < 64; n++) store.append([user(big(n)), assistant(big(n))]);
+    await serve(new ScriptedModel(Array.from({ length: 16 }, (_, n) => [assistant(big(128 + 2 * n + 1))])));
+    const streamsOpened: http.ServerResponse[] = [];
+    server!.on("request", (req: http.IncomingMessage, res: http.ServerResponse) => req.url === "/events" && streamsOpened.push(res));
+
+    // A watcher that reads nothing.
+    const stalled = await new Promise<http.IncomingMessage>((resolve) => http.get(`${base}/events`, { headers: auth }, resolve));
+    stalled.pause();
+    for (let n = 0; n < 16; n++) expect((await post(big(128 + 2 * n))).status).toBe(200);
+
+    // Another watcher and the messages above were served all the same.
+    expect(await (await openEvents({ "Last-Event-ID": "158" })).items(2)).toHaveLength(2);
+    // One item and the socket's buffer at most; unbounded, this would be megabytes.
+    expect(streamsOpened[0]!.writableLength).toBeLessThan(2 * 64 * 1024 + streamsOpened[0]!.writableHighWaterMark);
+
+    const ids: number[] = [];
+    let buffer = "";
+    stalled.setEncoding("utf8");
+    await new Promise<void>((resolve) => {
+      stalled.on("data", (chunk: string) => {
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop()!;
+        for (const line of lines) if (line.startsWith("id: ")) ids.push(Number(line.slice(4)));
+        if (ids.length >= 160) resolve();
+      });
+      stalled.resume();
+    });
+    expect(ids).toEqual(Array.from({ length: 160 }, (_, i) => i + 1));
+    stalled.destroy();
+  });
+});
+
 describe("a quiet event stream is kept alive", () => {
   test("an idle stream gets a comment line within 15 seconds", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -306,6 +367,20 @@ describe("a quiet event stream is kept alive", () => {
 });
 
 describe("unknown routes are not found", () => {
+  test("a request target of // gets 404, and the agent keeps serving", async () => {
+    await serve(new ScriptedModel([[assistant("hi")]]));
+    const { port } = server!.address() as AddressInfo;
+    const raw = await new Promise<string>((resolve, reject) => {
+      const socket = connect(port, "127.0.0.1", () => {
+        socket.end(`GET // HTTP/1.1\r\nHost: agent\r\nAuthorization: Bearer ${token}\r\nConnection: close\r\n\r\n`);
+      });
+      let data = "";
+      socket.setEncoding("utf8").on("data", (chunk) => (data += chunk)).on("end", () => resolve(data)).on("error", reject);
+    });
+    expect(raw).toMatch(/^HTTP\/1\.1 404 /);
+    expect(await (await post("hello")).json()).toEqual({ reply: "hi" });
+  });
+
   test("GET /status with the token gets 404", async () => {
     await serve(new ScriptedModel([]));
     const res = await fetch(`${base}/status`, { headers: auth });

@@ -27,6 +27,15 @@
 
   Mark the JEN-8 entry on the one-shot entrypoint superseded. Update the JEN-9 status in `context/plan.md`, and add deeper auth design to its open questions. Verify each file stays within its size budget in `context/README.md`.
 
+## 5. Review fixes
+
+From the [review of PR #6](https://github.com/reveer-ai/jen/pull/6#pullrequestreview-5682865860).
+
+- [x] 5.1 Route on the request target as a string, so `GET //` gets 404 instead of throwing, and contain unexpected request failures inside the handler. Test a raw `//` target followed by a normal message.
+- [x] 5.2 Check the one-turn-at-a-time flag when a message arrives as well as after its body is read. Test a message whose body finishes after the running turn.
+- [x] 5.3 Stop delivery to a stream whose buffer is full and resume on `drain`, reading the store in pages (`after(seq, limit)`), with the keepalive skipped while draining. Test a stalled watcher on a long conversation: bounded buffering, other clients served, every item once it reads.
+- [x] 5.4 Update the design and the `agent-protocol` and `agent-store` deltas for routing, the arrival check and the slow-watcher policy. Verify each new test fails against the reviewed code, then run `openspec validate --strict`, `npm test` and `npm run check`.
+
 ## Workflow follow-up
 
 - Open a pull request titled with JEN-9 and get it reviewed.
