@@ -2,6 +2,10 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-02
+
+- **A task's pull request opens as a draft once its design is written.** Set by the maintainer during [JEN-10](https://linear.app/reveer/issue/JEN-10). It's marked ready for review when implementation is done. *Why:* review comments on the proposal and design are easier inline on a pull request than in chat. See [conventions.md](conventions.md).
+
 ## 2026-11-01
 
 Made in [JEN-2](https://linear.app/reveer/issue/JEN-2), designing and scoping agent delegation. Only what was needed to scope the milestone was decided. The rest is for [JEN-10](https://linear.app/reveer/issue/JEN-10) and [JEN-11](https://linear.app/reveer/issue/JEN-11).
