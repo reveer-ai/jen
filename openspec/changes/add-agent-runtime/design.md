@@ -67,7 +67,10 @@ Each agent has a named volume, `<name>-agent-<id>`, mounted at `/state`, and at 
 
 Docker labels can't change after creation. That fits, because an agent's parent and grant never change.
 
-- **Stop removes the container and keeps the volume.** **Start creates a new container** from the volume's labels, with the runtime's current model settings and the current image. **Delete removes the container and the volume.** An agent is running exactly when its container exists and is running.
+- **An agent is running exactly when its container is running.** Every other container state, whether created but never started, or exited after a crash, an engine restart or an interrupted operation, counts as stopped. A container in one of those states is leftover and is removed whenever it's found.
+- **Stop removes the container and keeps the volume.** Removal is forced, so it covers a running container and a leftover one alike, and stopping an agent with no container succeeds.
+- **Start creates a new container** from the volume's labels, with the runtime's current model settings and the current image. If the agent's container is already running, start changes nothing and succeeds. If a leftover container holds the name, start removes it first, keeping the volume. So a crash can never leave an agent that can't be started again.
+- **Delete removes the container, forced, and then the volume.** Each step succeeds if there's nothing to remove, so a delete that was interrupted can simply be repeated.
 - **Starting fresh each time means nothing goes stale.** A new key, model or image reaches an agent the next time it starts. *Alternative:* `docker stop` and `docker start` on a kept container. That would freeze each agent's environment and image at spawn, and would store the tree in two places.
 - **Why labels, not a database in the runtime.** Docker already has to know which containers and volumes exist. A second record could disagree with it after a crash, and reconciling the two would be the hard part. With labels, there's only one record. *Alternative:* SQLite on a runtime volume, which is two sources of truth.
 
@@ -95,13 +98,13 @@ The runtime listens on port 8080. Every route needs a bearer token. Errors are J
 | `GET /agents` | Lists the caller's descendants. For the owner, that's every agent. |
 | `GET /agents/:id` | One agent. |
 | `POST /agents/:id/stop` | Stops it and everything under it. |
-| `POST /agents/:id/start` | Starts it. Its sub-agents stay stopped. |
+| `POST /agents/:id/start` | Starts it, or does nothing if it's running. Its sub-agents keep whatever state they're in. |
 | `DELETE /agents/:id` | Deletes it and everything under it. `204`. |
 | `POST /agents/:id/messages`, `GET /agents/:id/events` | Relayed to the agent's `/messages` and `/events`, with the agent's `JEN_TOKEN`. `Last-Event-ID` and the body pass through, and the response streams back unchanged. |
 
 An agent is returned as `{"id", "parent", "grant", "state": "running" | "stopped"}`.
 
-- **The caller can act only on its own descendants.** The owner counts as everyone's ancestor, and an agent isn't its own descendant. Any other ID gets `404`, the same as an ID that doesn't exist, so a caller can't probe for agents it can't reach. A refused grant or a bound that's been reached gets `403`. Starting an agent whose parent is stopped, or relaying to a stopped agent, gets `409`.
+- **The caller can act only on its own descendants.** The owner counts as everyone's ancestor, and an agent isn't its own descendant. Any other ID gets `404`, the same as an ID that doesn't exist, so a caller can't probe for agents it can't reach. A refused grant or a bound that's been reached gets `403`. Relaying to a stopped agent gets `409`.
 - **Every request to an agent goes through the runtime.** This means no agent's port is published, and no protocol token ever leaves the runtime. It's also the only design that lets the owner reach a root agent on a remote VM or on Docker Desktop. And it puts the check of who may reach which agent in the one place that already knows the tree. That's where JEN-11's rule, that a child may also reach its parent, will go. *Alternative:* hand each new agent's `JEN_TOKEN` to whoever spawned it, and publish each root agent's port on `127.0.0.1`. That doesn't work for a remote owner, and it spreads protocol tokens through the tree.
 
 ### Grants and bounds
@@ -110,16 +113,35 @@ An agent is returned as `{"id", "parent", "grant", "state": "running" | "stopped
 - **The only capability is `spawn`.** Model access isn't a capability yet. As a yes-or-no switch, it would only produce agents that can't run, because an agent refuses to start without its model settings. It becomes a capability with the model proxy, when "which models" and "how much" can be granted. Until then, every agent gets the owner's model settings.
 - **`JEN_MAX_DEPTH` (default 3) and `JEN_MAX_AGENTS` (default 10)** bound the tree. A root agent is at depth 1. The count covers every agent that hasn't been deleted, running or stopped, because each one is a volume and can be started again. *Alternative:* counting only running agents, which would let stopped agents pile up without limit.
 
+### Stopping is deliberate, and a crash isn't a stop
+
+The 2026-11-01 decision ties a sub-agent's life to its parent's place in the tree, not to the parent's process. So the runtime distinguishes the two ways an agent can stop running:
+
+- **A deliberate stop or delete, through the API, cascades.** Stopping an agent stops everything under it, and deleting one deletes everything under it.
+- **An unexpected exit doesn't.** When an agent's process crashes, it's still in the tree, and its sub-agents keep running. The parent can be started again, and its sub-agents are still its own. How a sub-agent reaches a parent that isn't running belongs to [JEN-11](https://linear.app/reveer/issue/JEN-11), along with messages to a busy or sleeping agent.
+
+So there's no rule that a running agent must have running ancestors, and nothing has to watch for exits to enforce one. An agent can be started whatever its parent's state, because its place in the tree doesn't depend on that. What the runtime does guarantee is that no agent exists without its parent. *Alternative:* cascade on a crash too, by watching Docker's events. That would need a watcher that never misses an event, and it would end a sub-agent's work because its parent crashed, which is the coupling to the parent's process that the decision rules out.
+
 ### Ordering, concurrency and reconciling
 
 - **The runtime runs one tree operation at a time,** through an in-process queue. Relayed requests don't wait in it, so a long turn never holds up a spawn or a stop.
-- **Stop and delete work from the deepest agent upward.** If the runtime dies partway through, every running agent still has running ancestors, and every remaining agent still has its parent. Spawn creates the volume first. If creating or starting the container fails, it deletes the volume again.
-- **On startup, the runtime reconciles before it serves.** It creates its network if it's missing and attaches itself to it, then repairs anything a crash left behind:
-  - A container with no volume is removed.
+- **Stop and delete work from the deepest agent upward.** If the runtime dies partway through, every remaining agent still has its parent, and repeating the call finishes the job.
+- **A spawn that fails undoes itself.** Spawn creates the volume, then the container, then starts it. If any step fails, including when the engine's response is lost and the step may have happened anyway, the runtime deletes the new agent by its name, the same idempotent delete as above: a forced removal of any container, then the volume. If that cleanup fails too, the agent remains as an ordinary agent that the caller can see in its list and delete. The error response includes its ID so the caller knows which one.
+- **On startup, the runtime reconciles before it serves.** It claims its name and creates its network if it's missing, attaching itself to it. Then it repairs what a crash can leave behind:
+  - Every container that isn't running is removed, along with any container that has no volume.
   - An agent whose parent volume is gone is deleted, along with its subtree.
-  - A running agent with a stopped ancestor is stopped.
 
-  This is what guarantees that no agent is ever detached, across restarts.
+  The second rule is what guarantees that no agent is ever detached, across restarts.
+
+### One runtime per name
+
+The queue only orders operations within one process, so two runtimes with the same `JEN_RUNTIME_NAME` on one engine could both act on the same tree and exceed its bounds. The runtime prevents that with a lock the engine provides: container names are unique on an engine, and claiming one is atomic.
+
+- **On startup, the runtime makes sure its own container is named `<name>-runtime`.** It finds its own container through its hostname, which Docker sets to the container's ID. If the container already has that name, there's nothing to do. Otherwise, it renames its container to that name, which the engine refuses if another container already holds it.
+- **If another container holds the name and is running, the runtime exits with an error.** If that container isn't running, it's a dead runtime, so the new one removes it and claims the name. If two runtimes race for a dead one's name, the engine lets only one rename succeed, and the other exits.
+- **The run command uses `--name jen-runtime`,** so the claim is already in place when the container starts, and a second `docker run` with the same name fails before it starts. Restarting the same container keeps its name.
+
+*Alternative:* a lock file or a lock in an external store. The runtime has no state of its own and shouldn't gain any for this, and the engine is the only store every runtime on it already shares.
 
 ### The agents' network
 
