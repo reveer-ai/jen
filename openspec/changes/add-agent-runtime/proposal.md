@@ -28,7 +28,7 @@ The runtime serves one owner. Each account gets its own runtime, so the runtime'
 
 ### Modified Capabilities
 
-- `agent-container`: an agent is started by the runtime rather than by hand. It receives its token, the owner's model settings and the runtime's address from the runtime.
+- `agent-container`: the same image starts either an agent, by default, or the runtime. What an agent's container is given is defined by `agent-runtime`.
 
 ## Impact
 
