@@ -43,6 +43,12 @@
 
   Update the JEN-10 status in `context/plan.md`, and fold the auth open question's runtime part into what was built. Verify each file stays within its size budget in `context/README.md`.
 
+## 6. Implementation review fixes
+
+- [x] 6.1 Check the caller's token again inside every runtime operation, against the tree it acts on: the caller carries its ID and its token's hash, and a token no longer current gets `401`. Unit-test a stale caller across stop and across stop and start for every operation, and a spawn whose body finishes uploading after its caller stopped, or stopped and started. Verify with `npm test` and `npm run check`.
+- [x] 6.2 End the caller's relayed response when the agent's response breaks off. Unit-test an event stream whose agent drops mid-stream, and extend the live check to keep a stream open across the root's crash. Verify with `npm test` and `npm run test:live`.
+- [x] 6.3 Remove a container's anonymous volumes whenever the runtime removes a container, and use `docker rm -fv` for the runtime in the live check and in `context/environment.md`. Assert in the live check that the replaced runtime's `/state` volume is gone. Verify that a live run leaves no volumes behind.
+
 ## Workflow follow-up
 
 - Mark PR #8 ready for review once every task is done and verified.

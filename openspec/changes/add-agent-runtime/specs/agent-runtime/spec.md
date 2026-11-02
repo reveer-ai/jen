@@ -24,6 +24,13 @@ The runtime SHALL serve its API on port 8080, and every request SHALL carry `Aut
 - **WHEN** an agent is stopped and a request presents the token it had while running
 - **THEN** it gets `401`
 
+### Requirement: A token is checked again when the runtime acts
+The runtime SHALL check an agent's token again when it acts on the request, after any wait for the request's body or for other operations. A request whose token is no longer current by then SHALL get `401` and change nothing.
+
+#### Scenario: A caller stopped while its request waits
+- **WHEN** a running agent starts a spawn request, and is stopped, or stopped and started, before the request's body finishes arriving
+- **THEN** the request gets `401` and no agent is created
+
 ### Requirement: Spawning starts a child of the caller
 `POST /agents` with a body `{"grant": {"spawn": <boolean>}}` SHALL create an agent whose parent is the caller, start it, and answer `201` with the agent. An agent the owner spawns is a root agent. An agent SHALL be described as `{"id", "parent", "grant", "state"}`, where `parent` is null for a root agent and `state` is `running` or `stopped`. A body that isn't JSON, or whose grant isn't of that shape, SHALL get `400`.
 
@@ -115,7 +122,7 @@ When an agent's process exits unexpectedly, the runtime's engine SHALL restart i
 - **THEN** the agent comes back on its own with its conversation, and the child keeps running throughout
 
 ### Requirement: Requests to an agent are relayed
-`POST /agents/:id/messages` and `GET /agents/:id/events` SHALL be relayed to that agent's `agent-protocol` `/messages` and `/events`, passing the body and `Last-Event-ID` through and streaming the agent's response back unchanged. The caller SHALL NOT need, or ever receive, the agent's token. A relay to a stopped agent SHALL get `409`.
+`POST /agents/:id/messages` and `GET /agents/:id/events` SHALL be relayed to that agent's `agent-protocol` `/messages` and `/events`, passing the body and `Last-Event-ID` through and streaming the agent's response back unchanged. The caller SHALL NOT need, or ever receive, the agent's token. A relay to a stopped agent SHALL get `409`. If the agent's response breaks off, the caller's response SHALL end too.
 
 #### Scenario: The owner talks to a root agent
 - **WHEN** the owner posts a message to `/agents/:id/messages` for a running root agent
@@ -124,6 +131,10 @@ When an agent's process exits unexpectedly, the runtime's engine SHALL restart i
 #### Scenario: A stopped agent
 - **WHEN** the owner posts a message to a stopped agent
 - **THEN** it gets `409`
+
+#### Scenario: An agent stops while its events stream
+- **WHEN** a caller is reading `/agents/:id/events` and the agent stops or crashes
+- **THEN** the caller's stream ends, so it can reconnect
 
 ### Requirement: The runtime alone decides how an agent runs
 The runtime SHALL start every agent from the agent image with the same fixed settings: its own state volume, the runtime's network, the runtime's model settings, the agent's token and the runtime's address. Nothing a caller sends, other than the validated grant, SHALL reach the agent's container configuration. No agent's port SHALL be published.

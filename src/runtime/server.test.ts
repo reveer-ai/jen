@@ -122,6 +122,28 @@ test("a stopped agent's token gets 401", async () => {
   expect((await fetch(`${base}/agents`, { headers: as(token) })).status).toBe(401);
 });
 
+// A spawn whose body is still uploading when its caller is stopped, or
+// stopped and started, is refused once the body arrives.
+for (const restart of [false, true]) {
+  test(`a spawn uploading while its caller is stopped${restart ? " and started" : ""} gets 401`, async () => {
+    const { body: root } = await spawn({ spawn: true });
+    const identified = vi.spyOn(runtime, "identify");
+    const req = http.request(`${base}/agents`, { method: "POST", headers: as(tokenOf(root.id)) });
+    const answered = new Promise<http.IncomingMessage>((resolve) => req.on("response", resolve));
+    req.write('{"grant":');
+    req.flushHeaders();
+    await vi.waitFor(() => expect(identified).toHaveBeenCalled());
+    expect((await identified.mock.results[0].value)?.id).toBe(root.id);
+    await call(`/agents/${root.id}/stop`, { method: "POST" });
+    if (restart) await call(`/agents/${root.id}/start`, { method: "POST" });
+    req.end('{"spawn":false}}');
+    const res = await answered;
+    res.resume();
+    expect(res.statusCode).toBe(401);
+    expect((await runtime.list(null)).map((a) => a.id)).toEqual([root.id]);
+  });
+}
+
 test("the owner spawns a root agent", async () => {
   const { res, body } = await spawn({ spawn: true });
   expect(res.status).toBe(201);
@@ -253,6 +275,31 @@ test("an event stream opens before the agent has anything to send", async () => 
   const res = await call(`/agents/${root.id}/events`, { signal: abort.signal });
   expect(res.status).toBe(200);
   abort.abort();
+});
+
+test("an event stream ends when the agent's connection drops mid-stream", async () => {
+  const { body: root } = await spawn({ spawn: false });
+  // An agent that sends an event, then goes away, as a stopped or crashed one does.
+  const agent = http.createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write('id: 1\ndata: {"type":"message","role":"user","text":"hi"}\n\n', () => setTimeout(() => res.socket?.destroy(), 20));
+  });
+  agents.set(`jen-agent-${root.id}`, await listen(agent));
+  const res = await call(`/agents/${root.id}/events`);
+  expect(res.status).toBe(200);
+  const reader = res.body!.getReader();
+  // The first event arrives, then the stream ends or fails rather than hanging.
+  expect((await reader.read()).done).toBe(false);
+  const ended = await Promise.race([
+    (async () => {
+      try {
+        while (!(await reader.read()).done);
+      } catch {}
+      return true;
+    })(),
+    new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
+  ]);
+  expect(ended).toBe(true);
 });
 
 test("a relay to a stopped agent gets 409", async () => {

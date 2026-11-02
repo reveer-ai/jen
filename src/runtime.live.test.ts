@@ -86,10 +86,14 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
       { type: "message", role: "assistant", text: told.body.reply },
     ]);
 
-    // The root's process exits unexpectedly. The engine brings it back, with
-    // its conversation, and the child keeps running throughout.
+    // The root's process exits unexpectedly. A stream open on it ends, the
+    // engine brings it back with its conversation, and the child keeps
+    // running throughout.
     const childStarted = docker(["inspect", "-f", "{{.State.StartedAt}}", container(childId)]).trim();
+    const watcher = await fetch(`${base}/agents/${rootId}/events`, { headers: owner, signal: AbortSignal.timeout(30_000) });
+    const watched = watcher.body!.pipeTo(new WritableStream()).then(() => "ended", (error) => (error.name === "TimeoutError" ? "hung" : "ended"));
     docker(["exec", container(rootId), "node", "-e", "process.kill(1, 'SIGTERM')"]);
+    expect(await watched).toBe("ended");
     await until(() => docker(["inspect", "-f", "{{.RestartCount}} {{.State.Status}}", container(rootId)]).trim() === "1 running", "the root to restart");
     expect(running(childId)).toBe(true);
     expect(docker(["inspect", "-f", "{{.State.StartedAt}}", container(childId)]).trim()).toBe(childStarted);
@@ -112,10 +116,15 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     expect((await call(base, `/agents/${childId}`)).body.state).toBe("stopped");
 
     // A replaced runtime reads back the same tree, and relays to it.
-    const before = (await call(base, "/agents")).body;
-    docker(["rm", "-f", `${name}-runtime`]);
+    // Docker lists volumes in no fixed order, so compare the trees by ID.
+    const tree = async () => ((await call(base, "/agents")).body as { id: string }[]).sort((a, b) => a.id.localeCompare(b.id));
+    const before = await tree();
+    const runtimeVolume = docker(["inspect", "-f", '{{range .Mounts}}{{if eq .Destination "/state"}}{{.Name}}{{end}}{{end}}', `${name}-runtime`]).trim();
+    expect(runtimeVolume).not.toBe("");
+    docker(["rm", "-fv", `${name}-runtime`]);
+    expect(exists("volume", runtimeVolume)).toBe(false);
     base = await startRuntime();
-    expect((await call(base, "/agents")).body).toEqual(before);
+    expect(await tree()).toEqual(before);
     expect(await events(base, ownerToken, rootId, 4)).toHaveLength(4);
 
     // A second runtime with the same name exits, and the first keeps serving.
@@ -132,7 +141,7 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     // Everything the check created, whatever state it was left in.
     const quiet = (args: string[]) => spawnSync("docker", args, { encoding: "utf8", timeout: 30_000 });
     const agents = quiet(["ps", "-aq", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
-    quiet(["rm", "-f", `${name}-runtime`, `${name}-second`, ...agents]);
+    quiet(["rm", "-fv", `${name}-runtime`, `${name}-second`, ...agents]);
     const volumes = quiet(["volume", "ls", "-q", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
     if (volumes.length > 0) quiet(["volume", "rm", ...volumes]);
     quiet(["network", "rm", name]);

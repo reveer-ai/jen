@@ -88,6 +88,7 @@ There are two credentials:
 - **The token is 32 random bytes, generated each time the agent starts.** The container's labels hold its SHA-256, `jen.credential`. A caller is identified by hashing the bearer token it presents and finding the running container with that hash, or by comparing it with the owner token in constant time. A stopped agent has no valid token.
 - **The runtime reads the token back from the container's configuration when it relays a request.** It never stores the token anywhere else.
 - **A credential resolves to a principal: the owner or an agent ID.** Every check is about that principal's place in the tree. No token means anything by itself.
+- **The credential is checked again when the runtime acts.** A request can wait for its body or behind other tree operations, and the agent can be stopped or restarted meanwhile. So the caller carries its token's hash along with its ID, and every operation checks that hash against the tree it reads before acting. Checking only that the agent is running isn't enough, since a stop and start keeps the ID and changes the token.
 
 ### The API and the relay
 
@@ -167,7 +168,7 @@ Its restart policy is `on-failure` with at most 3 retries. Nothing a caller send
 - [Labels can't change, so a grant can't be widened or narrowed after spawn] → Nothing needs that. A different grant means a new agent.
 - [If the runtime is down, no one can reach any agent] → Agents keep running and keep their state. Restarting the runtime is safe at any time, because it reconciles from Docker.
 - [An agent that crashes on every start] → The retry cap stops it looping. It then shows as stopped, and starting it again gives it another 3 retries.
-- [A relayed request reaches an agent while it's restarting] → The connection fails and the caller gets an error. It can retry, since the agent is reported as running.
+- [A relayed request reaches an agent while it's restarting] → The connection fails and the caller gets an error. It can retry, since the agent is reported as running. A response the agent breaks off mid-stream ends the caller's response too, so a watcher of `/events` sees the stream end and can reconnect with `Last-Event-ID`.
 - [The socket path differs by setup] → The run command mounts the host's `/var/run/docker.sock`, which Docker Desktop provides by default. The live check uses the same path.
 - [Changing from `ENTRYPOINT ["node", "src/main.ts"]` to `["node"]`] → A command line that passed arguments to the agent would break. The agent takes none, and there are no adopters.
 

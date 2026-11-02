@@ -3,14 +3,15 @@
 // keeps nothing of its own, so it can be restarted at any moment and read the
 // tree back.
 //
-// A caller is the owner (null) or an agent's ID. The owner is every agent's
-// ancestor and has every capability; a root agent's parent is the owner.
+// A caller is the owner (null) or an agent, named by its ID and the hash of
+// the token it authenticated with. The owner is every agent's ancestor and has
+// every capability; a root agent's parent is the owner.
 
 import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
 import { DockerError, type Container, type Docker } from "./docker.ts";
 
-export type Caller = string | null;
+export type Caller = { id: string; credential: string } | null;
 
 export interface Grant {
   spawn: boolean;
@@ -129,11 +130,11 @@ export class Runtime {
   }
 
   // The running agent whose current token is token, or undefined.
-  async identify(token: string): Promise<string | undefined> {
-    const hash = sha256(token);
+  async identify(token: string): Promise<Caller | undefined> {
+    const credential = sha256(token);
     const { nodes } = await this.#read();
     for (const node of nodes.values()) {
-      if (node.container && alive(node.container.state) && node.container.labels["jen.credential"] === hash) return node.id;
+      if (current(node, credential)) return { id: node.id, credential };
     }
     return undefined;
   }
@@ -141,11 +142,11 @@ export class Runtime {
   spawn(caller: Caller, grant: Grant): Promise<Agent> {
     return this.#serial(async () => {
       const { nodes } = await this.#read();
+      const parentId = authorize(nodes, caller);
       let parentGrant = OWNER_GRANT;
       let depth = 1;
-      if (caller !== null) {
-        const parent = nodes.get(caller);
-        if (!parent) throw new RuntimeError(403, "the caller is no longer in the tree");
+      if (parentId !== null) {
+        const parent = nodes.get(parentId)!;
         parentGrant = parent.grant;
         depth = depthOf(nodes, parent) + 1;
       }
@@ -156,7 +157,7 @@ export class Runtime {
       if (depth > this.#o.maxDepth) throw new RuntimeError(403, `the agent would be deeper than ${this.#o.maxDepth}`);
       if (nodes.size >= this.#o.maxAgents) throw new RuntimeError(403, `the runtime already holds ${this.#o.maxAgents} agents`);
 
-      const node: Node = { id: randomBytes(6).toString("hex"), parent: caller, grant: { spawn: grant.spawn } };
+      const node: Node = { id: randomBytes(6).toString("hex"), parent: parentId, grant: { spawn: grant.spawn } };
       try {
         await this.#o.docker.createVolume(this.#resource(node.id), {
           "jen.runtime": this.#o.name,
@@ -182,7 +183,8 @@ export class Runtime {
   // The caller's descendants.
   async list(caller: Caller): Promise<Agent[]> {
     const { nodes } = await this.#read();
-    return [...nodes.values()].filter((node) => reaches(nodes, caller, node.id)).map((node) => describe(node));
+    const by = authorize(nodes, caller);
+    return [...nodes.values()].filter((node) => reaches(nodes, by, node.id)).map((node) => describe(node));
   }
 
   async get(caller: Caller, id: string): Promise<Agent> {
@@ -328,7 +330,7 @@ function describe(node: Node, state?: Agent["state"]): Agent {
 }
 
 // Whether id is a strict descendant of caller.
-function reaches(nodes: Map<string, Node>, caller: Caller, id: string): boolean {
+function reaches(nodes: Map<string, Node>, caller: string | null, id: string): boolean {
   let parent = nodes.get(id)?.parent;
   if (parent === undefined) return false;
   if (caller === null) return true;
@@ -341,10 +343,26 @@ function reaches(nodes: Map<string, Node>, caller: Caller, id: string): boolean 
   return false;
 }
 
+// The caller's ID, if its token is still current in this read of the tree: an
+// agent stopped or restarted since it authenticated has no authority left.
+// Every operation checks this against the tree it acts on, after any wait in
+// the queue or for a request body.
+function authorize(nodes: Map<string, Node>, caller: Caller): string | null {
+  if (caller === null) return null;
+  const node = nodes.get(caller.id);
+  if (!node || !current(node, caller.credential)) throw new RuntimeError(401, "the caller's token is no longer current");
+  return node.id;
+}
+
+// Whether the node is running with the token whose hash is credential.
+function current(node: Node, credential: string): boolean {
+  return !!node.container && alive(node.container.state) && node.container.labels["jen.credential"] === credential;
+}
+
 // The node, if the caller may act on it. Anything else is not found, so a
 // caller can't probe for agents outside its subtree.
 function reach(nodes: Map<string, Node>, caller: Caller, id: string): Node {
-  if (!reaches(nodes, caller, id)) throw new RuntimeError(404, `no agent ${id}`);
+  if (!reaches(nodes, authorize(nodes, caller), id)) throw new RuntimeError(404, `no agent ${id}`);
   return nodes.get(id)!;
 }
 

@@ -1,11 +1,13 @@
 // The runtime's API over HTTP. Every request carries a bearer token: the
 // owner's, or the current token of a running agent. The caller is whoever the
 // token belongs to, and every route that names an agent acts only on the
-// caller's descendants. Requests to an agent's protocol are relayed to it
+// caller's descendants. The runtime checks the token again when it acts, so
+// one that stops being current while its request waits is refused then. Requests to an agent's protocol are relayed to it
 // with its own token, which never leaves the runtime.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
+import { pipeline } from "node:stream";
 import { RuntimeError, type Caller, type Grant, type Runtime } from "./runtime.ts";
 
 export interface RuntimeServerOptions {
@@ -49,7 +51,9 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
       res.writeHead(answer.statusCode ?? 502, Object.fromEntries(passed));
       // An event stream may stay empty for a while, so send the headers now.
       res.flushHeaders();
-      answer.pipe(res);
+      // An agent that stops or crashes mid-response cuts the caller's
+      // response off too, so its stream ends and it can reconnect.
+      pipeline(answer, res, () => {});
     });
     upstream.on("error", (error) => {
       if (res.headersSent) return void res.destroy();
@@ -63,10 +67,7 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse) {
     const caller = await authenticate(req.headers.authorization);
-    if (caller === undefined) {
-      res.setHeader("WWW-Authenticate", "Bearer");
-      return json(res, 401, { error: "a valid bearer token is required" });
-    }
+    if (caller === undefined) throw new RuntimeError(401, "a valid bearer token is required");
     // The path is the request target up to its query. Parsing it as a URL
     // would read a target such as "//" as a host, and throw.
     const path = (req.url ?? "/").split("?")[0];
@@ -97,6 +98,7 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     route(req, res).catch((error) => {
       if (res.headersSent) return void res.destroy();
       if (error instanceof RuntimeError) {
+        if (error.status === 401) res.setHeader("WWW-Authenticate", "Bearer");
         return json(res, error.status, error.agent === undefined ? { error: error.message } : { error: error.message, agent: error.agent });
       }
       json(res, 500, { error: error instanceof Error ? error.message : String(error) });
