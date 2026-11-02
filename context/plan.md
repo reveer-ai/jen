@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-10-28.
+Last updated 2026-11-01.
 
 ## Current project: Agent harness & UI engine
 
@@ -17,6 +17,8 @@ This project builds the first working jen, end to end. Agents run in containers,
 
 Cycle 5 (Nov 23 – 29) is slack.
 
+**After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped.
+
 Each opening issue is done when its decisions are written down and every remaining issue in its milestone has been created and scoped. See "Planning" in [conventions.md](conventions.md).
 
 ## Status
@@ -26,11 +28,12 @@ Each opening issue is done when its decisions are written down and every remaini
 - 2026-10-26: [JEN-7](https://linear.app/reveer/issue/JEN-7) built the TypeScript project, the model port, the scripted model, the OpenAI Responses adapter and the agent loop, through the OpenSpec change `add-agent-loop-and-model-port` (archived; its specs are in `openspec/specs/`). The loop passes its live check against `openai/gpt-6-luna` through OpenRouter. JEN-7 is done, which unblocks JEN-8.
 - 2026-10-27: [JEN-8](https://linear.app/reveer/issue/JEN-8) packaged the agent as an OCI image, with its conversation in SQLite on a `/state` volume and a one-message-per-run entrypoint, through the OpenSpec change `run-agent-in-container` (archived 2026-10-28; its specs are in `openspec/specs/`). The persistence check (two messages in two containers on one volume) passes against `openai/gpt-6-luna` through OpenRouter. JEN-8 is done, which unblocks [JEN-9](https://linear.app/reveer/issue/JEN-9).
 - 2026-10-28: [JEN-9](https://linear.app/reveer/issue/JEN-9) replaced the one-shot entrypoint with a long-running server that speaks jen's protocol over HTTP and SSE on port 8080, guarded by a bearer token, through the OpenSpec change `serve-agent-over-http` (archived 2026-10-28; its specs are in `openspec/specs/`). The container check (a message to one container, recalled by a new container on the same volume, with the event stream read back) passes against `openai/gpt-6-luna` through OpenRouter. The [re-review on PR #6](https://github.com/reveer-ai/jen/pull/6#pullrequestreview-5683773737) verified all three original findings fixed at `599bc3f`, with no additional actionable issues. OpenSpec validation, typecheck, all 60 unit tests and CI pass. JEN-9 is done, which completes the Agent container milestone and unblocks [JEN-2](https://linear.app/reveer/issue/JEN-2) and [JEN-3](https://linear.app/reveer/issue/JEN-3).
+- 2026-11-01: [JEN-2](https://linear.app/reveer/issue/JEN-2) recorded how delegation is shaped (see [decisions.md](decisions.md)) and scoped the Agent delegation milestone at 6 points in cycle 2: JEN-2 (1), [JEN-10](https://linear.app/reveer/issue/JEN-10) Build the agent runtime (3), and [JEN-11](https://linear.app/reveer/issue/JEN-11) Build delegation into the agent (2). JEN-11 is blocked by JEN-10.
 
 ## Open questions, held for their tasks
 
 These are recorded so they aren't lost. Don't settle them ahead of the task that owns them.
 
 - **JEN-3:** where generated UI renders. This needs to be explored deliberately in the task. Keep in view that an agent and whatever renders it may end up on different machines, so JEN-4 doesn't force a redesign.
-- **Auth, after JEN-9's single shared token:** scoped or rotating tokens, more than one user, how agents authenticate to each other, and how a browser's `EventSource` gets the token. It belongs with hosting (JEN-4) and agents calling agents (JEN-2).
+- **Auth, after JEN-9's single shared token:** scoped or rotating tokens, more than one user, how agents authenticate to each other, and how a browser's `EventSource` gets the token. It belongs with hosting (JEN-4) and the agent runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)).
 - **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface).
