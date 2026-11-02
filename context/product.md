@@ -6,6 +6,8 @@ jen is a harness for AI agents. A jen agent runs in its own container. It can de
 
 **The agents are the UI.** jen isn't a UI, website or app built to serve agents. Each agent presents itself to the user through UI it generates. This is jen's core concept, and it should shape design decisions.
 
+**Logic lives in the weights.** As much of jen's behavior as possible comes from the model, not from code: when to delegate, what to ask, how agents work together. Code supplies mechanism, and decides behavior only where security, reliability or performance demand it. The architecture shouldn't constrain how an agent naturally behaves. For example, a sub-agent can ask its parent clarifying questions or launch sub-agents of its own, the same as any agent.
+
 ## Company
 
 jen is built by **reveer**. The GitHub org is `reveer-ai` and the Linear workspace is `reveer`.
