@@ -89,6 +89,17 @@ Every route that names an agent SHALL act only on a descendant of the caller. Th
 - **WHEN** an agent's process keeps exiting until its restarts run out, and the owner then starts it
 - **THEN** it starts and is `running`
 
+### Requirement: An agent is reachable when spawn or start answers
+Spawning and starting SHALL answer only once the agent accepts connections. If it doesn't accept connections within 30 seconds, the call SHALL fail: a spawn removes what it created, as any failed spawn does, and a start removes the container and leaves the agent stopped with its state.
+
+#### Scenario: Relayed to straight after spawning
+- **WHEN** the owner spawns an agent and, as soon as it gets `201`, posts a message to it
+- **THEN** the message reaches the agent
+
+#### Scenario: An agent that never comes up
+- **WHEN** a stopped agent is started and never accepts connections
+- **THEN** the start fails after 30 seconds, and the agent is stopped with its state
+
 ### Requirement: Deleting removes everything under an agent
 `DELETE /agents/:id` SHALL stop and permanently remove the agent and every one of its descendants, including their stored conversations, and answer `204`. Repeating a delete that was interrupted SHALL finish it.
 
