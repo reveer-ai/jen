@@ -5,8 +5,8 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
-import { respond } from "./agent/respond.ts";
-import type { Store } from "./agent/store.ts";
+import { respond } from "./respond.ts";
+import type { Store } from "./store.ts";
 import type { Model } from "./model/port.ts";
 
 const KEEPALIVE_MS = 15_000;

@@ -17,9 +17,9 @@ const model = process.env.JEN_LIVE_MODEL;
 const baseURL = process.env.JEN_LIVE_BASE_URL;
 
 test.skipIf(!apiKey || !model)("a new container on the same volume recalls the first turn", { timeout: 600_000 }, async () => {
-  docker(["build", "--target", "agent", "-t", "jen-agent", join(import.meta.dirname, "..")], { timeout: 240_000 });
-  // The agent image holds none of the runtime.
-  expect(docker(["run", "--rm", "--entrypoint", "ls", "jen-agent", "src"]).split("\n")).not.toContain("runtime");
+  docker(["build", "--target", "agent", "-t", "jen-agent", join(import.meta.dirname, "../..")], { timeout: 240_000 });
+  // The agent image holds the agent and none of the runtime.
+  expect(docker(["run", "--rm", "--entrypoint", "ls", "jen-agent", "src"]).trim().split("\n")).toEqual(["agent"]);
   const volume = `jen-live-${randomBytes(4).toString("hex")}`;
   const token = randomBytes(32).toString("hex");
   const containers: string[] = [];

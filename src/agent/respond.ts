@@ -1,4 +1,4 @@
-import type { Model } from "../model/port.ts";
+import type { Model } from "./model/port.ts";
 import { runTurn } from "./loop.ts";
 import type { Store } from "./store.ts";
 

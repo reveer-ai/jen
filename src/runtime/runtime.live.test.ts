@@ -11,7 +11,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import type { Item } from "./model/port.ts";
+import type { Item } from "../agent/model/port.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -19,7 +19,7 @@ const baseURL = process.env.JEN_LIVE_BASE_URL;
 
 test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", { timeout: 600_000 }, async () => {
   for (const target of ["agent", "runtime"]) {
-    docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "..")], { timeout: 240_000 });
+    docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "../..")], { timeout: 240_000 });
   }
   const name = `jen-live-${randomBytes(4).toString("hex")}`;
   const ownerToken = randomBytes(32).toString("hex");

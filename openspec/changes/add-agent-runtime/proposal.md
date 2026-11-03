@@ -33,6 +33,6 @@ None. The agent's image is the one `agent-container` defines. What an agent's co
 ## Impact
 
 - A new runtime module under `src/runtime/` with its own entrypoint and its own image, `jen-runtime`. It talks to the Docker Engine API over `node:http`, with no new dependency.
-- The agent's code is unchanged. The `Dockerfile` gains a second target, and the agent's image, built from the other, is named `jen-agent` and leaves out `src/runtime/`.
+- The agent's code moves, unchanged, into `src/agent/`, so `src/` holds one directory per image. The `Dockerfile` gains a second target, and the agent's image, built from the other, is named `jen-agent` and holds only `src/agent/`.
 - A live check with Docker running: the owner starts an agent through the runtime, that agent's credential starts a sub-agent, stopping the root removes both containers, a grant wider than its parent's is refused, and a restarted runtime still knows the tree.
 - `context/environment.md`: run instructions move from `docker run` to starting the runtime and spawning through it.

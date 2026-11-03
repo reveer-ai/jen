@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { Item, Json } from "../model/port.ts";
-import { ScriptedModel } from "../model/scripted.ts";
+import type { Item, Json } from "./model/port.ts";
+import { ScriptedModel } from "./model/scripted.ts";
 import { runTurn, type Tool } from "./loop.ts";
 
 const user = (text: string): Item => ({ type: "message", role: "user", text });

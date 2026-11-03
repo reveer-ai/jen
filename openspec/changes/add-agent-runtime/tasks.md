@@ -58,6 +58,10 @@
 - [x] 8.1 Give the runtime its own image per the design. Split the `Dockerfile` into the `agent` target (`jen-agent`, `src/` without `src/runtime/`, `ENTRYPOINT ["node", "src/main.ts"]`) and the `runtime` target (`jen-runtime`, `package.json` and `src/runtime/` only, no dependencies, no volume, no user, `ENTRYPOINT ["node", "src/runtime/main.ts"]`), and keep `fake-docker.ts` out of the build context. Rename `JEN_IMAGE` to `JEN_AGENT_IMAGE`, defaulting to `jen-agent`. Stop removing anonymous volumes with containers, since no container the runtime removes has one any more. Make both live checks build their image by target, start the runtime from `jen-runtime` with no command or user, drop the assertion about the runtime's `/state` volume, and check that the agent image contains nothing from `src/runtime/`. Verify with `npm run check`, `npm test`, `npm run test:live` and strict validation, and by hand: a missing `JEN_OWNER_TOKEN` exits, and `docker run jen-agent` still serves an agent.
 - [x] 8.2 Update the record for the split: the run instructions and optional settings in `context/environment.md`, the runtime's decision in `context/decisions.md`, and JEN-10's status in `context/plan.md`. Verify the documented commands run as written and each file stays within its size budget.
 
+## 9. One directory per image
+
+- [x] 9.1 Move the agent's code into `src/agent/` per the design: `main.ts`, `server.ts` and its tests, `model/`, and the container check join the loop, `respond.ts` and the store there, and the runtime check moves to `src/runtime/runtime.live.test.ts`. Build the agent image from `src/agent/` only, with `ENTRYPOINT ["node", "src/agent/main.ts"]`, and make the container check assert that the image's `src/` holds only `agent`. Update the code layout and the image description in `context/environment.md` and the images decision in `context/decisions.md`. Verify with `npm run check`, `npm test` and `npm run test:live`.
+
 ## Workflow follow-up
 
 - Mark PR #8 ready for review once every task is done and verified.

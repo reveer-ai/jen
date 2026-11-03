@@ -4,7 +4,7 @@
 
 import { randomBytes } from "node:crypto";
 import { expect, test } from "vitest";
-import { runTurn, type Tool } from "../agent/loop.ts";
+import { runTurn, type Tool } from "../loop.ts";
 import { OpenAIResponsesModel } from "./openai-responses.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;

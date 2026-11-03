@@ -25,14 +25,23 @@ Today an agent is a container that someone starts by hand with `docker run`. It 
 ### Layout
 
 ```
-src/runtime/main.ts         configuration, reconcile, listen on 8080
-src/runtime/server.ts       the runtime's HTTP API and the relay
-src/runtime/runtime.ts      the tree: spawn, stop, start, delete, list, reconcile, grants, bounds
-src/runtime/docker.ts       a minimal Docker Engine API client over the socket
-src/runtime/*.test.ts       unit tests, against a fake engine
-src/runtime.live.test.ts    the check, against real Docker
-Dockerfile                  two targets: agent (src/ without src/runtime/) and runtime (src/runtime/ only)
+src/agent/                     the agent: everything that runs in an agent's container
+src/agent/main.ts              its entrypoint
+src/agent/server.ts            agent-protocol over HTTP
+src/agent/loop.ts, respond.ts  a turn, and running and saving one
+src/agent/store.ts             the conversation in SQLite
+src/agent/model/               the model port and its adapters
+src/runtime/                   the runtime: everything that runs in the runtime's container
+src/runtime/main.ts            configuration, reconcile, listen on 8080
+src/runtime/server.ts          the runtime's HTTP API and the relay
+src/runtime/runtime.ts         the tree: spawn, stop, start, delete, list, reconcile, grants, bounds
+src/runtime/docker.ts          a minimal Docker Engine API client over the socket
+src/runtime/*.test.ts          unit tests, against a fake engine
+src/runtime/*.live.test.ts     the check, against real Docker
+Dockerfile                     two targets: agent (src/agent/ only) and runtime (src/runtime/ only)
 ```
+
+`src/` has one directory per image, so the layout shows the split. The agent's code moves from JEN-9's layout, where it sat at the top of `src/` with the loop in `src/agent/`, into `src/agent/` whole. An agent is its protocol server, its turn loop, its store and its model adapters together, not the loop alone.
 
 ### The runtime runs as a container beside its engine
 
@@ -53,14 +62,14 @@ docker run -d --name jen-runtime \
 
 One `Dockerfile` builds two targets, both from `node:26-slim`:
 
-- **`agent`, tagged `jen-agent`.** The image `agent-container` defines: everything under `src/` except `src/runtime/` (`COPY --exclude=runtime`), the production dependencies, uid 1000, the `/state` volume and `ENTRYPOINT ["node", "src/main.ts"]`.
+- **`agent`, tagged `jen-agent`.** The image `agent-container` defines: only `src/agent/`, the production dependencies, uid 1000, the `/state` volume and `ENTRYPOINT ["node", "src/agent/main.ts"]`.
 - **`runtime`, tagged `jen-runtime`.** Only `src/runtime/`, without its test fixture `fake-docker.ts`, and `package.json`, which makes the code an ES module. No dependencies are installed, because the runtime uses only Node's built-ins. It declares no volume, because the runtime keeps no state. `ENTRYPOINT ["node", "src/runtime/main.ts"]`.
 
 The runtime starts agents from `JEN_AGENT_IMAGE` (default `jen-agent`), so it never assumes anything about its own image.
 
 - **Why two images.** The two share no code. The runtime imports only Node's built-ins and its own files, and nothing in the agent imports the runtime. They'll also diverge: an agent's image grows with the tools and software that make it that agent, while the runtime, the one container with root on its host, should carry as little as possible. Each image holds only what runs in it, so an agent can't read the runtime's code from its own filesystem, and the runtime carries no model SDK, no agent tools and no volume. *Alternative:* one image that starts either, chosen by its command. It saves one build, at the cost of putting each side's code and dependencies in the other's container, and of giving every runtime container the agent's `/state` volume, which it never uses and which would need removing with it.
 - **Why one `Dockerfile` with two targets.** Both images build from one checkout on one base. *Alternative:* two Dockerfiles, which keep their base and conventions in step by hand.
-- **Why `--exclude`, not a move.** The agent's code is everything in `src/` except the runtime. *Alternative:* moving the agent's code into one directory of its own, which reshuffles JEN-9's layout to save one flag.
+- **Why a directory per image.** Each image copies one directory, so what's in an image is what's in its directory, and the tree reads the way the system runs. *Alternative:* keeping JEN-9's layout and building the agent from `src/` with `COPY --exclude=runtime`. That saves a move, but leaves the agent's entrypoint and server beside the runtime's directory and the loop alone in `src/agent/`, so the layout hides the split.
 
 ### A minimal Docker client, no dependency
 
@@ -164,7 +173,7 @@ The runtime creates a bridge network named `<name>`, attaches its own container 
 
 ### What an agent's container is given
 
-When an agent starts, the runtime creates its container with fixed settings: the image `JEN_AGENT_IMAGE` (default `jen-agent`) with its own entrypoint, the agent's volume at `/state`, the network, the labels above, and this environment:
+When an agent starts, the runtime creates its container with fixed settings: the image `JEN_AGENT_IMAGE` (default `jen-agent`) with its own entrypoint, the agent's volume at `/state`, the network, the labels `jen.runtime`, `jen.agent` and `jen.credential`, and this environment:
 
 - `JEN_MODEL`, `JEN_API_KEY` and `JEN_BASE_URL`, copied from the runtime's own environment
 - `JEN_TOKEN`
