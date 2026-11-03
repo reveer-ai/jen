@@ -65,9 +65,8 @@ export interface Docker {
   // Undefined when the container doesn't exist.
   inspectContainer(nameOrId: string): Promise<ContainerDetails | undefined>;
   renameContainer(nameOrId: string, name: string): Promise<void>;
-  // Forced, so it kills a running container. Removes its anonymous volumes,
-  // such as the image's /state on a runtime container, and keeps named ones,
-  // such as an agent's state. Succeeds when the container doesn't exist.
+  // Forced, so it kills a running container. Keeps its volumes, such as an
+  // agent's state. Succeeds when the container doesn't exist.
   removeContainer(nameOrId: string): Promise<void>;
 
   createNetwork(name: string, labels: Record<string, string>): Promise<void>;
@@ -168,7 +167,7 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
       await call("POST", `/containers/${id(nameOrId)}/rename?name=${id(name)}`);
     },
     async removeContainer(nameOrId) {
-      await absentOk(call("DELETE", `/containers/${id(nameOrId)}?force=true&v=true`));
+      await absentOk(call("DELETE", `/containers/${id(nameOrId)}?force=true`));
     },
 
     async createNetwork(name, labels) {

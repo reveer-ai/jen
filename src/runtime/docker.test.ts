@@ -96,7 +96,7 @@ test("starts, renames and force-removes a container", async () => {
   expect(seen.map(({ method, url }) => `${method} ${url}`)).toEqual([
     "POST /v1.47/containers/c1/start",
     "POST /v1.47/containers/c1/rename?name=jen-runtime",
-    "DELETE /v1.47/containers/c1?force=true&v=true",
+    "DELETE /v1.47/containers/c1?force=true",
   ]);
 });
 

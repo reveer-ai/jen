@@ -23,11 +23,11 @@ Commands:
 - `npm run test:live` runs only the live checks. Each skips unless `JEN_LIVE_API_KEY` and `JEN_LIVE_MODEL` are set, either in the environment or in a git-ignored `.env` at the repo root, which only `test:live` loads. Add `JEN_LIVE_BASE_URL=https://openrouter.ai/api/v1` to go through OpenRouter, with a model ID such as `openai/<model>`.
   The container check (`src/container.live.test.ts`) also needs Docker running. With credentials set and no Docker, it fails rather than skips.
   The runtime check (`src/runtime.live.test.ts`) needs Docker the same way, and starts its own runtime under a unique `JEN_RUNTIME_NAME`.
-- `docker build -t jen .` builds the one image. Run with no command, it's an agent. Run with `src/runtime/main.ts`, it's the runtime, and jen runs by starting the runtime and spawning agents through it. The runtime needs the engine's socket, which is why it runs as root, and the owner's token, `JEN_OWNER_TOKEN`. It passes its `JEN_MODEL`, `JEN_API_KEY` and optional `JEN_BASE_URL` to every agent. Pass them by name so they stay off the command line, and publish the port on `127.0.0.1` to keep the runtime local:
+- One `Dockerfile` builds two images: `docker build --target agent -t jen-agent .` and `docker build --target runtime -t jen-runtime .`. The agent image holds `src/` without `src/runtime/`, and the runtime image holds only `src/runtime/`, with no dependencies and no volume. jen runs by starting the runtime and spawning agents through it, from `jen-agent`. The runtime needs the engine's socket, which is why its image runs as root, and the owner's token, `JEN_OWNER_TOKEN`. It passes its `JEN_MODEL`, `JEN_API_KEY` and optional `JEN_BASE_URL` to every agent. Pass them by name so they stay off the command line, and publish the port on `127.0.0.1` to keep the runtime local:
 
   ```sh
   export JEN_OWNER_TOKEN=$(openssl rand -hex 32)
-  docker run -d --name jen-runtime --user root -v /var/run/docker.sock:/var/run/docker.sock -p 127.0.0.1:8080:8080 -e JEN_OWNER_TOKEN -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen src/runtime/main.ts
+  docker run -d --name jen-runtime -v /var/run/docker.sock:/var/run/docker.sock -p 127.0.0.1:8080:8080 -e JEN_OWNER_TOKEN -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen-runtime
   curl -H "Authorization: Bearer $JEN_OWNER_TOKEN" -d '{"grant":{"spawn":true}}' localhost:8080/agents
   export AGENT=<the id it returned>
   curl -H "Authorization: Bearer $JEN_OWNER_TOKEN" -d '{"text":"Remember the word heron."}' localhost:8080/agents/$AGENT/messages
@@ -38,7 +38,7 @@ Commands:
 
   `POST /agents` answers `201` with `{"id", "parent", "grant", "state"}` once the agent accepts connections. `GET /agents` lists every agent, and `POST /agents/<id>/start` starts a stopped one from its stored conversation. `/messages` and `/events` are relayed to the agent's protocol unchanged: `POST` answers `{"reply": "…"}` once the turn is saved, and `/events` streams every saved item as Server-Sent Events, resuming after a `Last-Event-ID` header. The full API is in `openspec/specs/agent-runtime/spec.md`.
 
-  Stopping an agent removes its container and keeps its volume, `jen-agent-<id>`. Deleting it removes both, and both act on everything under it. `docker rm -fv jen-runtime` stops only the runtime (`-v` removes the anonymous `/state` volume the image gives every container, which the runtime doesn't use): agents keep running, and a runtime started again with the same command reads the tree back from Docker. To remove everything, delete each agent, then the runtime and its network with `docker network rm jen`. Optional settings: `JEN_RUNTIME_NAME` (default `jen`, which prefixes the runtime's container, network and agents), `JEN_IMAGE` (default `jen`), `JEN_MAX_DEPTH` (default 3) and `JEN_MAX_AGENTS` (default 10).
+  Stopping an agent removes its container and keeps its volume, `jen-agent-<id>`. Deleting it removes both, and both act on everything under it. `docker rm -f jen-runtime` stops only the runtime: agents keep running, and a runtime started again with the same command reads the tree back from Docker. To remove everything, delete each agent, then the runtime and its network with `docker network rm jen`. Optional settings: `JEN_RUNTIME_NAME` (default `jen`, which prefixes the runtime's container, network and agents), `JEN_AGENT_IMAGE` (default `jen-agent`), `JEN_MAX_DEPTH` (default 3) and `JEN_MAX_AGENTS` (default 10).
 
 ## Tool quirks
 

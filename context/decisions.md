@@ -2,11 +2,17 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-03
+
+Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), before it merged:
+
+- **The runtime and the agent have separate images, built from one `Dockerfile`.** The `agent` target, `jen-agent`, holds `src/` without `src/runtime/`. The `runtime` target, `jen-runtime`, holds only `src/runtime/`, with no dependencies, no volume and no user, so it runs as root. The runtime starts agents from `JEN_AGENT_IMAGE` (default `jen-agent`). *Why:* the two share no code and will diverge. An agent's image grows with the tools that make it that agent, while the runtime, the one container with root on its host, should carry as little as possible. An agent can't read the runtime's code, and the runtime has no `/state` volume to clean up. One `Dockerfile` keeps both on one base.
+
 ## 2026-11-02
 
 Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), building the agent runtime. The full design is in `openspec/specs/` (capabilities `agent-runtime` and `agent-container`), and the design document in the archived OpenSpec change `add-agent-runtime`:
 
-- **The runtime runs as a container beside its Docker engine, and reaches it only through the engine's socket.** It's the agent's image with the command `src/runtime/main.ts`, and deploying jen anywhere, a cloud VM included, means running that container there. There is no abstraction over where agents run. Stronger isolation such as gVisor or Kata plugs in as a Docker runtime. *Why:* on Docker Desktop a host process can't reach containers on a Docker network, while a container reaches its agents by name on every platform. Docker covers every deployment we have.
+- **The runtime runs as a container beside its Docker engine, and reaches it only through the engine's socket.** Deploying jen anywhere, a cloud VM included, means running that container there. *Superseded 2026-11-03:* it was the agent's image with the command `src/runtime/main.ts`; it now has an image of its own (see 2026-11-03). There is no abstraction over where agents run. Stronger isolation such as gVisor or Kata plugs in as a Docker runtime. *Why:* on Docker Desktop a host process can't reach containers on a Docker network, while a container reaches its agents by name on every platform. Docker covers every deployment we have.
 - **Docker labels are the only record of the tree.** An agent is a labelled volume (its ID, parent and grant), and each run of it is a container. The runtime keeps no state and reads the tree back from the engine on startup, repairing what a crash left half done. *Why:* a second record, such as a database in the runtime, could disagree with Docker after a crash.
 - **Every request to an agent is relayed through the runtime.** No agent's port is published. *Why:* it's the only design that lets an owner reach a root agent on a remote VM or on Docker Desktop. It also keeps agents' protocol tokens inside the runtime, and puts the check of who may reach whom where the tree is.
 - **An owner token plus one token per agent.** `JEN_OWNER_TOKEN` identifies the owner. Each agent gets a new random `JEN_TOKEN` every time it starts, which the runtime presents when relaying and the agent presents to identify itself. A caller acts only on its own descendants. *Why:* one shared token would let any agent act as any other, which makes narrowing meaningless.

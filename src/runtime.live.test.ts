@@ -18,17 +18,18 @@ const model = process.env.JEN_LIVE_MODEL;
 const baseURL = process.env.JEN_LIVE_BASE_URL;
 
 test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", { timeout: 600_000 }, async () => {
-  docker(["build", "-t", "jen", join(import.meta.dirname, "..")], { timeout: 240_000 });
+  for (const target of ["agent", "runtime"]) {
+    docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "..")], { timeout: 240_000 });
+  }
   const name = `jen-live-${randomBytes(4).toString("hex")}`;
   const ownerToken = randomBytes(32).toString("hex");
   const owner = { Authorization: `Bearer ${ownerToken}` };
   const env = { ...process.env, JEN_RUNTIME_NAME: name, JEN_OWNER_TOKEN: ownerToken, JEN_MODEL: model, JEN_API_KEY: apiKey, JEN_BASE_URL: baseURL };
   // Credentials are passed by name, so they stay off the command line.
   const runtimeArgs = [
-    "--user", "root",
     "-v", "/var/run/docker.sock:/var/run/docker.sock",
     ...["JEN_RUNTIME_NAME", "JEN_OWNER_TOKEN", "JEN_MODEL", "JEN_API_KEY", ...(baseURL ? ["JEN_BASE_URL"] : [])].flatMap((n) => ["-e", n]),
-    "jen", "src/runtime/main.ts",
+    "jen-runtime",
   ];
 
   // Starts the runtime as documented, and returns its address once it serves.
@@ -119,10 +120,9 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     // Docker lists volumes in no fixed order, so compare the trees by ID.
     const tree = async () => ((await call(base, "/agents")).body as { id: string }[]).sort((a, b) => a.id.localeCompare(b.id));
     const before = await tree();
-    const runtimeVolume = docker(["inspect", "-f", '{{range .Mounts}}{{if eq .Destination "/state"}}{{.Name}}{{end}}{{end}}', `${name}-runtime`]).trim();
-    expect(runtimeVolume).not.toBe("");
-    docker(["rm", "-fv", `${name}-runtime`]);
-    expect(exists("volume", runtimeVolume)).toBe(false);
+    // The runtime's image declares no volume, so the socket is its only mount.
+    expect(docker(["inspect", "-f", "{{range .Mounts}}{{println .Destination}}{{end}}", `${name}-runtime`]).trim()).toBe("/var/run/docker.sock");
+    docker(["rm", "-f", `${name}-runtime`]);
     base = await startRuntime();
     expect(await tree()).toEqual(before);
     expect(await events(base, ownerToken, rootId, 4)).toHaveLength(4);
@@ -141,7 +141,7 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     // Everything the check created, whatever state it was left in.
     const quiet = (args: string[]) => spawnSync("docker", args, { encoding: "utf8", timeout: 30_000 });
     const agents = quiet(["ps", "-aq", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
-    quiet(["rm", "-fv", `${name}-runtime`, `${name}-second`, ...agents]);
+    quiet(["rm", "-f", `${name}-runtime`, `${name}-second`, ...agents]);
     const volumes = quiet(["volume", "ls", "-q", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
     if (volumes.length > 0) quiet(["volume", "rm", ...volumes]);
     quiet(["network", "rm", name]);
