@@ -10,7 +10,7 @@ Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), before it merged:
 
 ## 2026-11-02
 
-Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), building the agent runtime. Its requirements and design document are in the active OpenSpec change `openspec/changes/add-agent-runtime/`, pending archive into the main specs:
+Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), building the agent runtime. Its requirements are in `openspec/specs/agent-runtime/`, and the design document in `openspec/changes/archive/2026-11-03-add-agent-runtime/`:
 
 - **The runtime runs as a container beside its Docker engine, and reaches it only through the engine's socket.** Deploying jen anywhere, a cloud VM included, means running that container there. *Superseded 2026-11-03:* it was the agent's image with the command `src/runtime/main.ts`; it now has an image of its own (see 2026-11-03). There is no abstraction over where agents run. Stronger isolation such as gVisor or Kata plugs in as a Docker runtime. *Why:* on Docker Desktop a host process can't reach containers on a Docker network, while a container reaches its agents by name on every platform. Docker covers every deployment we have.
 - **Docker labels are the only record of the tree.** An agent is a labelled volume (its ID, parent and grant), and each run of it is a container. The runtime keeps no state and reads the tree back from the engine on startup, repairing what a crash left half done. *Why:* a second record, such as a database in the runtime, could disagree with Docker after a crash.
