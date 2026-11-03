@@ -1,7 +1,7 @@
 // The agent's entrypoint in its container: serves the protocol on port 8080
 // until stopped. See server.ts for the routes.
 
-import { openStore } from "./agent/store.ts";
+import { openStore } from "./store.ts";
 import { OpenAIResponsesModel } from "./model/openai-responses.ts";
 import { createServer } from "./server.ts";
 

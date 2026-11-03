@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Item, Json } from "../model/port.ts";
-import { ScriptedModel } from "../model/scripted.ts";
+import type { Item, Json } from "./model/port.ts";
+import { ScriptedModel } from "./model/scripted.ts";
 import { respond } from "./respond.ts";
 import { openStore, type Store } from "./store.ts";
 

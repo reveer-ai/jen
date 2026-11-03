@@ -4,7 +4,7 @@ import { connect, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { openStore, type Store } from "./agent/store.ts";
+import { openStore, type Store } from "./store.ts";
 import type { Item, Model } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
 import { createServer } from "./server.ts";

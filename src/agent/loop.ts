@@ -1,4 +1,4 @@
-import type { Item, Json, Model, ToolSpec } from "../model/port.ts";
+import type { Item, Json, Model, ToolSpec } from "./model/port.ts";
 
 export interface Tool extends ToolSpec {
   run(input: Json): Promise<string>;

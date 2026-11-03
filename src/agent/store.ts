@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { Item } from "../model/port.ts";
+import type { Item } from "./model/port.ts";
 
 // The conversation, kept in SQLite as one JSON row per item.
 export interface Store {

@@ -17,7 +17,9 @@ const model = process.env.JEN_LIVE_MODEL;
 const baseURL = process.env.JEN_LIVE_BASE_URL;
 
 test.skipIf(!apiKey || !model)("a new container on the same volume recalls the first turn", { timeout: 600_000 }, async () => {
-  docker(["build", "-t", "jen", join(import.meta.dirname, "..")], { timeout: 240_000 });
+  docker(["build", "--target", "agent", "-t", "jen-agent", join(import.meta.dirname, "../..")], { timeout: 240_000 });
+  // The agent image holds the agent and none of the runtime.
+  expect(docker(["run", "--rm", "--entrypoint", "ls", "jen-agent", "src"]).trim().split("\n")).toEqual(["agent"]);
   const volume = `jen-live-${randomBytes(4).toString("hex")}`;
   const token = randomBytes(32).toString("hex");
   const containers: string[] = [];
@@ -56,7 +58,7 @@ async function start(volume: string, token: string, containers: string[]): Promi
   const names = ["JEN_MODEL", "JEN_API_KEY", "JEN_TOKEN", ...(baseURL ? ["JEN_BASE_URL"] : [])];
   const container = `${volume}-${randomBytes(4).toString("hex")}`;
   containers.push(container);
-  const args = ["run", "-d", "--name", container, "-p", "127.0.0.1::8080", "-v", `${volume}:/state`, ...names.flatMap((n) => ["-e", n]), "jen"];
+  const args = ["run", "-d", "--name", container, "-p", "127.0.0.1::8080", "-v", `${volume}:/state`, ...names.flatMap((n) => ["-e", n]), "jen-agent"];
   docker(args, { env });
   const port = docker(["port", container, "8080/tcp"]).trim().split(":").at(-1);
   const base = `http://127.0.0.1:${port}`;

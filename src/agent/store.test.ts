@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Item } from "../model/port.ts";
+import type { Item } from "./model/port.ts";
 import { openStore } from "./store.ts";
 
 const user = (text: string): Item => ({ type: "message", role: "user", text });
