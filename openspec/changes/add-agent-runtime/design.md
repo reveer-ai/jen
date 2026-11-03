@@ -31,24 +31,36 @@ src/runtime/runtime.ts      the tree: spawn, stop, start, delete, list, reconcil
 src/runtime/docker.ts       a minimal Docker Engine API client over the socket
 src/runtime/*.test.ts       unit tests, against a fake engine
 src/runtime.live.test.ts    the check, against real Docker
-Dockerfile                  ENTRYPOINT ["node"], CMD ["src/main.ts"]
+Dockerfile                  two targets: agent (src/ without src/runtime/) and runtime (src/runtime/ only)
 ```
 
 ### The runtime runs as a container beside its engine
 
-The runtime runs from the jen image, with a different command (`node src/runtime/main.ts`). The engine's socket is mounted into it, and its port is published on `127.0.0.1`:
+The runtime runs from its own image, `jen-runtime` (see below). The engine's socket is mounted into it, and its port is published on `127.0.0.1`:
 
 ```sh
-docker run -d --name jen-runtime --user root \
+docker run -d --name jen-runtime \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -p 127.0.0.1:8080:8080 \
-  -e JEN_OWNER_TOKEN -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen src/runtime/main.ts
+  -e JEN_OWNER_TOKEN -e JEN_MODEL -e JEN_API_KEY -e JEN_BASE_URL jen-runtime
 ```
 
 - **Why a container, not a process on the host.** On macOS and Windows, Docker runs inside a VM, so a host process can't reach containers on a Docker network, and those containers reach the host only through special names. Inside a container, the runtime reaches its agents, and they reach it, by plain DNS names on the agents' network. That works identically on Linux, on Docker Desktop and on a cloud VM. *Alternative:* a host process. It would need port publishing for every agent, and a different way of reaching agents on each platform.
 - **Why the socket, not `DOCKER_HOST`.** The runtime has to sit on its agents' network to relay to them (see below), so it's always on the same host as its engine. A remote engine address would never be used. Deploying to the cloud means running this same command on a cloud VM. *Alternative:* a remote engine through `DOCKER_HOST`, which only works for a runtime that doesn't relay.
-- **Why `--user root`.** The socket is owned by root in most setups, including Docker Desktop. Access to the socket is already root on the host, so running the runtime as root inside its own container doesn't add any power. Agents still run as uid 1000.
-- **One image, one `ENTRYPOINT ["node"]`.** The agent's default command stays `src/main.ts`, so `docker run jen` still starts an agent. *Alternative:* a separate runtime image or build target. That's a second build to keep in step, for no gain while both run the same code base.
+- **Why root.** The socket is owned by root in most setups, including Docker Desktop, so the runtime's image sets no user and the runtime runs as root. Access to the socket is already root on the host, so root inside the runtime's own container adds no power. Agents still run as uid 1000. *Alternative:* a non-root user in the socket's group, whose ID differs from host to host, for no gain.
+
+### The runtime and the agent have separate images
+
+One `Dockerfile` builds two targets, both from `node:26-slim`:
+
+- **`agent`, tagged `jen-agent`.** The image `agent-container` defines: everything under `src/` except `src/runtime/` (`COPY --exclude=runtime`), the production dependencies, uid 1000, the `/state` volume and `ENTRYPOINT ["node", "src/main.ts"]`.
+- **`runtime`, tagged `jen-runtime`.** Only `src/runtime/`, without its test fixture `fake-docker.ts`, and `package.json`, which makes the code an ES module. No dependencies are installed, because the runtime uses only Node's built-ins. It declares no volume, because the runtime keeps no state. `ENTRYPOINT ["node", "src/runtime/main.ts"]`.
+
+The runtime starts agents from `JEN_AGENT_IMAGE` (default `jen-agent`), so it never assumes anything about its own image.
+
+- **Why two images.** The two share no code. The runtime imports only Node's built-ins and its own files, and nothing in the agent imports the runtime. They'll also diverge: an agent's image grows with the tools and software that make it that agent, while the runtime, the one container with root on its host, should carry as little as possible. Each image holds only what runs in it, so an agent can't read the runtime's code from its own filesystem, and the runtime carries no model SDK, no agent tools and no volume. *Alternative:* one image that starts either, chosen by its command. It saves one build, at the cost of putting each side's code and dependencies in the other's container, and of giving every runtime container the agent's `/state` volume, which it never uses and which would need removing with it.
+- **Why one `Dockerfile` with two targets.** Both images build from one checkout on one base. *Alternative:* two Dockerfiles, which keep their base and conventions in step by hand.
+- **Why `--exclude`, not a move.** The agent's code is everything in `src/` except the runtime. *Alternative:* moving the agent's code into one directory of its own, which reshuffles JEN-9's layout to save one flag.
 
 ### A minimal Docker client, no dependency
 
@@ -69,10 +81,10 @@ Docker labels can't change after creation. That fits, because an agent's parent 
 
 - **An agent is running exactly when its container is alive: `running`, or `restarting` while the engine brings it back after a crash.** Every other container state, whether created but never started, or exited after an engine restart, an interrupted operation or a crash the engine gave up on, counts as stopped. A container in one of those states is leftover and is removed whenever it's found.
 - **Stop removes the container and keeps the volume.** Removal is forced, so it covers a running container and a leftover one alike, and stopping an agent with no container succeeds.
-- **Start creates a new container** from the volume's labels, with the runtime's current model settings and the current image. If the agent's container is already alive, start changes nothing and succeeds. If a leftover container holds the name, start removes it first, keeping the volume. So a crash can never leave an agent that can't be started again.
+- **Start creates a new container** from the volume's labels, with the runtime's current model settings and the current agent image. If the agent's container is already alive, start changes nothing and succeeds. If a leftover container holds the name, start removes it first, keeping the volume. So a crash can never leave an agent that can't be started again.
 - **Spawn and start return once the agent accepts connections.** After the engine starts the container, the runtime connects to the agent's port 8080 every 100 ms, for at most 30 seconds. So `running` in a reply means the agent can be reached, and a relay sent straight after it gets through. An agent that never comes up fails the call: a spawn undoes itself, and a start removes its container. The queue waits during that boot, about a second. *Alternative:* the relay retries refused connections. That leaves `running` meaning only that the container started, and an agent that dies on boot shows as running until its restarts run out.
 - **Delete removes the container, forced, and then the volume.** Each step succeeds if there's nothing to remove, so a delete that was interrupted can simply be repeated.
-- **Starting fresh each time means nothing goes stale.** A new key, model or image reaches an agent the next time it starts. *Alternative:* `docker stop` and `docker start` on a kept container. That would freeze each agent's environment and image at spawn, and would store the tree in two places.
+- **Starting fresh each time means nothing goes stale.** A new key, model or agent image reaches an agent the next time it starts. *Alternative:* `docker stop` and `docker start` on a kept container. That would freeze each agent's environment and image at spawn, and would store the tree in two places.
 - **Why labels, not a database in the runtime.** Docker already has to know which containers and volumes exist. A second record could disagree with it after a crash, and reconciling the two would be the hard part. With labels, there's only one record. *Alternative:* SQLite on a runtime volume, which is two sources of truth.
 
 ### Credentials
@@ -152,7 +164,7 @@ The runtime creates a bridge network named `<name>`, attaches its own container 
 
 ### What an agent's container is given
 
-When an agent starts, the runtime creates its container with fixed settings: the image `JEN_IMAGE` (default `jen`) with its default command, the agent's volume at `/state`, the network, the labels above, and this environment:
+When an agent starts, the runtime creates its container with fixed settings: the image `JEN_AGENT_IMAGE` (default `jen-agent`) with its own entrypoint, the agent's volume at `/state`, the network, the labels above, and this environment:
 
 - `JEN_MODEL`, `JEN_API_KEY` and `JEN_BASE_URL`, copied from the runtime's own environment
 - `JEN_TOKEN`
@@ -170,8 +182,8 @@ Its restart policy is `on-failure` with at most 3 retries. Nothing a caller send
 - [An agent that crashes on every start] → The retry cap stops it looping. It then shows as stopped, and starting it again gives it another 3 retries.
 - [A relayed request reaches an agent while it's restarting] → The connection fails and the caller gets an error. It can retry, since the agent is reported as running. A response the agent breaks off mid-stream ends the caller's response too, so a watcher of `/events` sees the stream end and can reconnect with `Last-Event-ID`.
 - [The socket path differs by setup] → The run command mounts the host's `/var/run/docker.sock`, which Docker Desktop provides by default. The live check uses the same path.
-- [Changing from `ENTRYPOINT ["node", "src/main.ts"]` to `["node"]`] → A command line that passed arguments to the agent would break. The agent takes none, and there are no adopters.
+- [The two images can be built from different commits] → The runtime and an agent depend on each other only through the agent's environment and `agent-protocol`. The documented commands and the live check build both from one checkout.
 
 ## Migration Plan
 
-No data migrates. An agent volume from JEN-9 has no labels, so the runtime ignores it. `context/environment.md` changes to: build the image, start the runtime, spawn and talk through it.
+No data migrates. An agent volume from JEN-9 has no labels, so the runtime ignores it. The agent's image is renamed from `jen` to `jen-agent`, and there are no adopters. `context/environment.md` changes to: build both images, start the runtime, spawn and talk through it.

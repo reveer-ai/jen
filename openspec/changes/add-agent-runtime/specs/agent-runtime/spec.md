@@ -150,8 +150,19 @@ When the caller hangs up, the runtime SHALL end the relayed request. If the call
 - **WHEN** a caller requests `/agents/:id/events` and disconnects while the runtime is still looking up the agent
 - **THEN** no connection to the agent is opened
 
+### Requirement: The runtime has an image of its own
+The runtime SHALL be packaged as an OCI image of its own, separate from the agent image. Run with no command, the engine's socket and the runtime's environment, that image SHALL start the runtime and serve its API on port 8080. It SHALL run as root, so the runtime can use the engine's socket, and SHALL declare no volume. Each image SHALL hold only its own side's code: the agent image SHALL contain none of the runtime, and the runtime image none of the agent.
+
+#### Scenario: The runtime image starts the runtime
+- **WHEN** the runtime image is run with no command, the engine's socket and the runtime's environment
+- **THEN** it serves the runtime's API on port 8080 from a container with no volume
+
+#### Scenario: The agent image holds no runtime
+- **WHEN** the agent image is built
+- **THEN** it contains no file from `src/runtime/`
+
 ### Requirement: The runtime alone decides how an agent runs
-The runtime SHALL start every agent from the agent image with the same fixed settings: its own state volume, the runtime's network, the runtime's model settings, the agent's token and the runtime's address. Nothing a caller sends, other than the validated grant, SHALL reach the agent's container configuration. No agent's port SHALL be published.
+The runtime SHALL start every agent from the agent image named by `JEN_AGENT_IMAGE` (default `jen-agent`), with the same fixed settings: its own state volume, the runtime's network, the runtime's model settings, the agent's token and the runtime's address. Nothing a caller sends, other than the validated grant, SHALL reach the agent's container configuration. No agent's port SHALL be published.
 
 #### Scenario: Extra fields are ignored
 - **WHEN** a spawn request carries fields besides `grant`
