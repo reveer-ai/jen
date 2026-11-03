@@ -96,7 +96,7 @@ The runtime listens on port 8080. Every route needs a bearer token. Errors are J
 
 | Route | Does |
 |---|---|
-| `POST /agents` | Body `{"grant": {"spawn": bool}}`. Spawns a child of the caller and starts it. `201` with the agent. |
+| `POST /agents` | Body `{"grant": {"spawn": bool}}`, at most 16 KiB (`413` past that, read no further). Spawns a child of the caller and starts it. `201` with the agent. |
 | `GET /agents` | Lists the caller's descendants. For the owner, that's every agent. |
 | `GET /agents/:id` | One agent. |
 | `POST /agents/:id/stop` | Stops it and everything under it. |

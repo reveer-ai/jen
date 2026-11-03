@@ -19,6 +19,9 @@ export interface RuntimeServerOptions {
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "proxy-connection", "upgrade"]);
 // Request headers the relay passes to the agent. Its token replaces the caller's.
 const FORWARDED = ["content-type", "content-length", "accept", "last-event-id"];
+// The most a spawn body may hold. A grant is a few dozen bytes; the bound keeps
+// any caller from making the shared runtime buffer an arbitrary upload.
+export const MAX_BODY = 16 * 1024;
 
 export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOptions): http.Server {
   const owner = digest(`Bearer ${ownerToken}`);
@@ -31,9 +34,11 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   }
 
   async function spawn(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
+    const body = await readBody(req);
+    if (body === undefined) return tooLarge(res);
     let grant: unknown;
     try {
-      grant = JSON.parse(await readBody(req))?.grant;
+      grant = JSON.parse(body)?.grant;
     } catch {
       return json(res, 400, { error: "the body is not JSON" });
     }
@@ -43,6 +48,9 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
 
   async function relay(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller, id: string, path: string) {
     const { url, token } = await runtime.target(caller, id);
+    // A caller that hung up while the target was looked up gets nothing opened
+    // for it. From here on, its close handler is in place before any wait.
+    if (res.destroyed) return;
     const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${token}` };
     for (const name of FORWARDED) if (req.headers[name] !== undefined) headers[name] = req.headers[name];
     const upstream = http.request(new URL(path, url), { method: req.method, headers });
@@ -119,10 +127,32 @@ function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
 
-async function readBody(req: http.IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString("utf8");
+// The body, or undefined once it would pass MAX_BODY: a declared length is
+// refused unread, and a chunked one stops being read where it crosses.
+function readBody(req: http.IncomingMessage): Promise<string | undefined> {
+  if (Number(req.headers["content-length"] ?? 0) > MAX_BODY) return Promise.resolve(undefined);
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const done = (body: string | undefined) => {
+      req.off("data", data).off("end", end).off("error", reject);
+      resolve(body);
+    };
+    const data = (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= MAX_BODY) return void chunks.push(chunk);
+      req.pause();
+      done(undefined);
+    };
+    const end = () => done(Buffer.concat(chunks).toString("utf8"));
+    req.on("data", data).on("end", end).on("error", reject);
+  });
+}
+
+// Closing the connection leaves the rest of the upload unread.
+function tooLarge(res: http.ServerResponse) {
+  res.setHeader("Connection", "close");
+  json(res, 413, { error: `the body is larger than ${MAX_BODY} bytes` });
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown) {

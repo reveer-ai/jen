@@ -42,6 +42,13 @@ The runtime SHALL check an agent's token again when it acts on the request, afte
 - **WHEN** a running agent that has `spawn` posts `{"grant": {"spawn": false}}` with its own token
 - **THEN** it gets `201` with a new agent whose `parent` is that agent's ID
 
+### Requirement: A spawn body is bounded
+A spawn body larger than 16 KiB SHALL get `413` with `Connection: close`, before any capability check, and the runtime SHALL stop reading it once it passes that size, whether its length is declared or it arrives chunked. A client still sending when the connection closes may see the connection reset instead of the `413`.
+
+#### Scenario: An oversized body
+- **WHEN** a caller posts a body larger than 16 KiB to `/agents`, declared or chunked
+- **THEN** it gets `413` once the body passes 16 KiB, the rest is never read, and no agent is created
+
 ### Requirement: A grant never exceeds its parent's
 A new agent's grant SHALL be a subset of its parent's, where the owner has every capability. A caller without `spawn` SHALL NOT spawn at all. A request that breaks either rule SHALL get `403` and create nothing.
 
@@ -135,6 +142,13 @@ When an agent's process exits unexpectedly, the runtime's engine SHALL restart i
 #### Scenario: An agent stops while its events stream
 - **WHEN** a caller is reading `/agents/:id/events` and the agent stops or crashes
 - **THEN** the caller's stream ends, so it can reconnect
+
+### Requirement: A relay ends with its caller
+When the caller hangs up, the runtime SHALL end the relayed request. If the caller hangs up before the relay reaches the agent, the runtime SHALL open no connection to the agent.
+
+#### Scenario: A caller hangs up before the relay reaches the agent
+- **WHEN** a caller requests `/agents/:id/events` and disconnects while the runtime is still looking up the agent
+- **THEN** no connection to the agent is opened
 
 ### Requirement: The runtime alone decides how an agent runs
 The runtime SHALL start every agent from the agent image with the same fixed settings: its own state volume, the runtime's network, the runtime's model settings, the agent's token and the runtime's address. Nothing a caller sends, other than the validated grant, SHALL reach the agent's container configuration. No agent's port SHALL be published.

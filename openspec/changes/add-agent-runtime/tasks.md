@@ -49,6 +49,11 @@
 - [x] 6.2 End the caller's relayed response when the agent's response breaks off. Unit-test an event stream whose agent drops mid-stream, and extend the live check to keep a stream open across the root's crash. Verify with `npm test` and `npm run test:live`.
 - [x] 6.3 Remove a container's anonymous volumes whenever the runtime removes a container, and use `docker rm -fv` for the runtime in the live check and in `context/environment.md`. Assert in the live check that the replaced runtime's `/state` volume is gone. Verify that a live run leaves no volumes behind.
 
+## 7. Second review fixes
+
+- [x] 7.1 Open no relay to an agent once the caller has hung up during the target lookup. Unit-test a disconnect while the lookup is held, asserting the agent sees no connection. Verify with `npm test` and `npm run check`.
+- [x] 7.2 Bound spawn bodies at 16 KiB while reading: refuse a declared length over it unread, stop reading a chunked one where it crosses, and answer `413` with `Connection: close`. Unit-test declared, chunked and endless uploads. Verify with `npm test` and `npm run check`.
+
 ## Workflow follow-up
 
 - Mark PR #8 ready for review once every task is done and verified.

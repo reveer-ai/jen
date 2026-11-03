@@ -11,7 +11,7 @@ import { createServer as createAgentServer } from "../server.ts";
 import { DockerError } from "./docker.ts";
 import { FakeDocker } from "./fake-docker.ts";
 import { Runtime } from "./runtime.ts";
-import { createRuntimeServer } from "./server.ts";
+import { createRuntimeServer, MAX_BODY } from "./server.ts";
 
 const ownerToken = "owner-secret";
 const owner = { Authorization: `Bearer ${ownerToken}` };
@@ -177,6 +177,34 @@ test("a spawn body that isn't JSON or has a bad grant gets 400", async () => {
   expect(await runtime.list(null)).toEqual([]);
 });
 
+test("a spawn body over the bound gets 413, declared or chunked, and creates nothing", async () => {
+  const declared = await call("/agents", { method: "POST", body: " ".repeat(MAX_BODY + 1) });
+  expect(declared.status).toBe(413);
+  expect(declared.headers.get("connection")).toBe("close");
+
+  // A chunked body is answered once it crosses the bound, before it ends.
+  const { port } = new URL(base);
+  const upload = (endless: boolean) =>
+    new Promise<number | undefined>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/agents", headers: owner });
+      let status: number | undefined;
+      const chunk = Buffer.alloc(1024, 32);
+      const write = () => {
+        while (!req.destroyed && req.write(chunk));
+      };
+      req.on("error", () => {});
+      req.on("response", (res) => ((status = res.statusCode), res.resume()));
+      req.on("close", () => resolve(status));
+      if (endless) req.on("drain", write), write();
+      else req.write(Buffer.alloc(MAX_BODY + 1, 32));
+    });
+  expect(await upload(false)).toBe(413);
+  // One that keeps coming has its connection closed rather than read to the
+  // end. Closing on unread data resets the connection, so the 413 may be lost.
+  await upload(true);
+  expect(await runtime.list(null)).toEqual([]);
+});
+
 test("a caller without spawn gets 403", async () => {
   const { body: root } = await spawn({ spawn: false });
   const { res, body } = await spawn({ spawn: false }, as(tokenOf(root.id)));
@@ -300,6 +328,26 @@ test("an event stream ends when the agent's connection drops mid-stream", async 
     new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
   ]);
   expect(ended).toBe(true);
+});
+
+test("a caller that hangs up while its relay's target is looked up opens nothing", async () => {
+  const { body: root } = await spawn({ spawn: false });
+  let connections = 0;
+  const agent = http.createServer((_req, res) => res.end());
+  agent.on("connection", () => connections++);
+  agents.set(`jen-agent-${root.id}`, await listen(agent));
+  // Hold the lookup until the caller's connection has closed.
+  const closed = new Promise<void>((resolve) => servers[0].once("request", (_req, res) => res.once("close", resolve)));
+  const target = runtime.target.bind(runtime);
+  vi.spyOn(runtime, "target").mockImplementation(async (...args) => (await closed, target(...args)));
+  const abort = new AbortController();
+  const req = call(`/agents/${root.id}/events`, { signal: abort.signal }).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  abort.abort();
+  await req;
+  await closed;
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(connections).toBe(0);
 });
 
 test("a relay to a stopped agent gets 409", async () => {
