@@ -67,9 +67,11 @@ A failed model call saves nothing. The agent retries the step after 1, 5 and 25 
 
 *Rejected:* retrying without limit, which hides a broken model behind endless calls, and not retrying, which leaves a sub-agent silent after one transient error while its parent sleeps waiting for it.
 
-**When it gives up, it tells its parent.** The agent's code, not its model, sends its parent an ordinary message through the runtime, so `from` is the agent's own ID: `Automatic notice from agent <id>'s code, not its model: my model is failing, so I've stopped working. The last error was: <error>. Message me to make me try again.` The parent's model decides what to do: message it later, give the work to another sub-agent, or delete it. Replying is the retry, so the notice says so. Like any message, it wakes a stopped parent. A root agent's parent is the owner, who already sees the `error` events on the root's stream, so a root agent sends nothing.
+**When it gives up, it tells its parent.** The agent sends its parent an ordinary message, from its own ID: `My model is failing, so I've stopped working. Error: <error>. Message me to try again.` The agent is the persona, not its model, so the message speaks for the agent. The provider's raw error is what shows something really broke, since a model wouldn't write that about itself. The parent's model decides what to do: message it later, give the work to another sub-agent, or delete it. Replying is the retry. Like any message, it wakes a stopped parent.
 
-*Rejected:* the runtime sending the notice as `runtime`. The runtime doesn't see model calls, so it would only relay what the child told it, under a sender that isn't true, and it would need a route and a reserved ID for that.
+The owner gets the same notice. A root agent's parent is the owner, who has no inbox and reads the root's event stream. While the root has stopped trying, every client that connects to its stream, and every one already connected, gets the notice's text as an `error` event. It's sent again on each new connection, so the owner sees it whenever they look, not only if they were watching when it happened. Messaging the root makes it try again, as it would for any parent. It isn't saved, so once the agent recovers, the notice is gone.
+
+*Rejected:* the runtime sending the notice as `runtime`. The runtime doesn't see model calls, so it would only relay what the agent told it, under a sender that isn't true. *Rejected:* saving the root's notice as an item for the owner. That needs a new item type for messages the model didn't write, while a re-sent `error` event tells the owner the same thing whenever they connect.
 
 ### 5. The runtime stamps the sender in a header
 
