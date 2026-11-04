@@ -8,6 +8,7 @@ Read this file first. Then read only the files your task needs.
 | [plan.md](plan.md) | Current project, milestones, Linear map, cycles, status, open questions | You're starting or finishing work, or need to know what's next |
 | [conventions.md](conventions.md) | How work is done here | Always, before acting. It's kept short |
 | [decisions.md](decisions.md) | Dated decision log with reasons, newest first | Before re-opening a question, or when you need the reason behind something |
+| [ideas.md](ideas.md) | The maintainer's ideas, not yet planned or decided | You're scoping a milestone or designing in an area an idea touches |
 | [environment.md](environment.md) | Repo, code layout and commands, Linear workspace, OpenSpec, tool quirks | You're touching code, git, GitHub, Linear, OpenSpec or the harness |
 
 Skills and prompts: so far only OpenSpec's generated ones, described in [environment.md](environment.md). When a workflow repeats, capture it as a skill. Put it where every agent in use can discover it: `.claude/skills/` for Claude Code, `.agents/skills/` for Codex. Then add it to this table.

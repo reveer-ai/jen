@@ -4,6 +4,16 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-03
 
+Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), aligning on how agents delegate. The proposal and design are in `openspec/changes/add-agent-delegation/`:
+
+- **Delegation is modelled on people working together, without people's limits.** A parent can interrupt a child, a child can ask its parent a question, and both carry on afterwards. An agent can answer and keep working in the same breath. *Why:* set by the maintainer. One mechanism should support any scenario rather than one feature per scenario.
+- **The user is the root agent's parent and nothing more.** The owner's ID is `owner`, and everyone is addressed by ID. *Why:* interrupting or asking works the same in every direction, the user included.
+- **Every agent has a durable inbox, and sending never waits for a reply.** A message reaches the agent at its next step, between one model or tool call and the next, and its model decides what the message means. Agents talk only by sending, and their text output reaches only watchers of their stream. *Why:* a blocking ask can deadlock two agents. Interrupting a model call midway would need cancellation, and the runtime's stop and delete cover emergencies. Replaces JEN-9's `409` (see 2026-10-28).
+- **Messages between parent and child are delivered right away, not held as mail.** *Why:* a sub-agent is an extension of its parent's work. If a child talks too much, its parent tells it to talk less. Mail is kept in [ideas.md](ideas.md).
+- **A message to a stopped agent starts it.** Sleeping and being stopped are the same. *Why:* a sleeping parent costs nothing, and a parent that wants a child to stay stopped doesn't message it.
+- **Every step is saved as it happens, and an interrupted turn resumes from its last saved step.** *Why:* agents carry on after a crash or stop, and a finished step such as a spawn is never repeated. A failed turn now keeps the steps it finished, which supersedes JEN-9's promise that it sends nothing.
+- **An agent knows its own grant and offers only the tools it allows.** *Why:* a tool the runtime will always refuse only wastes the model's calls.
+
 Made in [JEN-10](https://linear.app/reveer/issue/JEN-10), before it merged:
 
 - **The runtime and the agent have separate images, built from one `Dockerfile`.** The `agent` target, `jen-agent`, holds only `src/agent/`. The `runtime` target, `jen-runtime`, holds only `src/runtime/`, with no dependencies, no volume and no user, so it runs as root. The runtime starts agents from `JEN_AGENT_IMAGE` (default `jen-agent`). *Why:* the two share no code and will diverge. An agent's image grows with the tools that make it that agent, while the runtime, the one container with root on its host, should carry as little as possible. An agent can't read the runtime's code, and the runtime has no `/state` volume to clean up. One `Dockerfile` keeps both on one base. `src/` has one directory per image, so the agent's whole code (entrypoint, protocol server, turn loop, store, model adapters) sits in `src/agent/` and the layout shows the split.
