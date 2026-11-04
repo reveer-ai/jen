@@ -42,16 +42,23 @@ A message the agent receives is `{"type": "message", "role": "user", "from": "<i
 
 ### 3. Work is derived from the store, and the loop is one step at a time
 
-`runTurn()` is replaced by a step function, and `respond()` by a loop that runs while there's work. There's work when the inbox holds a message, or when the conversation doesn't end with an assistant message, meaning it ends with a received message, a tool call or a tool result. One step is:
+`runTurn()` is replaced by a step function, and `respond()` by a loop that runs while there's work. Outstanding calls come first: these are the tool calls in the most recent model response whose IDs have no saved result. Finding them by matching IDs, not by looking at the last item, covers a crash between two results of one response, and a response that holds a tool call followed by text. There's work when there are outstanding calls, when the inbox holds a message, or when the conversation doesn't end with an assistant message. One step is:
 
-1. Deliver the inbox (decision 1).
-2. If the conversation ends with tool calls that have no result, which only happens after a crash, give each one the result `Error: interrupted before its result was saved, so whether it took effect is unknown`.
-3. Call the model with the whole conversation, and save its response the moment it returns.
-4. Run each tool call in the response in order, saving each result as it finishes.
+1. **Settle outstanding calls, in order.** Before running each one, check the inbox. If it holds a message, run none of the remaining calls, and give each one the result `Error: not run, because a message arrived first. Call it again if it's still wanted.` Otherwise run the call and save its result.
+2. **Deliver the inbox** (decision 1). Every call already has its result by now, so a message never lands between a call and its result.
+3. **Call the model** with the whole conversation, and save its response the moment it returns. Its tool calls are now outstanding, and the next step settles them.
+
+That's the boundary the proposal promised: a message is handled between one model or tool call and the next. A parent's "don't delete that" stops the rest of a batch. The model sees which calls ran and which didn't, and calls the rest again if it still wants them.
+
+Recovery is the same loop. When the agent starts, the first outstanding call may have been running when the process stopped, so it gets the result `Error: interrupted before its result was saved, so whether it took effect is unknown.` Tools run one at a time, and each result is saved before the next call starts, so any later outstanding call never started. Those are settled by step 1 as usual: run, or not run if a message is waiting. A crash with a nonempty inbox therefore gives every call its result before the message is delivered.
 
 Each save is its own transaction, and each one is streamed right after (`deliver()` is already written to be called after any save). The agent runs the loop at startup and whenever a message is accepted while it isn't already running. Nothing is kept in memory between steps except the flag saying the loop is running.
 
-So the agent resumes after a crash, a stop or a redeploy with no special code. A tool call whose result was saved is never run again. One whose result wasn't is reported to the model as unknown, and the model decides whether to retry. This was the open question in the proposal discussion. Keeping it in the model follows the tenet that logic lives in the weights, and it's the only safe choice for calls such as spawn that can't be undone.
+So the agent resumes after a crash, a stop or a redeploy with no special code. A tool call whose result was saved is never run again. One that may have been running is reported to the model as unknown, and the model decides whether to retry. This was the open question in the proposal discussion. Keeping it in the model follows the tenet that logic lives in the weights, and it's the only safe choice for calls such as spawn that can't be undone.
+
+The specs cover these cases with scenarios: a crash after a saved call with a message in the inbox, a crash between two results of one response, and a message that arrives between two tool calls.
+
+*Rejected:* delivering messages only before model calls, so a whole batch of tool calls runs first. A correction would arrive too late to stop the rest of a batch, such as a second delete.
 
 *Rejected:* saving each tool call only once it has run. A crash between running and saving would leave no trace of a spawn that happened, and the model would spawn again.
 
@@ -99,7 +106,8 @@ This is the caller the 2026-10-26 rule was waiting for. An agent can't follow "t
 - [A child whose model keeps failing goes silent, and its parent sleeps waiting] → It shows `error` events on its stream, and any message, such as a parent's "how's it going?", makes it try again. Telling a parent automatically is left until a real tree shows the need.
 - [The model forgets to send, and its answer goes nowhere] → The instructions say so plainly, and the live check exercises it. The answer is still on its stream.
 - [An interrupted tool call is reported as unknown even when it never started] → The model retries it. The cost is one extra call, and the alternative is never knowing.
-- [A message during a long model call waits for it] → The wait is one step. Cancellation is added to the port if that proves too slow.
+- [A message during a long model call or tool waits for it] → The wait is one call. Cancellation is added if that proves too slow.
+- [Frequent messages keep cutting batches short] → Each message costs the rest of the batch and one more model call, which re-issues what's still wanted. That's the price of a correction always arriving in time. If chatty children make it expensive, the parent tells them to talk less.
 
 ## Migration Plan
 
