@@ -67,11 +67,9 @@ A failed model call saves nothing. The agent retries the step after 1, 5 and 25 
 
 *Rejected:* retrying without limit, which hides a broken model behind endless calls, and not retrying, which leaves a sub-agent silent after one transient error while its parent sleeps waiting for it.
 
-**When it gives up, the runtime tells its parent.** The agent's code, not its model, reports the failure with `POST /agents/<own id>/failed` and `{"error": "..."}`. An agent may call this only on itself. The runtime then sends the agent's parent a message `from: "runtime"`: `Agent <id>'s model is failing, and it stopped trying: <error>. Message it to make it try again.` The parent's model decides what to do: wait and message it later, give the work to another sub-agent, or delete it. A root agent's parent is the owner, who already sees the `error` events on the root's stream, so the runtime sends nothing for a root agent. Like any message, it wakes a stopped parent.
+**When it gives up, it tells its parent.** The agent's code, not its model, sends its parent an ordinary message through the runtime, so `from` is the agent's own ID: `Automatic notice from agent <id>'s code, not its model: my model is failing, so I've stopped working. The last error was: <error>. Message me to make me try again.` The parent's model decides what to do: message it later, give the work to another sub-agent, or delete it. Replying is the retry, so the notice says so. Like any message, it wakes a stopped parent. A root agent's parent is the owner, who already sees the `error` events on the root's stream, so a root agent sends nothing.
 
-The message comes from the runtime, not the child, because the child can't answer it. `runtime` is reserved like `owner` (decision 6), and since the runtime stamps every sender, no agent can send as `runtime`. A child could report a false failure, but only about itself and only to its own parent, which it could already message anyway.
-
-*Rejected:* the child's code sending the message as itself. The parent would reply to an agent that can't respond.
+*Rejected:* the runtime sending the notice as `runtime`. The runtime doesn't see model calls, so it would only relay what the child told it, under a sender that isn't true, and it would need a route and a reserved ID for that.
 
 ### 5. The runtime stamps the sender in a header
 
@@ -83,7 +81,7 @@ The runtime adds `Jen-From: <caller>` to every relayed `POST /messages`, where t
 
 The runtime opens `POST /agents/:id/messages` to the caller's parent as well as its descendants. Every other route still reaches only descendants. When a message's target is stopped, including a parent whose crash restarts ran out while its children kept running, the runtime starts it, in the same queue as every other tree operation, and then relays. A start that fails answers as a failed start does today. `GET /agents/:id/events` on a stopped agent still gets `409`, since watching shouldn't wake anything.
 
-`owner` is reserved as the owner's ID, and `runtime` as the runtime's, used only as the sender of the runtime's own messages (decision 4). An agent ID is 12 hex characters, so neither can collide. Every route that names `owner` or `runtime`, other than an agent's own `/failed`, still gets `404`.
+`owner` is reserved as the owner's ID. An agent ID is 12 hex characters, so it can't collide. `GET /agents/owner` and every other route that names `owner` still get `404`.
 
 ### 7. The runtime tells each agent who it is
 
