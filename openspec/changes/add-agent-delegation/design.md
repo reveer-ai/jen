@@ -24,7 +24,6 @@ jen has no adopters, so nothing here migrates stored conversations or keeps the 
 
 - Cancelling a model call or a tool partway through. A message waits for the current step to end.
 - Bounding how many messages an agent may send or receive, beyond the size of one message. See Risks.
-- Telling a parent that its child's model keeps failing. See Risks.
 
 ## Decisions
 
@@ -68,6 +67,12 @@ A failed model call saves nothing. The agent retries the step after 1, 5 and 25 
 
 *Rejected:* retrying without limit, which hides a broken model behind endless calls, and not retrying, which leaves a sub-agent silent after one transient error while its parent sleeps waiting for it.
 
+**When it gives up, the runtime tells its parent.** The agent's code, not its model, reports the failure with `POST /agents/<own id>/failed` and `{"error": "..."}`. An agent may call this only on itself. The runtime then sends the agent's parent a message `from: "runtime"`: `Agent <id>'s model is failing, and it stopped trying: <error>. Message it to make it try again.` The parent's model decides what to do: wait and message it later, give the work to another sub-agent, or delete it. A root agent's parent is the owner, who already sees the `error` events on the root's stream, so the runtime sends nothing for a root agent. Like any message, it wakes a stopped parent.
+
+The message comes from the runtime, not the child, because the child can't answer it. `runtime` is reserved like `owner` (decision 6), and since the runtime stamps every sender, no agent can send as `runtime`. A child could report a false failure, but only about itself and only to its own parent, which it could already message anyway.
+
+*Rejected:* the child's code sending the message as itself. The parent would reply to an agent that can't respond.
+
 ### 5. The runtime stamps the sender in a header
 
 The runtime adds `Jen-From: <caller>` to every relayed `POST /messages`, where the caller is an agent's ID or `owner`. The relay forwards only a fixed list of headers, so a `Jen-From` from the caller never reaches the agent. The body passes through unchanged, so the relay still doesn't parse it. The agent trusts the header because only the runtime holds its token, and it answers `400` to a message without one. The agent bounds a message body at 1 MiB, answering `413`, because a child can now message its parent, and no agent should be able to make another buffer an arbitrary upload.
@@ -78,7 +83,7 @@ The runtime adds `Jen-From: <caller>` to every relayed `POST /messages`, where t
 
 The runtime opens `POST /agents/:id/messages` to the caller's parent as well as its descendants. Every other route still reaches only descendants. When a message's target is stopped, including a parent whose crash restarts ran out while its children kept running, the runtime starts it, in the same queue as every other tree operation, and then relays. A start that fails answers as a failed start does today. `GET /agents/:id/events` on a stopped agent still gets `409`, since watching shouldn't wake anything.
 
-`owner` is reserved as the owner's ID. An agent ID is 12 hex characters, so it can't collide. `GET /agents/owner` and every other route that names `owner` still get `404`.
+`owner` is reserved as the owner's ID, and `runtime` as the runtime's, used only as the sender of the runtime's own messages (decision 4). An agent ID is 12 hex characters, so neither can collide. Every route that names `owner` or `runtime`, other than an agent's own `/failed`, still gets `404`.
 
 ### 7. The runtime tells each agent who it is
 
@@ -107,7 +112,7 @@ This is the caller the 2026-10-26 rule was waiting for. An agent can't follow "t
 
 - [Two agents message each other forever and spend without limit] → Only depth and count bound the tree until the model proxy makes spend a bound. The instructions ask agents to report when done, not to narrate.
 - [An agent floods another's inbox] → Each message is bounded at 1 MiB, but their number isn't. Within a tree, everyone shares one owner, so this is a bug, not an attack. It's revisited with communication between agents that aren't parent and child.
-- [A child whose model keeps failing goes silent, and its parent sleeps waiting] → It shows `error` events on its stream, and any message, such as a parent's "how's it going?", makes it try again. Telling a parent automatically is left until a real tree shows the need.
+- [A child's model fails while its parent's model fails too, for example when they share a provider that's down] → The runtime's message wakes the parent, whose own model then fails, and it reports in turn. The failure climbs the tree to the owner, who sees it as `error` events on the root's stream.
 - [The model forgets to send, and its answer goes nowhere] → The instructions say so plainly, and the live check exercises it. The answer is still on its stream.
 - [An interrupted tool call is reported as unknown even when it never started] → The model retries it. The cost is one extra call, and the alternative is never knowing.
 - [A message during a long model call or tool waits for it] → The wait is one call. Cancellation is added if that proves too slow.
