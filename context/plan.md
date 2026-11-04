@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-03.
+Last updated 2026-11-04.
 
 ## Current project: Agent harness & UI engine
 
@@ -32,6 +32,7 @@ Each opening issue is done when its decisions are written down and every remaini
 - 2026-11-03: [JEN-10](https://linear.app/reveer/issue/JEN-10) built the agent runtime through the OpenSpec change `add-agent-runtime` (archived 2026-11-03; its spec is `openspec/specs/agent-runtime/`). The runtime is its own container and image (`jen-runtime`, beside `jen-agent`, one `Dockerfile`, one `src/` directory per image) next to the Docker engine. It spawns, stops, starts and deletes agents, keeps the tree in Docker labels, applies grants and bounds, and relays every request to an agent with that agent's token (see [decisions.md](decisions.md)). Reviews on [PR #8](https://github.com/reveer-ai/jen/pull/8) found five reliability issues, all fixed with a spec requirement and a test each: rechecking the caller's token when a queued operation runs, ending a relayed stream that breaks off, a relay leak when the caller hangs up during lookup, unbounded spawn bodies, and leftover anonymous volumes. The [final re-review](https://github.com/reveer-ai/jen/pull/8#pullrequestreview-5758227034) at `7ec00e0` found nothing new. Strict validation, typecheck, 146 unit tests, 3 live checks against `openai/gpt-6-luna` through OpenRouter, and CI pass. JEN-10 is done, which unblocks [JEN-11](https://linear.app/reveer/issue/JEN-11).
 - 2026-11-03: [JEN-11](https://linear.app/reveer/issue/JEN-11) started, through the OpenSpec change `add-agent-delegation`. Its proposal is aligned and its design written (see [decisions.md](decisions.md)). It was re-estimated from 2 to 3 points, since saving each step reaches most of `src/agent/`, which puts cycle 2 at 7.
 - 2026-11-03: The [design review on PR #9](https://github.com/reveer-ai/jen/pull/9#pullrequestreview-5762663849) at `e75c625` found three issues in how the loop settles tool calls, all fixed in the design: interrupted calls are repaired before the inbox is delivered, outstanding calls are found by matching call and result IDs, and a message that arrives between tool calls stops the rest of the batch, as the proposal promised. Specs, tasks and implementation are not yet on the PR.
+- 2026-11-04: The [design re-review on PR #9](https://github.com/reveer-ai/jen/pull/9#pullrequestreview-5768069270) at `d0c08de` verified the first three findings fixed and found one more: a send to the owner counted as delivered once its call was streamed, even if the loop then skipped it. Fixed in the design: a send is delivered when its `delivered` result is saved, and a send to the owner interrupted by a crash is recorded as not delivered.
 
 ## Open questions, held for their tasks
 

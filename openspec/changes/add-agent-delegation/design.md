@@ -88,7 +88,11 @@ Each agent's container also gets `JEN_AGENT_ID`, `JEN_PARENT` (its parent's ID, 
 
 Delegation tools live in `src/agent/delegation.ts`, with a small client that calls `JEN_RUNTIME_URL` with the agent's own token over `node:http`:
 
-- `send_message` `{to, text}`, always offered. Sending to `owner` from a root agent calls nothing. The tool call itself is on the agent's event stream, which is where the owner reads it, so the tool only answers that it was delivered. Any other target goes through the runtime, which refuses targets the agent can't reach.
+- `send_message` `{to, text}`, always offered. A send to another agent goes through the runtime, which refuses targets the agent can't reach, and answers once the message is in the receiver's inbox. A send to `owner` from a root agent calls nothing, because the owner reads the root's event stream. Either way, a successful send's result is `delivered`.
+
+**A send is delivered when its `delivered` result is saved, never when its call is.** The model's response, tool calls included, is saved and streamed before any of its tools run (decision 3), so a streamed call is only an intent. It may still be skipped because a message arrived first, or interrupted by a crash. For a send to `owner`, that saved result is the delivery itself: a client shows the owner a message from the root only once it has seen the call's `delivered` result, and a call whose result is anything else wasn't delivered. Every client reads the same saved items, so replaying the stream from any position gives the same answer. Since a send to `owner` has no effect outside the agent, a crash before its result is saved means it wasn't delivered. Recovery records `Error: interrupted before it was sent, so it wasn't delivered.` for it, not the unknown outcome, and the model sends again if it still wants to. The specs cover an owner send that's skipped because a message is waiting, and one interrupted by a crash.
+
+*Rejected:* a separate outgoing-message event or item for the owner. It would be a second record of what the result already says, and the two could disagree after a crash.
 - `spawn_agent` `{grant}`, `list_agents`, `stop_agent` `{id}`, `start_agent` `{id}` and `delete_agent` `{id}`, offered only when the grant has `spawn`. Without `spawn` an agent can't have sub-agents, so these would have nothing to act on.
 
 A runtime refusal becomes a tool error with the runtime's status and message, which the loop already reports to the model as `Error: ...`.
