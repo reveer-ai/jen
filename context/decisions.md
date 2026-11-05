@@ -2,13 +2,21 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-04
+
+Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), after the maintainer asked that every real interaction between parent and child hold up. Details are in `openspec/changes/add-agent-delegation/design.md`, decisions 3, 4 and 8:
+
+- **Three ways to reach a busy agent.** A plain message waits for the batch of tool calls in progress and reaches the model before its next call. An urgent message cancels the call in flight, skips the rest of the batch and reaches the model at once. Stop and delete halt the agent's whole subtree. Anyone who may message an agent may send it an urgent message, a child to its parent included. *Why:* stopping an agent to correct it froze its whole subtree, and after a restart its sub-agents stayed stopped. A plain message that cut every batch short made routine news cost a re-plan. A cancel leaves the conversation as crash recovery does, so it adds no new state.
+- **The runtime sends messages as `runtime`, only for facts it witnessed.** It reports a sub-agent whose restarts ran out to its parent, and tells an agent that's started again which of its sub-agents are still stopped. They're ordinary messages through the inbox, with no new route, event or item type. *Why:* in both cases a parent would otherwise wait forever, and only the runtime saw what happened.
+- **A child that goes idle without reporting stays a known risk.** It's covered by the instructions, and the live check measures it. *Why:* nothing failed, so any coded fix would be code judging what the model should have done. A follow-up tool that wakes a parent is the fix if it proves real.
+
 ## 2026-11-03
 
 Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), aligning on how agents delegate. The proposal and design are in `openspec/changes/add-agent-delegation/`:
 
 - **Delegation is modelled on people working together, without people's limits.** A parent can interrupt a child, a child can ask its parent a question, and both carry on afterwards. An agent can answer and keep working in the same breath. *Why:* set by the maintainer. One mechanism should support any scenario rather than one feature per scenario.
 - **The user is the root agent's parent and nothing more.** The owner's ID is `owner`, and everyone is addressed by ID. *Why:* interrupting or asking works the same in every direction, the user included.
-- **Every agent has a durable inbox, and sending never waits for a reply.** A message reaches the agent at its next step, between one model or tool call and the next, and its model decides what the message means. Agents talk only by sending, and their text output reaches only watchers of their stream. *Why:* a blocking ask can deadlock two agents. Interrupting a model call midway would need cancellation, and the runtime's stop and delete cover emergencies. Replaces JEN-9's `409` (see 2026-10-28).
+- **Every agent has a durable inbox, and sending never waits for a reply.** A message reaches the agent at its next step, between one model or tool call and the next, and its model decides what the message means. Agents talk only by sending, and their text output reaches only watchers of their stream. *Why:* a blocking ask can deadlock two agents. Replaces JEN-9's `409` (see 2026-10-28). *Superseded in part 2026-11-04:* when a message arrives, and the reliance on stop and delete for emergencies (see 2026-11-04).
 - **Messages between parent and child are delivered right away, not held as mail.** *Why:* a sub-agent is an extension of its parent's work. If a child talks too much, its parent tells it to talk less. Mail is kept in [ideas.md](ideas.md).
 - **A message to a stopped agent starts it.** Sleeping and being stopped are the same. *Why:* a sleeping parent costs nothing, and a parent that wants a child to stay stopped doesn't message it.
 - **Every step is saved as it happens, and an interrupted turn resumes from its last saved step.** *Why:* agents carry on after a crash or stop, and a finished step such as a spawn is never repeated. A failed turn now keeps the steps it finished, which supersedes JEN-9's promise that it sends nothing.
