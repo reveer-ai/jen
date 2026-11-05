@@ -73,7 +73,13 @@ export interface Docker {
   // Undefined when the network doesn't exist.
   inspectNetwork(name: string): Promise<{ name: string } | undefined>;
   connectNetwork(network: string, container: string, aliases: string[]): Promise<void>;
+
+  // Calls onExit with the ID of each container matching labels whose process
+  // exits, until the returned function is called. A broken watch reconnects.
+  watchExits(labels: string[], onExit: (id: string) => void): () => void;
 }
+
+const RECONNECT_MS = 1_000;
 
 export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
   async function call(method: string, path: string, body?: object): Promise<any> {
@@ -179,6 +185,46 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
     },
     async connectNetwork(network, container, aliases) {
       await call("POST", `/networks/${id(network)}/connect`, { Container: container, EndpointConfig: { Aliases: aliases } });
+    },
+
+    watchExits(labels, onExit) {
+      let closed = false;
+      let req: http.ClientRequest | undefined;
+      const query = encodeURIComponent(JSON.stringify({ type: ["container"], event: ["die"], label: labels }));
+      const connect = () => {
+        if (closed) return;
+        let retried = false;
+        const retry = () => {
+          if (retried || closed) return;
+          retried = true;
+          setTimeout(connect, RECONNECT_MS).unref();
+        };
+        req = http.request({ socketPath, method: "GET", path: `/${VERSION}/events?filters=${query}` }, (res) => {
+          if (res.statusCode !== 200) return void (res.resume(), retry());
+          // The engine sends one JSON object per line.
+          let buffer = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk: string) => {
+            buffer += chunk;
+            let end;
+            while ((end = buffer.indexOf("\n")) >= 0) {
+              const line = buffer.slice(0, end).trim();
+              buffer = buffer.slice(end + 1);
+              const event = line === "" ? undefined : parse(line);
+              if (event?.Action === "die" && typeof event.Actor?.ID === "string") onExit(event.Actor.ID);
+            }
+          });
+          res.on("end", retry);
+          res.on("error", retry);
+        });
+        req.on("error", retry);
+        req.end();
+      };
+      connect();
+      return () => {
+        closed = true;
+        req?.destroy();
+      };
     },
   };
 }

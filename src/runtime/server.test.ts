@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { openStore, type Store } from "../agent/store.ts";
 import type { Item } from "../agent/model/port.ts";
 import { ScriptedModel } from "../agent/model/scripted.ts";
+import { Agent } from "../agent/loop.ts";
 import { createServer as createAgentServer } from "../agent/server.ts";
 import { DockerError } from "./docker.ts";
 import { FakeDocker } from "./fake-docker.ts";
@@ -77,8 +78,29 @@ async function spawn(grant: unknown, headers: Record<string, string> = owner) {
 async function serveAgent(id: string, turns: Item[][]) {
   const store = openStore(join(dir, `${id}.db`));
   stores.push(store);
-  agents.set(`jen-agent-${id}`, await listen(createAgentServer({ store, model: new ScriptedModel(turns), token: tokenOf(id) })));
+  const agent = new Agent({ store, model: new ScriptedModel(turns), tools: [], instructions: "" });
+  agent.start();
+  agents.set(`jen-agent-${id}`, await listen(createAgentServer({ store, agent, token: tokenOf(id) })));
+  return agent;
 }
+
+// Serves an agent that records each message it's sent, whatever its token,
+// and saves it with 202.
+async function recordingAgent(id: string) {
+  const received: { from?: string; auth?: string; body: string }[] = [];
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      received.push({ from: req.headers["jen-from"] as string | undefined, auth: req.headers.authorization, body });
+      res.writeHead(202).end();
+    });
+  });
+  agents.set(`jen-agent-${id}`, await listen(server));
+  return received;
+}
+
+const message = (text: string) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
 
 // Reads an event stream until n items have arrived.
 async function items(res: Response, n: number): Promise<{ id: string; item: Item }[]> {
@@ -164,7 +186,7 @@ test("fields besides grant don't reach the container", async () => {
   const extra = await res.json();
   const settings = (id: string) => {
     const { image, network, maxRetries, volume, env } = docker.find(`jen-agent-${id}`)!.spec!;
-    return { image, network, maxRetries, path: volume.path, env: env.filter((e) => !e.startsWith("JEN_TOKEN=")) };
+    return { image, network, maxRetries, path: volume.path, env: env.filter((e) => !e.startsWith("JEN_TOKEN=") && !e.startsWith("JEN_AGENT_ID=")) };
   };
   expect(settings(extra.id)).toEqual(settings(plain.id));
 });
@@ -263,26 +285,113 @@ test("an agent that isn't the caller's descendant is not found", async () => {
   expect((await runtime.get(null, b.id)).state).toBe("running");
 });
 
-test("a message is relayed to the agent and answered", async () => {
+test("the owner's message is relayed and saved, and the reply is on the agent's event stream", async () => {
   const { body: root } = await spawn({ spawn: false });
-  await serveAgent(root.id, [[assistant("heron")]]);
-  const res = await call(`/agents/${root.id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Which bird?" }) });
-  expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ reply: "heron" });
+  const agent = await serveAgent(root.id, [[assistant("heron")]]);
+  const res = await call(`/agents/${root.id}/messages`, message("Which bird?"));
+  expect(res.status).toBe(202);
+  await agent.idle();
+  expect(await items(await call(`/agents/${root.id}/events`), 2)).toEqual([
+    { id: "1", item: { type: "message", role: "user", from: "owner", text: "Which bird?" } },
+    { id: "2", item: assistant("heron") },
+  ]);
+});
+
+test("a relayed message carries its true sender, whatever the caller claims, and its body unchanged", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+  const received = await recordingAgent(child.id);
+  const body = JSON.stringify({ text: "stop", urgent: true });
+  await fetch(`${base}/agents/${child.id}/messages`, { method: "POST", headers: { ...as(tokenOf(root.id)), "Jen-From": "owner" }, body });
+  await call(`/agents/${child.id}/messages`, { method: "POST", headers: { "Jen-From": "runtime" }, body });
+  expect(received).toEqual([
+    { from: root.id, auth: `Bearer ${tokenOf(child.id)}`, body },
+    { from: "owner", auth: `Bearer ${tokenOf(child.id)}`, body },
+  ]);
+});
+
+test("a child messages its parent, but can't stop it", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+  const received = await recordingAgent(root.id);
+  const res = await fetch(`${base}/agents/${root.id}/messages`, { method: "POST", headers: as(tokenOf(child.id)), body: '{"text":"which file?"}' });
+  expect(res.status).toBe(202);
+  expect(received.map((m) => m.from)).toEqual([child.id]);
+  expect((await fetch(`${base}/agents/${root.id}/stop`, { method: "POST", headers: as(tokenOf(child.id)) })).status).toBe(404);
+  expect((await runtime.get(null, root.id)).state).toBe("running");
+});
+
+test("a grandchild can't message its grandparent", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { body: child } = await spawn({ spawn: true }, as(tokenOf(root.id)));
+  const { body: grandchild } = await spawn({ spawn: false }, as(tokenOf(child.id)));
+  const res = await fetch(`${base}/agents/${root.id}/messages`, { method: "POST", headers: as(tokenOf(grandchild.id)), body: '{"text":"hi"}' });
+  expect(res.status).toBe(404);
+});
+
+test("no caller reaches the owner or the runtime through the API", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  for (const id of ["owner", "runtime"]) {
+    for (const [method, action] of [["POST", "/messages"], ["GET", "/events"], ["GET", ""], ["POST", "/stop"], ["POST", "/start"], ["DELETE", ""]]) {
+      for (const headers of [owner, as(tokenOf(root.id))]) {
+        expect((await fetch(`${base}/agents/${id}${action}`, { method, headers, body: method === "POST" ? '{"text":"hi"}' : undefined })).status).toBe(404);
+      }
+    }
+  }
+});
+
+test("a message to a stopped agent starts it, then delivers the message and then the runtime's notice", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+  await call(`/agents/${root.id}/stop`, { method: "POST" });
+  const received = await recordingAgent(root.id);
+  const res = await call(`/agents/${root.id}/messages`, message("wake up"));
+  expect(res.status).toBe(202);
+  await vi.waitFor(() => expect(received).toHaveLength(2));
+  const auth = `Bearer ${tokenOf(root.id)}`;
+  expect(received).toEqual([
+    { from: "owner", auth, body: JSON.stringify({ text: "wake up" }) },
+    {
+      from: "runtime",
+      auth,
+      body: JSON.stringify({ text: `You were stopped and have been started again. Your sub-agents ${child.id} are still stopped. Messaging one starts it.` }),
+    },
+  ]);
+  const env = docker.find(`jen-agent-${root.id}`)!.env;
+  expect(env.some((e) => /^JEN_WAKE=[0-9a-f]{32}$/.test(e))).toBe(true);
+  expect((await runtime.get(null, child.id)).state).toBe("stopped");
+});
+
+test("an explicit start with a stopped child sends the notice alone", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+  await call(`/agents/${root.id}/stop`, { method: "POST" });
+  const received = await recordingAgent(root.id);
+  expect((await call(`/agents/${root.id}/start`, { method: "POST" })).status).toBe(200);
+  expect(received).toEqual([
+    {
+      from: "runtime",
+      auth: `Bearer ${tokenOf(root.id)}`,
+      body: JSON.stringify({ text: `You were stopped and have been started again. Your sub-agents ${child.id} are still stopped. Messaging one starts it.` }),
+    },
+  ]);
 });
 
 test("the agent's own errors pass through unchanged", async () => {
   const { body: root } = await spawn({ spawn: false });
   await serveAgent(root.id, []);
-  const res = await call(`/agents/${root.id}/messages`, { method: "POST", body: JSON.stringify({ text: "" }) });
+  const res = await call(`/agents/${root.id}/messages`, message(""));
   expect(res.status).toBe(400);
   expect(await res.json()).toEqual({ error: "text must be a non-empty string" });
 });
 
 test("the event stream is relayed, resuming after Last-Event-ID", async () => {
   const { body: root } = await spawn({ spawn: false });
-  await serveAgent(root.id, [[assistant("one")], [assistant("two")]]);
-  for (const text of ["first", "second"]) await call(`/agents/${root.id}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+  const agent = await serveAgent(root.id, [[assistant("one")], [assistant("two")]]);
+  for (const text of ["first", "second"]) {
+    await call(`/agents/${root.id}/messages`, message(text));
+    await agent.idle();
+  }
 
   const all = await call(`/agents/${root.id}/events`);
   expect(all.status).toBe(200);
@@ -291,7 +400,7 @@ test("the event stream is relayed, resuming after Last-Event-ID", async () => {
 
   const resumed = await call(`/agents/${root.id}/events`, { headers: { "Last-Event-ID": "2" } });
   expect(await items(resumed, 2)).toEqual([
-    { id: "3", item: { type: "message", role: "user", text: "second" } },
+    { id: "3", item: { type: "message", role: "user", from: "owner", text: "second" } },
     { id: "4", item: assistant("two") },
   ]);
 });
@@ -310,7 +419,7 @@ test("an event stream ends when the agent's connection drops mid-stream", async 
   // An agent that sends an event, then goes away, as a stopped or crashed one does.
   const agent = http.createServer((_req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream" });
-    res.write('id: 1\ndata: {"type":"message","role":"user","text":"hi"}\n\n', () => setTimeout(() => res.socket?.destroy(), 20));
+    res.write('id: 1\ndata: {"type":"message","role":"user","from":"owner","text":"hi"}\n\n', () => setTimeout(() => res.socket?.destroy(), 20));
   });
   agents.set(`jen-agent-${root.id}`, await listen(agent));
   const res = await call(`/agents/${root.id}/events`);
@@ -350,11 +459,11 @@ test("a caller that hangs up while its relay's target is looked up opens nothing
   expect(connections).toBe(0);
 });
 
-test("a relay to a stopped agent gets 409", async () => {
+test("watching a stopped agent gets 409 and doesn't wake it", async () => {
   const { body: root } = await spawn({ spawn: false });
   await call(`/agents/${root.id}/stop`, { method: "POST" });
-  expect((await call(`/agents/${root.id}/messages`, { method: "POST", body: '{"text":"hi"}' })).status).toBe(409);
   expect((await call(`/agents/${root.id}/events`)).status).toBe(409);
+  expect((await runtime.get(null, root.id)).state).toBe("stopped");
 });
 
 test("a relay to an agent that can't be reached gets 502", async () => {
