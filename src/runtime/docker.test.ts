@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createDocker, DockerError, type Docker } from "./docker.ts";
 
 type Seen = { method: string; url: string; body: any };
@@ -176,4 +176,34 @@ test("a 404 is an error everywhere but removal and inspection", async () => {
 test("names are encoded in paths", async () => {
   await docker.removeVolume("a/b");
   expect(seen[0].url).toBe("/v1.47/volumes/a%2Fb");
+});
+
+test("watches containers' exits by label, across chunks, and reconnects when the stream ends", async () => {
+  const socket = join(dir, "events.sock");
+  const paths: string[] = [];
+  const responses: http.ServerResponse[] = [];
+  const engine = http.createServer((req, res) => {
+    paths.push(req.url!);
+    responses.push(res);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.flushHeaders();
+  });
+  await new Promise<void>((resolve) => engine.listen(socket, resolve));
+  const exits: string[] = [];
+  const stop = createDocker(socket).watchExits(["jen.runtime=jen", "jen.agent"], (id) => exits.push(id));
+  await vi.waitFor(() => expect(responses).toHaveLength(1));
+  const die = JSON.stringify({ Type: "container", Action: "die", Actor: { ID: "c1", Attributes: { exitCode: "1" } } });
+  responses[0]!.write(die.slice(0, 10));
+  responses[0]!.write(`${die.slice(10)}\n${JSON.stringify({ Type: "container", Action: "start", Actor: { ID: "c2" } })}\n`);
+  await vi.waitFor(() => expect(exits).toEqual(["c1"]));
+  responses[0]!.end();
+  await vi.waitFor(() => expect(responses).toHaveLength(2), { timeout: 3_000 });
+  responses[1]!.write(`${JSON.stringify({ Type: "container", Action: "die", Actor: { ID: "c3" } })}\n`);
+  await vi.waitFor(() => expect(exits).toEqual(["c1", "c3"]));
+  expect(paths[0]).toBe(
+    `/v1.47/events?filters=${encodeURIComponent(JSON.stringify({ type: ["container"], event: ["die"], label: ["jen.runtime=jen", "jen.agent"] }))}`,
+  );
+  stop();
+  engine.closeAllConnections();
+  await new Promise((resolve) => engine.close(resolve));
 });

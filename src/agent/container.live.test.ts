@@ -1,5 +1,7 @@
 // Sends a message to one container, then asks a new container on the same
-// volume to recall it, over the agent's protocol. Uses the same JEN_LIVE_*
+// volume to recall it, over the agent's protocol, reading each reply from the
+// event stream. The check plays the runtime's part: it sets each message's
+// sender and the agent's identity, as a root agent with no grant to spawn. Uses the same JEN_LIVE_*
 // variables as the adapter's live check. Skipped when the key or model is
 // missing; with them set, a missing Docker fails the check.
 //
@@ -16,7 +18,7 @@ const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
 const baseURL = process.env.JEN_LIVE_BASE_URL;
 
-test.skipIf(!apiKey || !model)("a new container on the same volume recalls the first turn", { timeout: 600_000 }, async () => {
+test.skipIf(!apiKey || !model)("a new container on the same volume recalls the first exchange", { timeout: 600_000 }, async () => {
   docker(["build", "--target", "agent", "-t", "jen-agent", join(import.meta.dirname, "../..")], { timeout: 240_000 });
   // The agent image holds the agent and none of the runtime.
   expect(docker(["run", "--rm", "--entrypoint", "ls", "jen-agent", "src"]).trim().split("\n")).toEqual(["agent"]);
@@ -31,19 +33,19 @@ test.skipIf(!apiKey || !model)("a new container on the same volume recalls the f
     const word = `jen-${randomBytes(4).toString("hex")}`;
     const remember = `Remember this word: ${word}. Reply only with OK.`;
     await send(base, token, remember);
+    const first = await reply(`${base}/events`, token, 0);
     docker(["rm", "-f", containers.at(-1)!]);
 
     base = await start(volume, token, containers);
     const recall = "What was the word I asked you to remember? Reply with just the word.";
-    const reply = await send(base, token, recall);
-    expect(reply).toContain(word);
+    await send(base, token, recall);
+    const second = await reply(`${base}/events`, token, first.events.at(-1)!.id);
+    expect(second.text).toContain(word);
 
-    // The two exchanges, in order. The first reply's wording is the model's.
-    const [first, second, third, fourth] = await events(base, token, 4);
-    expect(first).toEqual({ type: "message", role: "user", text: remember });
-    expect(second).toMatchObject({ type: "message", role: "assistant" });
-    expect(third).toEqual({ type: "message", role: "user", text: recall });
-    expect(fourth).toEqual({ type: "message", role: "assistant", text: reply });
+    // Both messages, in order and from the owner, with the first exchange
+    // before the second. The replies' wording is the model's.
+    expect(first.events[0]!.item).toEqual({ type: "message", role: "user", from: "owner", text: remember });
+    expect(second.events[0]!.item).toEqual({ type: "message", role: "user", from: "owner", text: recall });
   } finally {
     for (const container of containers) spawnSync("docker", ["rm", "-f", container], { timeout: 30_000 });
     docker(["volume", "rm", volume]);
@@ -54,8 +56,9 @@ test.skipIf(!apiKey || !model)("a new container on the same volume recalls the f
 // its address once it accepts connections. Credentials are passed by name,
 // so they stay off the command line.
 async function start(volume: string, token: string, containers: string[]): Promise<string> {
-  const env = { ...process.env, JEN_MODEL: model, JEN_API_KEY: apiKey, JEN_BASE_URL: baseURL, JEN_TOKEN: token };
-  const names = ["JEN_MODEL", "JEN_API_KEY", "JEN_TOKEN", ...(baseURL ? ["JEN_BASE_URL"] : [])];
+  const identity = { JEN_AGENT_ID: "a1b2c3d4e5f6", JEN_PARENT: "owner", JEN_GRANT: '{"spawn":false}' };
+  const env = { ...process.env, JEN_MODEL: model, JEN_API_KEY: apiKey, JEN_BASE_URL: baseURL, JEN_TOKEN: token, ...identity };
+  const names = ["JEN_MODEL", "JEN_API_KEY", "JEN_TOKEN", ...Object.keys(identity), ...(baseURL ? ["JEN_BASE_URL"] : [])];
   const container = `${volume}-${randomBytes(4).toString("hex")}`;
   containers.push(container);
   const args = ["run", "-d", "--name", container, "-p", "127.0.0.1::8080", "-v", `${volume}:/state`, ...names.flatMap((n) => ["-e", n]), "jen-agent"];
@@ -73,39 +76,71 @@ async function start(volume: string, token: string, containers: string[]): Promi
   throw new Error(`the agent in ${container} never accepted connections`);
 }
 
-async function send(base: string, token: string, text: string): Promise<string> {
+// Sends a message from the owner, and returns once it's saved.
+async function send(base: string, token: string, text: string) {
   const res = await fetch(`${base}/messages`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "Jen-From": "owner" },
     body: JSON.stringify({ text }),
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(30_000),
   });
-  const body = await res.json();
-  if (res.status !== 200) throw new Error(`POST /messages got ${res.status}: ${JSON.stringify(body)}`);
-  return body.reply;
+  if (res.status !== 202) throw new Error(`POST /messages got ${res.status}: ${await res.text()}`);
 }
 
-// Reads the event stream until n items have arrived.
-async function events(base: string, token: string, n: number): Promise<Item[]> {
+type Event = { id: number; item: Item };
+
+// Reads item events after position after until done holds of what's arrived,
+// and then until no item has arrived for quietMs.
+async function readEvents(url: string, token: string, after: number, done: (events: Event[]) => boolean, quietMs = 0): Promise<Event[]> {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), 30_000);
-  const res = await fetch(`${base}/events`, { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal });
-  const items: Item[] = [];
+  const timer = setTimeout(() => abort.abort(), 150_000);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "Last-Event-ID": String(after) }, signal: abort.signal });
+  if (res.status !== 200) throw new Error(`GET /events got ${res.status}`);
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  const events: Event[] = [];
   let buffer = "";
   try {
-    for await (const chunk of res.body!.pipeThrough(new TextDecoderStream())) {
-      buffer += chunk;
-      for (const line of buffer.split("\n").slice(0, -1)) {
-        if (line.startsWith("data: ")) items.push(JSON.parse(line.slice(6)));
+    for (;;) {
+      const ready = done(events);
+      if (ready && quietMs === 0) return events;
+      const next = reader.read();
+      const chunk = ready ? await Promise.race([next, new Promise<undefined>((resolve) => setTimeout(resolve, quietMs))]) : await next;
+      if (chunk === undefined) return events;
+      if (chunk.done) throw new Error(`the stream ended after ${events.length} items`);
+      buffer += chunk.value;
+      let end;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const id = block.match(/^id: (.*)$/m)?.[1];
+        const data = block.match(/^data: (.*)$/m)?.[1];
+        if (/^event: item$/m.test(block) && id && data) events.push({ id: Number(id), item: JSON.parse(data) });
       }
-      buffer = buffer.slice(buffer.lastIndexOf("\n") + 1);
-      if (items.length >= n) return items;
     }
-    throw new Error(`the stream ended after ${items.length} items`);
   } finally {
     clearTimeout(timer);
     abort.abort();
   }
+}
+
+// What a root agent told the owner: each send to owner whose result is
+// delivered. Its text output reaches no one, so it doesn't count.
+function replies(events: Event[]): string[] {
+  const delivered = new Set(events.flatMap(({ item }) => (item.type === "tool_result" && item.output === "delivered" ? [item.callId] : [])));
+  return events.flatMap(({ item }) => {
+    if (item.type === "tool_call" && item.name === "send_message" && delivered.has(item.id)) {
+      const input = item.input as { to?: string; text?: string };
+      if (input.to === "owner" && typeof input.text === "string") return [input.text];
+    }
+    return [];
+  });
+}
+
+// Waits for the agent's reply to what came after position after, and then
+// for its turn to go quiet. Returns the reply's text and the events read.
+async function reply(url: string, token: string, after: number): Promise<{ text: string; events: Event[] }> {
+  const events = await readEvents(url, token, after, (events) => replies(events).length > 0, 5_000);
+  return { text: replies(events).join("\n"), events };
 }
 
 function docker(args: string[], { env, timeout = 30_000 }: { env?: NodeJS.ProcessEnv; timeout?: number } = {}): string {

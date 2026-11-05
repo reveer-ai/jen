@@ -27,16 +27,22 @@ export class OpenAIResponsesModel implements Model {
     this.#client = new OpenAI({ apiKey, baseURL, fetch });
   }
 
-  async next(items: readonly Item[], tools: readonly ToolSpec[]): Promise<Item[]> {
+  async next(items: readonly Item[], tools: readonly ToolSpec[], instructions: string, signal?: AbortSignal): Promise<Item[]> {
     let response: OpenAIResponse;
     try {
-      response = await this.#client.responses.create({
-        model: this.#model,
-        input: items.map(toInput),
-        tools: tools.map(toFunctionTool),
-        store: false,
-      });
+      response = await this.#client.responses.create(
+        {
+          model: this.#model,
+          instructions,
+          input: items.map(toInput),
+          tools: tools.map(toFunctionTool),
+          store: false,
+        },
+        { signal },
+      );
     } catch (error) {
+      // A cancelled call fails with the signal's reason, as the port requires.
+      signal?.throwIfAborted();
       throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
     }
     // A generation can fail inside a successful HTTP response.
@@ -51,7 +57,10 @@ export class OpenAIResponsesModel implements Model {
 function toInput(item: Item): ResponseInputItem {
   switch (item.type) {
     case "message":
-      return { role: item.role, content: item.text };
+      // A received message names its sender in a header line.
+      return item.role === "user"
+        ? { role: "user", content: `From: ${item.from}\n\n${item.text}` }
+        : { role: "assistant", content: item.text };
     case "tool_call":
       return { type: "function_call", call_id: item.id, name: item.name, arguments: JSON.stringify(item.input) };
     case "tool_result":

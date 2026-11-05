@@ -1,14 +1,16 @@
 // The runtime's API over HTTP. Every request carries a bearer token: the
 // owner's, or the current token of a running agent. The caller is whoever the
 // token belongs to, and every route that names an agent acts only on the
-// caller's descendants. The runtime checks the token again when it acts, so
-// one that stops being current while its request waits is refused then. Requests to an agent's protocol are relayed to it
-// with its own token, which never leaves the runtime.
+// caller's descendants, except that a caller may also message its parent. The
+// runtime checks the token again when it acts, so one that stops being
+// current while its request waits is refused then. Requests to an agent's
+// protocol are relayed to it with its own token, which never leaves the
+// runtime, and a message with its sender in Jen-From.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pipeline } from "node:stream";
-import { RuntimeError, type Caller, type Grant, type Runtime } from "./runtime.ts";
+import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
 
 export interface RuntimeServerOptions {
   runtime: Runtime;
@@ -46,15 +48,23 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     json(res, 201, await runtime.spawn(caller, grant));
   }
 
-  async function relay(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller, id: string, path: string) {
-    const { url, token } = await runtime.target(caller, id);
+  // Relays a message or an event stream. A message carries its true sender,
+  // and a stopped agent is started for it, then sent the runtime's notice, if
+  // any, once the message is saved.
+  async function relay(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller, id: string, path: "/messages" | "/events") {
+    const target: Address & { notice?: string } = path === "/messages" ? await runtime.messageTarget(caller, id) : await runtime.target(caller, id);
     // A caller that hung up while the target was looked up gets nothing opened
     // for it. From here on, its close handler is in place before any wait.
     if (res.destroyed) return;
-    const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${token}` };
+    const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${target.token}` };
     for (const name of FORWARDED) if (req.headers[name] !== undefined) headers[name] = req.headers[name];
-    const upstream = http.request(new URL(path, url), { method: req.method, headers });
+    if (path === "/messages") headers["jen-from"] = caller === null ? "owner" : caller.id;
+    const upstream = http.request(new URL(path, target.url), { method: req.method, headers });
     upstream.on("response", (answer) => {
+      const { notice } = target;
+      if (notice !== undefined && answer.statusCode === 202) {
+        runtime.notify(target, notice).catch((error) => process.stderr.write(`jen-runtime: agent ${id} wasn't sent its notice: ${error.message}\n`));
+      }
       const passed = Object.entries(answer.headers).filter(([name]) => !HOP_BY_HOP.has(name));
       res.writeHead(answer.statusCode ?? 502, Object.fromEntries(passed));
       // An event stream may stay empty for a while, so send the headers now.
@@ -67,8 +77,8 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
       if (res.headersSent) return void res.destroy();
       json(res, 502, { error: `agent ${id} could not be reached: ${error.message}` });
     });
-    // A caller that hangs up ends the relayed request. An agent carries a turn
-    // on and saves it all the same.
+    // A caller that hangs up ends the relayed request. A message the agent
+    // saved stays saved.
     res.on("close", () => upstream.destroy());
     req.pipe(upstream);
   }

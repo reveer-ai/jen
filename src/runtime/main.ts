@@ -32,6 +32,9 @@ try {
   fail(error instanceof Error ? error.message : String(error));
 }
 
+// Reports to each parent a sub-agent whose restarts ran out.
+runtime.watch((error) => process.stderr.write(`jen-runtime: a crashed agent wasn't reported: ${error instanceof Error ? error.message : String(error)}\n`));
+
 // Every interface, so docker run -p can reach it.
 createRuntimeServer({ runtime, ownerToken: process.env.JEN_OWNER_TOKEN! }).listen(8080, "0.0.0.0", () => {
   process.stderr.write("jen-runtime: listening on 8080\n");

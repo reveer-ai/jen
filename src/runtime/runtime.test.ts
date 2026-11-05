@@ -4,20 +4,29 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, test, vi } from "vitest";
 import { DockerError } from "./docker.ts";
 import { FakeDocker } from "./fake-docker.ts";
-import { Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
+import { postMessage, Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
 
 const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
 
-// A runtime on a fake engine, started from its own container.
+// A runtime on a fake engine, started from its own container. sent records
+// each message the runtime sends, by the container it was sent to.
 async function setup(options: Partial<RuntimeOptions> = {}) {
   const docker = new FakeDocker();
   const self = docker.add({ name: "jen-runtime" });
-  const runtime = new Runtime({ docker, name: "jen", image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {}, ...options });
+  const sent: { to: string; text: string; wake?: string }[] = [];
+  const send = async (url: string, token: string, text: string) => {
+    const c = [...docker.containers.values()].find((c) => url === `http://${c.name}:8080` && c.env.includes(`JEN_TOKEN=${token}`))!;
+    sent.push({ to: c.labels["jen.agent"]!, text, wake: envOf(c.env, "JEN_WAKE") });
+  };
+  const runtime = new Runtime({ docker, name: "jen", image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {}, send, ...options });
   await runtime.startup(self.id);
   // An agent as a caller, with its current token.
   const as = (id: string) => ({ id, credential: sha256(tokenOf(docker, id)) });
-  return { docker, runtime, self, as };
+  return { docker, runtime, self, as, sent };
 }
+
+const envOf = (env: string[], name: string) => env.find((e) => e.startsWith(`${name}=`))?.slice(name.length + 1);
+const wakeOf = (docker: FakeDocker, id: string) => envOf(container(docker, id)!.env, "JEN_WAKE");
 
 const container = (docker: FakeDocker, id: string, name = "jen") => docker.find(`${name}-agent-${id}`);
 const tokenOf = (docker: FakeDocker, id: string, name = "jen") =>
@@ -49,7 +58,16 @@ describe("spawn", () => {
     expect(c.state).toBe("running");
     expect(c.spec).toEqual({
       image: "jen",
-      env: ["JEN_MODEL=m", "JEN_API_KEY=k", "JEN_BASE_URL=https://example.test/v1", `JEN_TOKEN=${token}`, "JEN_RUNTIME_URL=http://runtime:8080"],
+      env: [
+        "JEN_MODEL=m",
+        "JEN_API_KEY=k",
+        "JEN_BASE_URL=https://example.test/v1",
+        `JEN_TOKEN=${token}`,
+        "JEN_RUNTIME_URL=http://runtime:8080",
+        `JEN_AGENT_ID=${agent.id}`,
+        "JEN_PARENT=owner",
+        'JEN_GRANT={"spawn":true}',
+      ],
       labels: { "jen.runtime": "jen", "jen.agent": agent.id, "jen.credential": sha256(token) },
       volume: { name: `jen-agent-${agent.id}`, path: "/state" },
       network: "jen",
@@ -162,6 +180,7 @@ describe("a caller's token is checked when the operation runs", () => {
       await refused(runtime.start(stale, child.id), 401);
       await refused(runtime.delete(stale, child.id), 401);
       await refused(runtime.target(stale, child.id), 401);
+      await refused(runtime.messageTarget(stale, child.id), 401);
       await refused(runtime.get(stale, child.id), 401);
       await refused(runtime.list(stale), 401);
       expect([docker.volumes.size, docker.containers.size]).toEqual(before);
@@ -547,5 +566,265 @@ describe("readiness", () => {
     const { port } = server.address() as AddressInfo;
     await new Promise((resolve) => server.close(resolve));
     await expect(waitForConnection(`http://127.0.0.1:${port}`, 300)).rejects.toThrow("didn't accept connections within 0.3 seconds");
+  });
+});
+
+describe("each agent is told who it is", () => {
+  test("a sub-agent's container has its ID, its parent's and its grant", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    const env = container(docker, child.id)!.env;
+    expect(envOf(env, "JEN_AGENT_ID")).toBe(child.id);
+    expect(envOf(env, "JEN_PARENT")).toBe(root.id);
+    expect(envOf(env, "JEN_GRANT")).toBe('{"spawn":false}');
+    expect(envOf(env, "JEN_WAKE")).toBeUndefined();
+  });
+
+  test("a restarted agent is told again", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { spawn: false });
+    await runtime.stop(null, root.id);
+    await runtime.start(null, root.id);
+    expect(envOf(container(docker, root.id)!.env, "JEN_PARENT")).toBe("owner");
+  });
+});
+
+describe("the owner and the runtime have reserved IDs", () => {
+  test("no route reaches owner or runtime", async () => {
+    const { runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    for (const id of ["owner", "runtime"]) {
+      for (const caller of [null, as(root.id)]) {
+        await refused(runtime.messageTarget(caller, id), 404);
+        await refused(runtime.target(caller, id), 404);
+        await refused(runtime.get(caller, id), 404);
+        await refused(runtime.stop(caller, id), 404);
+      }
+    }
+  });
+});
+
+describe("an agent can message its parent", () => {
+  test("a child reaches its parent to message it, and nothing else of it", async () => {
+    const { runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    expect(await runtime.messageTarget(as(child.id), root.id)).toMatchObject({ url: `http://jen-agent-${root.id}:8080` });
+    await refused(runtime.stop(as(child.id), root.id), 404);
+    await refused(runtime.target(as(child.id), root.id), 404);
+    await refused(runtime.get(as(child.id), root.id), 404);
+    expect((await runtime.get(null, root.id)).state).toBe("running");
+  });
+
+  test("a grandchild can't message its grandparent, and a sibling can't message a sibling", async () => {
+    const { runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: true });
+    const grandchild = await runtime.spawn(as(child.id), { spawn: false });
+    const sibling = await runtime.spawn(as(root.id), { spawn: false });
+    await refused(runtime.messageTarget(as(grandchild.id), root.id), 404);
+    await refused(runtime.messageTarget(as(sibling.id), child.id), 404);
+    await refused(runtime.messageTarget(as(root.id), root.id), 404);
+  });
+});
+
+describe("a message to a stopped agent starts it", () => {
+  test("a child's question wakes its stopped parent, held for the message, with no notice when nothing else is stopped", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    // The root's crash restarts ran out while its child kept running.
+    container(docker, root.id)!.state = "exited";
+    const target = await runtime.messageTarget(as(child.id), root.id);
+    expect((await runtime.get(null, root.id)).state).toBe("running");
+    expect(target).toEqual({ url: `http://jen-agent-${root.id}:8080`, token: tokenOf(docker, root.id), notice: undefined });
+    expect(wakeOf(docker, root.id)).toMatch(/^[0-9a-f]{32}$/);
+    expect(sent).toEqual([]);
+  });
+
+  test("a woken agent with stopped children is told which, to send after the message, and they stay stopped", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    await runtime.stop(null, root.id);
+    const target = await runtime.messageTarget(null, root.id);
+    expect(target.notice).toBe(`You were stopped and have been started again. Your sub-agents ${child.id} are still stopped. Messaging one starts it.`);
+    expect(wakeOf(docker, root.id)).toBeDefined();
+    expect((await runtime.get(null, child.id)).state).toBe("stopped");
+  });
+
+  test("each wake gets a new wake ID, and a running target is reached without a start", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { spawn: false });
+    await runtime.stop(null, root.id);
+    await runtime.messageTarget(null, root.id);
+    const first = wakeOf(docker, root.id);
+    const running = container(docker, root.id)!.id;
+    await runtime.messageTarget(null, root.id);
+    expect(container(docker, root.id)!.id).toBe(running);
+    await runtime.stop(null, root.id);
+    await runtime.messageTarget(null, root.id);
+    expect(wakeOf(docker, root.id)).not.toBe(first);
+  });
+
+  test("a wake whose start fails fails as a start does, leaving the agent stopped", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { spawn: false });
+    await runtime.stop(null, root.id);
+    vi.spyOn(docker, "startContainer").mockRejectedValueOnce(new DockerError(500, "cannot start"));
+    const error = await refused(runtime.messageTarget(null, root.id), 500);
+    expect(error.message).toContain("starting failed");
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+  });
+
+  test("watching a stopped agent doesn't wake it", async () => {
+    const { runtime } = await setup();
+    const root = await runtime.spawn(null, { spawn: false });
+    await runtime.stop(null, root.id);
+    await refused(runtime.target(null, root.id), 409);
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+  });
+});
+
+describe("a start tells an agent its sub-agents are stopped", () => {
+  test("a plain start, with no stopped children, sets no wake ID and sends nothing", async () => {
+    const { docker, runtime, sent } = await setup();
+    const root = await runtime.spawn(null, { spawn: false });
+    await runtime.stop(null, root.id);
+    await runtime.start(null, root.id);
+    expect(wakeOf(docker, root.id)).toBeUndefined();
+    expect(sent).toEqual([]);
+  });
+
+  test("an explicit start with a stopped child holds the agent and sends the notice as its only message", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    await runtime.stop(null, root.id);
+    await runtime.start(null, root.id);
+    const wake = wakeOf(docker, root.id);
+    expect(wake).toBeDefined();
+    expect(sent).toEqual([
+      { to: root.id, text: `You were stopped and have been started again. Your sub-agents ${child.id} are still stopped. Messaging one starts it.`, wake },
+    ]);
+    expect((await runtime.get(null, child.id)).state).toBe("stopped");
+  });
+});
+
+describe("the runtime tells a parent its child's restarts ran out", () => {
+  test("a child whose restarts ran out is reported to its running parent, from the runtime", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    const stop = runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    docker.exit(`jen-agent-${child.id}`, { restart: false });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      to: root.id,
+      text: `Your sub-agent ${child.id} stopped: its process kept exiting and its restarts ran out. Message it to start it again.`,
+    });
+    stop();
+  });
+
+  test("a crash the engine restarts, and a root whose restarts ran out, send nothing", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    docker.exit(`jen-agent-${child.id}`, { restart: true });
+    docker.exit(`jen-agent-${root.id}`, { restart: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toEqual([]);
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+  });
+
+  test("a stopped parent is started for the report, then told its sub-agents are stopped", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const a = await runtime.spawn(as(root.id), { spawn: false });
+    // The root's own restarts ran out first, which isn't reported to the owner.
+    docker.exit(`jen-agent-${root.id}`, { restart: false });
+    docker.exit(`jen-agent-${a.id}`, { restart: false });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    const wake = wakeOf(docker, root.id);
+    expect(wake).toBeDefined();
+    expect(sent).toEqual([
+      { to: root.id, text: `Your sub-agent ${a.id} stopped: its process kept exiting and its restarts ran out. Message it to start it again.`, wake },
+      { to: root.id, text: `You were stopped and have been started again. Your sub-agents ${a.id} are still stopped. Messaging one starts it.`, wake },
+    ]);
+  });
+
+  test("an exit handled after a queued stop doesn't start the stopped parent again", async () => {
+    let hold: Promise<void> | undefined;
+    const { docker, runtime, as, sent } = await setup({ ready: () => hold ?? Promise.resolve() });
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    let release!: () => void;
+    hold = new Promise((resolve) => (release = resolve));
+    // A spawn held in the queue, then a stop queued behind it, then the exit.
+    const spawning = runtime.spawn(null, { spawn: false });
+    const stopping = runtime.stop(null, root.id);
+    docker.exit(`jen-agent-${child.id}`, { restart: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    hold = undefined;
+    release();
+    await spawning;
+    expect((await stopping).state).toBe("stopped");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+    expect(sent).toEqual([]);
+  });
+
+  test("an exit of a container since replaced isn't reported", async () => {
+    let hold: Promise<void> | undefined;
+    const { docker, runtime, as, sent } = await setup({ ready: () => hold ?? Promise.resolve() });
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    let release!: () => void;
+    hold = new Promise((resolve) => (release = resolve));
+    const spawning = runtime.spawn(null, { spawn: false });
+    // The child's restarts run out, and a start of it is queued before the
+    // engine's exit event arrives.
+    const old = container(docker, child.id)!.id;
+    container(docker, child.id)!.state = "exited";
+    const starting = runtime.start(null, child.id);
+    docker.exit(old, { restart: false });
+    hold = undefined;
+    release();
+    await spawning;
+    await starting;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(container(docker, child.id)!.id).not.toBe(old);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("a notice from the runtime can't hold the queue", () => {
+  test("postMessage fails when the agent takes the message and never answers", async () => {
+    const server = http.createServer((req) => req.resume());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    await expect(postMessage(`http://127.0.0.1:${port}`, "t", "hello", 200)).rejects.toThrow();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  test("a start whose notice is never answered still returns, and the next operation runs", async () => {
+    const server = http.createServer((req) => req.resume());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const { runtime, as } = await setup({ send: (_url, token, text) => postMessage(`http://127.0.0.1:${port}`, token, text, 200) });
+    const root = await runtime.spawn(null, { spawn: true });
+    await runtime.spawn(as(root.id), { spawn: false });
+    await runtime.stop(null, root.id);
+    vi.spyOn(process.stderr, "write").mockImplementationOnce(() => true);
+    expect((await runtime.start(null, root.id)).state).toBe("running");
+    expect((await runtime.stop(null, root.id)).state).toBe("stopped");
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   });
 });

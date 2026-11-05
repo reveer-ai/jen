@@ -5,9 +5,11 @@
 //
 // A caller is the owner (null) or an agent, named by its ID and the hash of
 // the token it authenticated with. The owner is every agent's ancestor and has
-// every capability; a root agent's parent is the owner.
+// every capability; a root agent's parent is the owner. On the wire the
+// owner's ID is "owner" and the runtime's is "runtime", which no agent has.
 
 import { createHash, randomBytes } from "node:crypto";
+import http from "node:http";
 import net from "node:net";
 import { DockerError, type Container, type Docker } from "./docker.ts";
 
@@ -38,6 +40,14 @@ export interface RuntimeOptions {
   // Resolves once an agent at url accepts connections, and rejects if it
   // never does.
   ready?: (url: string) => Promise<void>;
+  // Posts a message from the runtime to the agent at url, with its token.
+  send?: (url: string, token: string, text: string) => Promise<void>;
+}
+
+// Where to reach a running agent's protocol, and its current token.
+export interface Address {
+  url: string;
+  token: string;
 }
 
 // A refusal or failure the API reports with status. agent names an agent a
@@ -59,6 +69,12 @@ const MAX_RETRIES = 3;
 // The address agents reach the runtime at, by its alias on their network.
 const RUNTIME_URL = "http://runtime:8080";
 const READY_MS = 30_000;
+// How long a message from the runtime may take to be accepted. Notices are
+// sent while holding the tree-operation queue, so one must never wait forever.
+const SEND_MS = 10_000;
+// IDs that name the owner and the runtime. Agent IDs are 12 hex characters,
+// so neither can collide, and no route reaches either.
+const RESERVED = new Set(["owner", "runtime"]);
 
 interface Node {
   id: string;
@@ -77,7 +93,12 @@ export class Runtime {
   #queue: Promise<unknown> = Promise.resolve();
 
   constructor(options: RuntimeOptions) {
-    this.#o = { agentURL: (container) => `http://${container}:8080`, ready: (url) => waitForConnection(url), ...options };
+    this.#o = {
+      agentURL: (container) => `http://${container}:8080`,
+      ready: (url) => waitForConnection(url),
+      send: postMessage,
+      ...options,
+    };
   }
 
   // Claims the runtime's name, joins its network, and repairs what a crash
@@ -165,7 +186,7 @@ export class Runtime {
           "jen.parent": node.parent ?? "",
           "jen.grant": JSON.stringify(node.grant),
         });
-        await this.#run(node.id);
+        await this.#run(node);
       } catch (error) {
         // The step may have happened even if it reported failure, so undo
         // everything by name.
@@ -202,18 +223,19 @@ export class Runtime {
     });
   }
 
-  // Starts a stopped agent from its state. Its descendants are left as they are.
+  // Starts a stopped agent from its state. Its descendants are left as they
+  // are, and an agent with stopped children is told so, as its only message.
   start(caller: Caller, id: string): Promise<Agent> {
     return this.#serial(async () => {
       const { nodes } = await this.#read();
       const target = reach(nodes, caller, id);
-      if (target.container && alive(target.container.state)) return describe(target);
-      await this.#o.docker.removeContainer(this.#resource(id));
-      try {
-        await this.#run(id);
-      } catch (error) {
-        await this.#o.docker.removeContainer(this.#resource(id));
-        throw new RuntimeError(500, `starting failed: ${message(error)}`);
+      if (running(target)) return describe(target);
+      const notice = stoppedChildren(nodes, id);
+      await this.#start(target, notice !== undefined);
+      // The agent is running either way. One that never gets its notice
+      // stays held until its next message.
+      if (notice !== undefined) {
+        await this.#notify(id, notice).catch((error) => process.stderr.write(`jen-runtime: agent ${id} wasn't sent its notice: ${message(error)}\n`));
       }
       return describe(target, "running");
     });
@@ -229,11 +251,82 @@ export class Runtime {
   }
 
   // Where to relay to a running agent the caller can reach, and its current token.
-  async target(caller: Caller, id: string): Promise<{ url: string; token: string }> {
+  async target(caller: Caller, id: string): Promise<Address> {
     const { nodes } = await this.#read();
     const node = reach(nodes, caller, id);
-    if (!node.container || !alive(node.container.state)) throw new RuntimeError(409, `agent ${id} is stopped`);
-    const details = await this.#o.docker.inspectContainer(node.container.id);
+    if (!running(node)) throw new RuntimeError(409, `agent ${id} is stopped`);
+    return this.#address(id);
+  }
+
+  // Where to relay a message to an agent the caller may message: a descendant
+  // or its parent. A stopped one is started first, holding its loop until the
+  // message arrives, and notice is what the runtime sends it after the message.
+  async messageTarget(caller: Caller, id: string): Promise<Address & { notice?: string }> {
+    const { nodes } = await this.#read();
+    if (running(reachMessage(nodes, caller, id))) return this.#address(id);
+    return this.#serial(async () => {
+      const { nodes } = await this.#read();
+      const target = reachMessage(nodes, caller, id);
+      if (running(target)) return this.#address(id);
+      await this.#start(target, true);
+      return { ...(await this.#address(id)), notice: stoppedChildren(nodes, id) };
+    });
+  }
+
+  // Sends text from the runtime to the agent at address.
+  notify(address: Address, text: string): Promise<void> {
+    return this.#o.send(address.url, address.token, text);
+  }
+
+  // Watches the engine for agents whose process exits and won't be restarted,
+  // and tells each one's parent. Returns a function that stops watching.
+  watch(onError: (error: unknown) => void = () => {}): () => void {
+    return this.#o.docker.watchExits([`jen.runtime=${this.#o.name}`, "jen.agent"], (container) => {
+      this.#exited(container).catch(onError);
+    });
+  }
+
+  // Checked inside the queue, against the tree it acts on: an operation queued
+  // ahead of it may have stopped, deleted or replaced the container.
+  #exited(container: string) {
+    return this.#serial(async () => {
+      const details = await this.#o.docker.inspectContainer(container);
+      // A container being restarted, or removed by the runtime, isn't reported.
+      if (!details || details.state !== "exited") return;
+      const id = details.labels["jen.agent"];
+      const { nodes } = await this.#read();
+      const node = nodes.get(id);
+      // Only the agent's current container counts, not one since replaced.
+      if (!node || node.container?.id !== details.id) return;
+      const parent = nodes.get(node.parent ?? "");
+      // A root's parent is the owner, who sees it as stopped.
+      if (!parent) return;
+      const woken = !running(parent);
+      if (woken) await this.#start(parent, true);
+      await this.#notify(parent.id, `Your sub-agent ${id} stopped: its process kept exiting and its restarts ran out. Message it to start it again.`);
+      const notice = woken ? stoppedChildren(nodes, parent.id) : undefined;
+      if (notice !== undefined) await this.#notify(parent.id, notice);
+    });
+  }
+
+  // Starts a stopped agent's container, and on failure leaves it stopped. A
+  // start with messages to deliver holds the agent until the first arrives.
+  async #start(node: Node, wake: boolean) {
+    await this.#o.docker.removeContainer(this.#resource(node.id));
+    try {
+      await this.#run(node, wake ? randomBytes(16).toString("hex") : undefined);
+    } catch (error) {
+      await this.#o.docker.removeContainer(this.#resource(node.id));
+      throw new RuntimeError(500, `starting failed: ${message(error)}`);
+    }
+  }
+
+  async #notify(id: string, text: string) {
+    await this.notify(await this.#address(id), text);
+  }
+
+  async #address(id: string): Promise<Address> {
+    const details = await this.#o.docker.inspectContainer(this.#resource(id));
     const token = details?.env.find((e) => e.startsWith("JEN_TOKEN="))?.slice("JEN_TOKEN=".length);
     if (!details || !alive(details.state) || !token) throw new RuntimeError(409, `agent ${id} is stopped`);
     return { url: this.#o.agentURL(details.name), token };
@@ -241,10 +334,10 @@ export class Runtime {
 
   // Creates and starts a new container for the agent, with a new token, and
   // waits until the agent accepts connections.
-  async #run(id: string) {
+  async #run(node: Node, wake?: string) {
     const { docker, name, image, model } = this.#o;
     const token = randomBytes(32).toString("hex");
-    const resource = this.#resource(id);
+    const resource = this.#resource(node.id);
     await docker.createContainer(resource, {
       image,
       env: [
@@ -253,8 +346,12 @@ export class Runtime {
         ...(model.baseURL ? [`JEN_BASE_URL=${model.baseURL}`] : []),
         `JEN_TOKEN=${token}`,
         `JEN_RUNTIME_URL=${RUNTIME_URL}`,
+        `JEN_AGENT_ID=${node.id}`,
+        `JEN_PARENT=${node.parent ?? "owner"}`,
+        `JEN_GRANT=${JSON.stringify(node.grant)}`,
+        ...(wake ? [`JEN_WAKE=${wake}`] : []),
       ],
-      labels: { "jen.runtime": name, "jen.agent": id, "jen.credential": sha256(token) },
+      labels: { "jen.runtime": name, "jen.agent": node.id, "jen.credential": sha256(token) },
       volume: { name: resource, path: "/state" },
       network: name,
       maxRetries: MAX_RETRIES,
@@ -325,7 +422,7 @@ function describe(node: Node, state?: Agent["state"]): Agent {
     id: node.id,
     parent: node.parent,
     grant: { ...node.grant },
-    state: state ?? (node.container && alive(node.container.state) ? "running" : "stopped"),
+    state: state ?? (running(node) ? "running" : "stopped"),
   };
 }
 
@@ -362,8 +459,46 @@ function current(node: Node, credential: string): boolean {
 // The node, if the caller may act on it. Anything else is not found, so a
 // caller can't probe for agents outside its subtree.
 function reach(nodes: Map<string, Node>, caller: Caller, id: string): Node {
-  if (!reaches(nodes, authorize(nodes, caller), id)) throw new RuntimeError(404, `no agent ${id}`);
+  if (RESERVED.has(id) || !reaches(nodes, authorize(nodes, caller), id)) throw new RuntimeError(404, `no agent ${id}`);
   return nodes.get(id)!;
+}
+
+// The node, if the caller may message it: a descendant, or its parent.
+function reachMessage(nodes: Map<string, Node>, caller: Caller, id: string): Node {
+  const by = authorize(nodes, caller);
+  if (by !== null && !RESERVED.has(id) && nodes.get(by)!.parent === id && nodes.has(id)) return nodes.get(id)!;
+  return reach(nodes, caller, id);
+}
+
+const running = (node: Node) => !!node.container && alive(node.container.state);
+
+// The notice for an agent started while its sub-agents are stopped, or
+// undefined when none is.
+function stoppedChildren(nodes: Map<string, Node>, id: string): string | undefined {
+  const stopped = [...nodes.values()].filter((n) => n.parent === id && !running(n)).map((n) => n.id);
+  if (stopped.length === 0) return undefined;
+  return `You were stopped and have been started again. Your sub-agents ${stopped.join(", ")} are still stopped. Messaging one starts it.`;
+}
+
+// Posts text to the agent at url as a message from the runtime, failing if
+// the agent hasn't accepted it within timeoutMs.
+export function postMessage(url: string, token: string, text: string, timeoutMs = SEND_MS): Promise<void> {
+  const body = JSON.stringify({ text });
+  return new Promise((resolve, reject) => {
+    const req = http.request(new URL("/messages", url), {
+      method: "POST",
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { authorization: `Bearer ${token}`, "jen-from": "runtime", "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+    });
+    req.on("response", (res) => {
+      res.resume();
+      const status = res.statusCode ?? 0;
+      if (status >= 200 && status < 300) resolve();
+      else reject(new Error(`the agent answered ${status}`));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
 }
 
 function depthOf(nodes: Map<string, Node>, node: Node): number {

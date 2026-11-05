@@ -3,7 +3,7 @@ import type { Item, ToolSpec } from "./port.ts";
 
 test("items and tool descriptions survive a JSON round trip", () => {
   const items: Item[] = [
-    { type: "message", role: "user", text: "what is a?" },
+    { type: "message", role: "user", from: "owner", text: "what is a?" },
     { type: "tool_call", id: "c1", name: "lookup", input: { key: "a", depth: 2, deep: [true, null] } },
     { type: "tool_result", callId: "c1", output: "42" },
     { type: "message", role: "assistant", text: "a is 42" },
@@ -16,4 +16,9 @@ test("items and tool descriptions survive a JSON round trip", () => {
 
   expect(JSON.parse(JSON.stringify(items))).toEqual(items);
   expect(JSON.parse(JSON.stringify(tool))).toEqual(tool);
+});
+
+test("a received message keeps its sender", () => {
+  const message: Item = { type: "message", role: "user", from: "owner", text: "check the logs" };
+  expect(JSON.parse(JSON.stringify(message))).toEqual({ type: "message", role: "user", from: "owner", text: "check the logs" });
 });

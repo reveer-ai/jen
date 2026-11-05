@@ -14,10 +14,11 @@ One npm package (ESM, Node ≥ 26) at the repo root. Node runs the TypeScript in
 
 - `src/agent/`: the agent, everything that runs in an agent's container.
   - `main.ts`: its entrypoint. It serves the protocol on port 8080. The container is the only supported way to run it.
-  - `server.ts`: the agent's protocol over HTTP: `POST /messages`, the `GET /events` stream and the bearer token.
-  - `loop.ts`: one turn of model and tool calls. `respond.ts` runs a turn on the stored conversation and saves it, and `store.ts` is the conversation in SQLite.
+  - `server.ts`: the agent's protocol over HTTP: `POST /messages` into the inbox, the `GET /events` stream and the bearer token.
+  - `loop.ts`: the agent's loop, one saved step at a time: settle the outstanding tool calls, deliver the inbox, call the model. It reads all its state from `store.ts`, the conversation and inbox in SQLite, so a restart resumes where it stopped.
+  - `delegation.ts`: the agent's identity from its environment, the tools that call the runtime's API (`send_message`, and with `spawn` the tools that manage sub-agents), and the system instructions.
   - `model/`: the model port (`port.ts`), the scripted fake (`scripted.ts`) and the adapters. Only an adapter imports a model SDK.
-- `src/runtime/`: the runtime, which starts, stops and deletes agents on its Docker engine and relays every request to them. `docker.ts` is a minimal Engine API client over the socket, `runtime.ts` the tree (its only record is Docker labels), `server.ts` the API and relay, and `main.ts` its entrypoint. Unit tests run against the in-memory engine in `fake-docker.ts`.
+- `src/runtime/`: the runtime, which starts, stops and deletes agents on its Docker engine, relays every request to them, wakes a stopped agent for a message, and reports what only it saw. `docker.ts` is a minimal Engine API client over the socket, `runtime.ts` the tree (its only record is Docker labels), `server.ts` the API and relay, and `main.ts` its entrypoint. Unit tests run against the in-memory engine in `fake-docker.ts`.
 
 `docs/architecture.html` diagrams these components and how a message flows through them. Open it in a browser.
 
@@ -41,7 +42,7 @@ Commands:
   curl -X DELETE -H "Authorization: Bearer $JEN_OWNER_TOKEN" localhost:8080/agents/$AGENT
   ```
 
-  `POST /agents` answers `201` with `{"id", "parent", "grant", "state"}` once the agent accepts connections. `GET /agents` lists every agent, and `POST /agents/<id>/start` starts a stopped one from its stored conversation. `/messages` and `/events` are relayed to the agent's protocol unchanged: `POST` answers `{"reply": "…"}` once the turn is saved, and `/events` streams every saved item as Server-Sent Events, resuming after a `Last-Event-ID` header. The full API is in `openspec/specs/agent-runtime/spec.md`.
+  `POST /agents` answers `201` with `{"id", "parent", "grant", "state"}` once the agent accepts connections. `GET /agents` lists every agent, and `POST /agents/<id>/start` starts a stopped one from its stored conversation. `/messages` and `/events` are relayed to the agent's protocol, with the sender stamped in `Jen-From` (`owner` for the owner). `POST /messages` takes `{"text": "…"}` and an optional `"urgent": true`, starts a stopped agent first, and answers `202` with no body once the message is in the agent's inbox. Replies arrive on `/events`, which streams every saved item as Server-Sent Events as it's saved, resuming after a `Last-Event-ID` header, plus an `error` event for each failed model call. A root agent answers the owner by calling `send_message` to `owner`: the message is the call's text once its result, `delivered`, is on the stream. The full API is in `openspec/specs/agent-runtime/spec.md`.
 
   Stopping an agent removes its container and keeps its volume, `jen-agent-<id>`. Deleting it removes both, and both act on everything under it. `docker rm -f jen-runtime` stops only the runtime: agents keep running, and a runtime started again with the same command reads the tree back from Docker. To remove everything, delete each agent, then the runtime and its network with `docker network rm jen`. Optional settings: `JEN_RUNTIME_NAME` (default `jen`, which prefixes the runtime's container, network and agents), `JEN_AGENT_IMAGE` (default `jen-agent`), `JEN_MAX_DEPTH` (default 3) and `JEN_MAX_AGENTS` (default 10).
 

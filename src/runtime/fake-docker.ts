@@ -15,6 +15,15 @@ export class FakeDocker implements Docker {
   readonly volumes = new Map<string, Volume>();
   readonly containers = new Map<string, FakeContainer>();
   readonly networks = new Map<string, { name: string; labels: Record<string, string>; aliases: Map<string, string[]> }>();
+  readonly #watches = new Set<{ labels: string[]; onExit: (id: string) => void }>();
+
+  // Ends a container's process, as a crash does. With restart, the engine
+  // restarts it; without, it's left exited, as when its restarts run out.
+  exit(nameOrId: string, { restart }: { restart: boolean }) {
+    const c = this.#get(nameOrId);
+    c.state = restart ? "restarting" : "exited";
+    for (const watch of this.#watches) if (matches(c.labels, watch.labels)) watch.onExit(c.id);
+  }
 
   // Adds a container directly, such as the runtime's own, and returns it.
   add(container: Partial<FakeContainer> & { name: string }): FakeContainer {
@@ -83,6 +92,12 @@ export class FakeDocker implements Docker {
     if (c.networks.includes(network)) throw new DockerError(403, `endpoint already exists in network ${network}`);
     c.networks.push(network);
     n.aliases.set(c.id, [...aliases]);
+  }
+
+  watchExits(labels: string[], onExit: (id: string) => void) {
+    const watch = { labels, onExit };
+    this.#watches.add(watch);
+    return () => void this.#watches.delete(watch);
   }
 
   #get(nameOrId: string): FakeContainer {
