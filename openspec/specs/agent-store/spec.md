@@ -20,29 +20,8 @@ Loading a store SHALL return every item it has saved, in the order saved, each e
 - **THEN** loading returns the first turn's items followed by the second's, each equal to what was saved
 
 #### Scenario: Every item type survives
-- **WHEN** a user message, an assistant message, a tool call with nested JSON input, and a tool result are saved and the store is reopened
+- **WHEN** a received message with a sender, an assistant message, a tool call with nested JSON input, and a tool result are saved and the store is reopened
 - **THEN** each loads back equal to what was saved
-
-### Requirement: A turn is saved whole or not at all
-Saving a turn SHALL make all of its items durable together. If saving fails partway, the store SHALL hold none of that turn's items.
-
-#### Scenario: Failure while saving
-- **WHEN** saving a turn fails after some of its items were written
-- **THEN** loading returns only the items saved before that turn
-
-### Requirement: A completed turn is saved and the next turn sees it
-When the agent handles a message, it SHALL run the turn on the stored conversation, and once the turn completes, save every item the turn added.
-
-#### Scenario: Second message sees the first
-- **WHEN** the agent handles one message, then a second message on the same store
-- **THEN** the model's first call for the second message is sent the first turn's items followed by the second message
-
-### Requirement: A failed turn saves nothing
-If a turn fails, the agent SHALL leave the stored conversation exactly as it was before the message.
-
-#### Scenario: Model failure
-- **WHEN** the model call fails while the agent handles a message
-- **THEN** the stored conversation is unchanged
 
 ### Requirement: Each saved item has a stable position
 The store SHALL give each saved item a position that is greater than every position before it, and never changes or repeats, including after the store is closed and opened again. Reading the items after a position SHALL return every item saved after it, in order, each with its position. Reading after position 0 SHALL return every item. A read MAY be limited to a number of items, and SHALL then return only the first that many.
@@ -62,3 +41,32 @@ The store SHALL give each saved item a position that is greater than every posit
 #### Scenario: Nothing after the last item
 - **WHEN** the items after the last saved item's position are read
 - **THEN** no items are returned
+
+### Requirement: Each step is saved on its own
+The store SHALL save each model response, each tool result and each delivery of messages as its own transaction, durable once the save returns. A failed save SHALL leave the store as it was before that save.
+
+#### Scenario: Response saved before its tools run
+- **WHEN** the model returns a response holding a tool call
+- **THEN** the response is in the store before the tool runs
+
+#### Scenario: Failure while saving a step
+- **WHEN** saving a model response fails after some of its items were written
+- **THEN** loading returns only the items saved before that response
+
+### Requirement: The inbox holds messages until they're delivered
+The store SHALL keep an inbox of accepted messages, each with its sender, text and urgency, in arrival order, across closing and reopening. Delivering SHALL move every inbox message into the conversation in arrival order in one transaction, so a message is either in the inbox or in the conversation, never both and never neither.
+
+#### Scenario: Inbox survives reopening
+- **WHEN** a message is saved to the inbox and the store is closed and reopened
+- **THEN** the inbox still holds that message with its sender and urgency
+
+#### Scenario: Delivery moves messages
+- **WHEN** two messages are in the inbox and the inbox is delivered
+- **THEN** the inbox is empty, and the conversation ends with both messages in arrival order
+
+### Requirement: The store keeps the wake ID that ended a hold
+The store SHALL save a wake ID in the same transaction as the message that ended its hold, and SHALL report whether it holds a given wake ID, across closing and reopening.
+
+#### Scenario: Wake ID with its message
+- **WHEN** a message is saved together with wake ID `w1` and the store is reopened
+- **THEN** the store holds both the message and `w1`

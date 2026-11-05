@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-04.
+Last updated 2026-11-05.
 
 ## Current project: Agent harness & UI engine
 
@@ -43,6 +43,7 @@ Each opening issue is done when its decisions are written down and every remaini
 - 2026-11-04: All three fixed, each with a spec requirement or scenario and a test that fails without the fix (tasks 8.1–8.3). The runtime checks an exit only when its turn in the tree-operation queue comes, and reports it only for the agent's current, still-exited container. A message from the runtime gives up after 10 seconds, so a notice that's never answered can't hold the queue. Both live checks count only `delivered` sends to `owner` as replies. Typecheck, 227 unit tests and strict validation pass, and all 4 live checks pass against `openai/gpt-6-luna` through OpenRouter with the stricter replies, so the models answered the owner by sending, not by text.
 
 - 2026-11-04: The [full re-review on PR #9](https://github.com/reveer-ai/jen/pull/9#pullrequestreview-5779789558) at `5d7ba68` verified all three fixes, independently rechecked the stale-exit and notification-deadline cases, and found no new actionable correctness issues. The three full-review threads and the older wake-ordering design thread are resolved. Typecheck, strict validation, 227 unit tests, all 4 stricter live checks and CI pass. One initial unit run hit `fetch`/`write EPIPE` in the oversized-body test; seven subsequent full runs and 12 focused runs passed. This intermittent test failure is a nonblocking caveat; the review recommends merge.
+- 2026-11-05: The maintainer approved [PR #9](https://github.com/reveer-ai/jen/pull/9) after walking through `src/agent/delegation.ts` and `src/agent/loop.ts`. The OpenSpec change was archived as `2026-11-05-add-agent-delegation`, with its specs synced to `openspec/specs/` (the new `agent-delegation` capability plus updates to seven others). JEN-11 is done, which completes the Agent delegation milestone. [JEN-4](https://linear.app/reveer/issue/JEN-4) is still blocked by [JEN-3](https://linear.app/reveer/issue/JEN-3).
 
 ## Open questions, held for their tasks
 
