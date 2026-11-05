@@ -72,12 +72,30 @@ When an agent's container exits and won't be restarted, the runtime SHALL send i
 - **WHEN** a root agent's restarts run out
 - **THEN** no message is sent, and the owner sees it as `stopped`
 
+### Requirement: An exit is checked when its turn in the queue comes
+The runtime SHALL check an exit in the tree-operation queue, against the tree as it is then, and SHALL report nothing for a container that no longer exists, is no longer exited, or is no longer the agent's current container.
+
+#### Scenario: A stop queued ahead of the exit
+- **WHEN** the owner's stop of a parent is queued before its child's exhausted exit is handled
+- **THEN** the stop succeeds, nothing is sent, and the parent stays stopped
+
+#### Scenario: A start queued ahead of the exit
+- **WHEN** a start of the child is queued before its exhausted exit is handled
+- **THEN** the child runs in a new container and nothing is sent
+
 ### Requirement: The runtime tells a started agent its sub-agents are stopped
 When the runtime starts an agent that has stopped children, for a message or an explicit start, it SHALL send the agent, from `runtime`, `You were stopped and have been started again. Your sub-agents <ids> are still stopped. Messaging one starts it.` That start SHALL always hold the agent's loop until the notice arrives.
 
 #### Scenario: Explicit start with stopped children
 - **WHEN** the owner stops a root agent with a child and then starts the root
 - **THEN** the root is started with `JEN_WAKE`, receives the notice naming its child as its only message, and the child stays stopped
+
+### Requirement: A message from the runtime has a deadline
+The runtime SHALL give up on a message it sends to an agent if the agent hasn't answered within 10 seconds, and treat it as a message that couldn't be sent, so no tree operation waits on an agent that never answers.
+
+#### Scenario: An agent takes a notice and never answers
+- **WHEN** an agent accepts a notice's request and never responds, during an explicit start
+- **THEN** the start still returns, and the next tree operation runs
 
 ### Requirement: Each agent is told who it is
 Each time an agent starts, the runtime SHALL give it `JEN_AGENT_ID` (its ID), `JEN_PARENT` (its parent's ID, or `owner` for a root agent) and `JEN_GRANT` (its grant as JSON).

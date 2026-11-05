@@ -263,12 +263,11 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: its text, and each send to owner whose
-// result is delivered.
+// What a root agent told the owner: each send to owner whose result is
+// delivered. Its text output reaches no one, so it doesn't count.
 function replies(events: Event[]): string[] {
   const delivered = new Set(events.flatMap(({ item }) => (item.type === "tool_result" && item.output === "delivered" ? [item.callId] : [])));
   return events.flatMap(({ item }) => {
-    if (item.type === "message" && item.role === "assistant" && item.text.trim() !== "") return [item.text];
     if (item.type === "tool_call" && item.name === "send_message" && delivered.has(item.id)) {
       const input = item.input as { to?: string; text?: string };
       if (input.to === "owner" && typeof input.text === "string") return [input.text];

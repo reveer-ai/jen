@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, test, vi } from "vitest";
 import { DockerError } from "./docker.ts";
 import { FakeDocker } from "./fake-docker.ts";
-import { Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
+import { postMessage, Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
 
 const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
 
@@ -754,5 +754,77 @@ describe("the runtime tells a parent its child's restarts ran out", () => {
       { to: root.id, text: `Your sub-agent ${a.id} stopped: its process kept exiting and its restarts ran out. Message it to start it again.`, wake },
       { to: root.id, text: `You were stopped and have been started again. Your sub-agents ${a.id} are still stopped. Messaging one starts it.`, wake },
     ]);
+  });
+
+  test("an exit handled after a queued stop doesn't start the stopped parent again", async () => {
+    let hold: Promise<void> | undefined;
+    const { docker, runtime, as, sent } = await setup({ ready: () => hold ?? Promise.resolve() });
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    let release!: () => void;
+    hold = new Promise((resolve) => (release = resolve));
+    // A spawn held in the queue, then a stop queued behind it, then the exit.
+    const spawning = runtime.spawn(null, { spawn: false });
+    const stopping = runtime.stop(null, root.id);
+    docker.exit(`jen-agent-${child.id}`, { restart: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    hold = undefined;
+    release();
+    await spawning;
+    expect((await stopping).state).toBe("stopped");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+    expect(sent).toEqual([]);
+  });
+
+  test("an exit of a container since replaced isn't reported", async () => {
+    let hold: Promise<void> | undefined;
+    const { docker, runtime, as, sent } = await setup({ ready: () => hold ?? Promise.resolve() });
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true });
+    const child = await runtime.spawn(as(root.id), { spawn: false });
+    let release!: () => void;
+    hold = new Promise((resolve) => (release = resolve));
+    const spawning = runtime.spawn(null, { spawn: false });
+    // The child's restarts run out, and a start of it is queued before the
+    // engine's exit event arrives.
+    const old = container(docker, child.id)!.id;
+    container(docker, child.id)!.state = "exited";
+    const starting = runtime.start(null, child.id);
+    docker.exit(old, { restart: false });
+    hold = undefined;
+    release();
+    await spawning;
+    await starting;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(container(docker, child.id)!.id).not.toBe(old);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("a notice from the runtime can't hold the queue", () => {
+  test("postMessage fails when the agent takes the message and never answers", async () => {
+    const server = http.createServer((req) => req.resume());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    await expect(postMessage(`http://127.0.0.1:${port}`, "t", "hello", 200)).rejects.toThrow();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  test("a start whose notice is never answered still returns, and the next operation runs", async () => {
+    const server = http.createServer((req) => req.resume());
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const { runtime, as } = await setup({ send: (_url, token, text) => postMessage(`http://127.0.0.1:${port}`, token, text, 200) });
+    const root = await runtime.spawn(null, { spawn: true });
+    await runtime.spawn(as(root.id), { spawn: false });
+    await runtime.stop(null, root.id);
+    vi.spyOn(process.stderr, "write").mockImplementationOnce(() => true);
+    expect((await runtime.start(null, root.id)).state).toBe("running");
+    expect((await runtime.stop(null, root.id)).state).toBe("stopped");
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   });
 });

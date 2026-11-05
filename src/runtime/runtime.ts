@@ -69,6 +69,9 @@ const MAX_RETRIES = 3;
 // The address agents reach the runtime at, by its alias on their network.
 const RUNTIME_URL = "http://runtime:8080";
 const READY_MS = 30_000;
+// How long a message from the runtime may take to be accepted. Notices are
+// sent while holding the tree-operation queue, so one must never wait forever.
+const SEND_MS = 10_000;
 // IDs that name the owner and the runtime. Agent IDs are 12 hex characters,
 // so neither can collide, and no route reaches either.
 const RESERVED = new Set(["owner", "runtime"]);
@@ -283,15 +286,19 @@ export class Runtime {
     });
   }
 
-  async #exited(container: string) {
-    const details = await this.#o.docker.inspectContainer(container);
-    // A container being restarted, or removed by the runtime, isn't reported.
-    if (!details || details.state !== "exited") return;
-    const id = details.labels["jen.agent"];
-    if (details.name !== this.#resource(id)) return;
-    await this.#serial(async () => {
+  // Checked inside the queue, against the tree it acts on: an operation queued
+  // ahead of it may have stopped, deleted or replaced the container.
+  #exited(container: string) {
+    return this.#serial(async () => {
+      const details = await this.#o.docker.inspectContainer(container);
+      // A container being restarted, or removed by the runtime, isn't reported.
+      if (!details || details.state !== "exited") return;
+      const id = details.labels["jen.agent"];
       const { nodes } = await this.#read();
-      const parent = nodes.get(nodes.get(id)?.parent ?? "");
+      const node = nodes.get(id);
+      // Only the agent's current container counts, not one since replaced.
+      if (!node || node.container?.id !== details.id) return;
+      const parent = nodes.get(node.parent ?? "");
       // A root's parent is the owner, who sees it as stopped.
       if (!parent) return;
       const woken = !running(parent);
@@ -473,12 +480,14 @@ function stoppedChildren(nodes: Map<string, Node>, id: string): string | undefin
   return `You were stopped and have been started again. Your sub-agents ${stopped.join(", ")} are still stopped. Messaging one starts it.`;
 }
 
-// Posts text to the agent at url as a message from the runtime.
-export function postMessage(url: string, token: string, text: string): Promise<void> {
+// Posts text to the agent at url as a message from the runtime, failing if
+// the agent hasn't accepted it within timeoutMs.
+export function postMessage(url: string, token: string, text: string, timeoutMs = SEND_MS): Promise<void> {
   const body = JSON.stringify({ text });
   return new Promise((resolve, reject) => {
     const req = http.request(new URL("/messages", url), {
       method: "POST",
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { authorization: `Bearer ${token}`, "jen-from": "runtime", "content-type": "application/json", "content-length": Buffer.byteLength(body) },
     });
     req.on("response", (res) => {

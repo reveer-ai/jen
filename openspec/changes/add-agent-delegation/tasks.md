@@ -40,6 +40,12 @@
 - [x] 7.2 Add the delegation live check: the owner asks a root agent for work it delegates to a sub-agent, the sub-agent asks the root a question and gets an answer, and the result reaches the owner as a `delivered` send on the root's stream; verify with `npm run test:live` passing with Docker and credentials, and record in the pull request whether the model followed the instructions without help
 - [x] 7.3 Run `npm run check` and `npm test`, and `openspec validate add-agent-delegation --strict`; verify all three pass
 
+## 8. Fixes from the full review
+
+- [x] 8.1 Check an exit inside the tree-operation queue, and report it only if the container still exists, is exited and is the agent's current one; verify with runtime tests for a stop and a start queued ahead of the exit
+- [x] 8.2 Give the runtime's messages to agents a 10-second deadline; verify with a test of a receiver that never answers, and of a start whose notice is never answered followed by a stop
+- [x] 8.3 Count only `delivered` sends to `owner` as replies in both live checks, not assistant text; verify with `npm run test:live` passing
+
 ## Workflow follow-up
 
 - Archive the change once the pull request is reviewed and merged.
