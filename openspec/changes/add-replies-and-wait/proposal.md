@@ -12,6 +12,7 @@ jen's agents should behave on Luna. This change ([JEN-12](https://linear.app/rev
 
 - **A turn's final text is the agent's reply to its parent.** **BREAKING:** when an agent ends its turn, its final text is sent to its parent as a message from the agent. A root's final text is its reply to the owner, read on its event stream. An empty final text sends nothing. Ending a turn means "here's my result" or "here's my question", the same as in a chat, and it's the only way an agent answers its parent.
 - **Agents send only downward.** **BREAKING:** `send_message` becomes `message_sub_agent`. It takes the same fields and reaches only the agent's own sub-agents. A send to the agent's parent or to `owner` is refused, with a result saying to reply by ending the turn. The root's special send to `owner`, delivered by saving its result, is removed, along with its handling of interrupted sends. An agent without `spawn` has no sub-agents, so it has no send tool. **Supersedes in part** the 2026-11-03 decision that agents talk only by sending, and the 2026-11-04 decision that a child can send its parent an urgent message.
+- **An agent sees no agent ID it can't message.** **BREAKING:** the model isn't told the agent's own ID or its parent's. A message from the parent reaches it with no sender line, the way a user's message looks in any chat. `spawn_agent` and `list_agents` leave out the parent field, and `list_agents` lists only the agent's own sub-agents. The only IDs an agent knows are its sub-agents', so it has no address to answer its parent with.
 - **An agent waits for replies with `wait`.** An agent with `spawn` gets a `wait` tool. The call returns as soon as the agent's inbox holds a message, from anyone, plain or urgent, and its result is those messages with their senders. Until then the agent makes no model calls, and its sub-agents keep working. A wait survives a stop, crash or restart and carries on when the agent starts again. An agent that has other work does it first. Replies that arrive meanwhile reach it between steps, as messages do today.
 - **`wait` knows who owes a reply.** A sub-agent owes its parent a reply from the time the parent's send is delivered until the sub-agent next replies. Each `wait` result ends by naming the sub-agents still working, or saying that every one has replied. A `wait` while nobody owes a reply and the inbox is empty returns at once, saying there's nothing to wait for, so an agent that loses count never hangs.
 - **The instructions are rewritten around the three rules.** End your turn when you have something for your parent. Talk to your sub-agents with `message_sub_agent`. Call `wait` when you can't go on without an answer. They keep the rules that held up in the lab:
@@ -43,12 +44,15 @@ None.
 
 - `agent-delegation`:
   - `send_message` becomes the downward-only `message_sub_agent`, and agents without `spawn` have no send tool.
+  - The model is shown no ID it can't message: no own or parent ID in the instructions, and none in `spawn_agent` and `list_agents` results. `list_agents` lists only direct sub-agents.
   - The root's send to `owner` is removed.
   - The new `wait` tool, with its record of who owes a reply.
   - The requirement on what the instructions say.
   - The delegation live check uses replies, and the new behavior live check is added.
+- `openai-responses-adapter`: a message with an empty sender is sent as plain user content, with no `From:` header.
 - `agent-loop`:
-  - A turn's final text is sent to the parent, and an empty one sends nothing.
+  - A turn's final text is sent to the parent, and an empty one sends nothing unless the parent is owed a reply.
+  - The parent's messages reach the model with an empty sender.
   - A `wait` call is answered by the inbox, not run like other tools. It runs after the rest of its batch, any message ends it, an urgent message doesn't cancel it, and it survives a restart.
 - `agent-store`: the inbox can be delivered as the result of a `wait` call, in one transaction with saving that result.
 

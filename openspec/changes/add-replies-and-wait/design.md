@@ -9,7 +9,7 @@ See proposal.md for why. Today:
 - **Only one message goes up today without the model sending it:** the give-up notice. It's posted to the parent once, and a failed post falls back to the agent's own stream.
 - **The runtime already routes a child's message to its parent,** and reports a sub-agent whose restarts ran out, from `runtime`.
 
-The prototype behind the proposal is the lab variant `bc3` from 2026-11-06. It held the reply and `wait` in memory and lost both on a crash. This design keeps its behavior and puts its state in the store.
+The prototype behind the proposal is the lab variant `bc3` from 2026-11-06, refined to `bc10` on 2026-11-07 (decisions 3 and 7). It held the reply and `wait` in memory and lost both on a crash. This design keeps its behavior and puts its state in the store.
 
 ## Goals / Non-Goals
 
@@ -46,15 +46,27 @@ An agent owes its parent a reply once a message from its parent has been deliver
 
 *Why:* a parent waiting on a sub-agent counts it as working until it replies (decision 6). A sub-agent that took a correction as needing no answer, and ended its turn empty, would leave its parent waiting forever. The fixed reply costs the parent one model call, and only when the sub-agent went silent on something its parent sent. This narrows the proposal's "an empty final text sends nothing" to empty replies nobody is waiting for.
 
-### 3. Sends go down only, refused upward, not constrained by the schema
+### 3. Sends go down only, and an agent sees no ID it can't message
 
-`send_message` becomes `message_sub_agent`, with the same `to`, `text` and `urgent`. A send whose `to` is the agent's parent or `owner` makes no request, and its result is `Error: you answer your parent by ending your turn with your reply, not with message_sub_agent.` Any other `to` goes to the runtime, which still answers `404` for an agent out of reach. An agent without `spawn` gets no send tool, and so has no tools at all.
+`send_message` becomes `message_sub_agent`, with the same `to`, `text` and `urgent`. An agent without `spawn` gets no send tool, and so has no tools at all.
 
-*Rejected:* letting the schema rule the parent out. The lab tried this on 2026-11-07, by limiting `to` to the agent's current sub-agents with an `enum`:
+The model is never shown an agent ID it can't send to. Its own ID and its parent's are left out, and so are the IDs of its sub-agents' sub-agents:
+
+- **The instructions** say "You are an agent in a tree of agents" and "Your parent is the user" or "Your parent is the agent that started you". Neither ID appears. The agent still reads both from its environment (decision 1 needs its parent's).
+- **A message from the parent has no sender line.** The loop passes it to the model with an empty sender, and the adapter sends a message with an empty sender as plain user content, with no `From:` header. In a `wait` result it's the text alone. The parent's messages then look like a user's messages in any chat. Messages from sub-agents and from `runtime` keep their `From: <id>` line. The store still keeps the real sender.
+- **Tool results omit the parent field.** `spawn_agent` returns the new agent's ID, grant and state. `list_agents` lists only the agent's own sub-agents, each with its ID, grant and state.
+
+So the only IDs an agent knows are its sub-agents', and the two ways of talking have nothing in common. A sub-agent has an ID, and you message it. Your parent has none, and you answer it.
+
+The tool still refuses a send to the parent's ID, to `owner`, or to a name for the parent ("the user", "your parent", "parent"), with `Error: you answer your parent by ending your turn with your reply, not with message_sub_agent.` A runtime `404` becomes `Error: you have no sub-agent <id>.`
+
+*Evidence:* in the lab on 2026-11-07, agents tried to answer upward with the send tool in 4 of 18 runs while they still knew their parent's ID. With the wording fixes in decision 7, that fell to 2 of 18. With no sender line on the parent's messages, it fell to 0 of 36, but one lead sent its result to its own ID, which it read from the `parent` field of its `spawn_agent` results. With the parent field removed as well, it was 0 of 36, and 35 of 36 runs were fully clean.
+
+*Rejected:* letting the schema rule the parent out, by limiting `to` to the agent's current sub-agents with an `enum`:
 - With `strict: false`, as the Responses adapter sends today, Luna ignored the `enum` and tried its parent in 4 of 18 runs, the same as without it.
 - With `strict: true`, upward sends stopped. But in the nested task, leads kept messaging sub-agents that had already finished, up to 20 messages and 8 of them urgent, and in one run the result never reached the owner.
 
-A refusal costs one model call, and the agent then answers correctly, so it stays.
+Constraining the output doesn't change what the model meant to do. It only bends the call somewhere else, with no error to correct it. Hiding the address removes the reason for the mistake.
 
 *Rejected:* treating a send to the parent as the agent's reply. An agent would then have two ways to answer upward, and an agent that both sends its result and ends its turn with it would answer twice.
 
@@ -96,9 +108,24 @@ The status line ends every `wait` result:
 
 ### 7. The instructions
 
-Rewritten around three rules: end your turn when you have something for your parent; talk to sub-agents with `message_sub_agent`; call `wait` when you can't go on without an answer. They keep the rules that held up in the lab: delegate and let sub-agents manage theirs; ask your parent first; leave delegated work alone while you wait; one complete result; never acknowledge; urgent only when waiting would cause harm or waste. The added line "when your parent asks you to send or report something, reply with it" is what cut upward sends from about 12 to 4 in 18 runs.
+Rewritten around three rules:
+- end your turn when you have something for your parent
+- talk to sub-agents with `message_sub_agent`
+- call `wait` when you can't go on without an answer
 
-The lab variant `bc3`'s text, in `src/agent/delegation.ts` of that variant, is the starting point. Its tool results stay short and act as cues: a send returns `delivered. The reply will come to you. Call wait when you have nothing else to do.` The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
+They keep the rules that held up in the lab: delegate and let sub-agents manage theirs; ask your parent first; leave delegated work alone while you wait; one complete result; never acknowledge; urgent only when waiting would cause harm or waste. Three lines carry the most weight:
+- "when your parent asks you to send or report something, reply with it"
+- "when you write a task, ask the sub-agent to reply with its result, not to send it"
+- "messages from your parent have no sender line"
+
+The tools' text acts as cues at the moment of choice:
+- A send returns `delivered. The reply will come to you. Call wait when you have nothing else to do.`
+- A `wait` result whose status says every sub-agent has replied adds `End your turn with your result for your parent.`
+- `message_sub_agent`'s description doesn't mention the parent at all.
+
+In the lab, the parent mention and the missing end-of-wait cue were where most upward sends came from, right after the last reply arrived. A much shorter set of instructions did worse, 6 upward sends in 18 runs against 2.
+
+The final lab variant's text, `bc10` from 2026-11-07, is the starting point. The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
 
 ### 8. The behavior live check
 
@@ -121,7 +148,7 @@ The existing delegation check in `src/runtime/runtime.live.test.ts` keeps its sc
 
 ## Risks / Trade-offs
 
-- [The strict check fails on refused upward sends in about 1 run in 5, on today's evidence] → The instructions are tuned against the check during implementation. If they can't bring refusals near zero, the maintainer decides whether a refusal fails a run or only counts against it, before the check is committed.
+- [Luna still slips in about 1 run in 36, on 2026-11-07's evidence, for example by sending to a sub-agent before spawning it, so 18 required runs won't always all pass] → The check stays strict, since each slip is a real fault, and the instructions are tuned against it during implementation. Its pass rate is measured and reported to the maintainer before it's committed.
 - [A sub-agent's filler reply such as "done" goes to its parent] → The instructions, and a check failure on any reply under 10 characters.
 - [A reply is sent twice after a crash between the runtime's `202` and the outbox delete] → Rare, and the parent's model sees the repeat. It's chosen over a lost reply (decision 1).
 - [A reply waits behind a retry for a parent that's down] → It's durable in the outbox and sent on the next save or start. A parent that's down is stopped, and the runtime starts it for the message.
