@@ -41,9 +41,9 @@ const agent = new Agent({
   post:
     identity.parent === "owner"
       ? undefined
-      : async (text) => {
+      : async (text, signal) => {
           try {
-            await runtime.request("POST", `/agents/${encodeURIComponent(identity.parent)}/messages`, { text });
+            await runtime.request("POST", `/agents/${encodeURIComponent(identity.parent)}/messages`, { text }, signal);
             return "delivered";
           } catch (error) {
             if (error instanceof RuntimeRefusal && error.status === 404) return "gone";

@@ -45,8 +45,9 @@ function isGrant(value: unknown): value is Grant {
 }
 
 export const DELIVERED = "delivered. The reply will come to you. Call wait when you have nothing else to do.";
-// The error for a send to anyone but a sub-agent. It names how to answer the
-// parent, since that's what a send to a made-up name like "user" is after.
+// The error for a send to anyone but a direct sub-agent. It names how to
+// answer the parent, since that's what a send to a made-up name like "user"
+// is after.
 export const notSubAgent = (to: string) => `you have no sub-agent ${to}. To answer your parent, end your turn with your reply.`;
 
 // A refusal from the runtime, with its status.
@@ -109,6 +110,14 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
   const id = (input: Json) => text(input, "id");
   const agentPath = (input: Json, action = "") => `/agents/${encodeURIComponent(id(input))}${action}`;
   const answer = (value: Json | undefined) => (value === undefined ? "done" : JSON.stringify(value));
+  const isSubAgent = async (to: string, signal?: AbortSignal) => {
+    try {
+      return field((await runtime.request("GET", `/agents/${encodeURIComponent(to)}`, undefined, signal)) ?? null, "parent") === identity.id;
+    } catch (error) {
+      if (error instanceof RuntimeRefusal && error.status === 404) return false;
+      throw error;
+    }
+  };
 
   const send: Tool = {
     name: "message_sub_agent",
@@ -129,8 +138,10 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
       const message = text(input, "text");
       const urgent = field(input, "urgent");
       if (urgent !== undefined && typeof urgent !== "boolean") throw new Error("urgent must be a boolean");
-      // The runtime would deliver this one, so it's refused here.
-      if (to === identity.parent) throw new Error(notSubAgent(to));
+      // The runtime delivers to the parent and to every descendant, so the
+      // tool checks that the receiver is its own sub-agent: a grandchild's
+      // reply would go to its own parent, and this agent would wait forever.
+      if (!(await isSubAgent(to, signal))) throw new Error(notSubAgent(to));
       // Recorded first, so a reply that comes back fast can't land before its debt.
       const added = debts.owe(to);
       try {
@@ -149,7 +160,7 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
   const ending = async (input: Json, request: Promise<Json | undefined>) => {
     const value = await request;
     debts.clear(id(input));
-    return answer(value);
+    return answer(value === undefined ? undefined : withoutParent(value));
   };
   return [
     send,
@@ -184,7 +195,7 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
       name: "start_agent",
       description: "Start a stopped sub-agent from its conversation. Its own sub-agents stay stopped.",
       inputSchema: byId,
-      run: async (input, signal) => answer(await runtime.request("POST", agentPath(input, "/start"), undefined, signal)),
+      run: async (input, signal) => answer(withoutParent(await runtime.request("POST", agentPath(input, "/start"), undefined, signal))),
     },
     {
       name: "delete_agent",

@@ -47,6 +47,13 @@ After every save, and on start before the loop runs, the agent SHALL post its ou
 - **WHEN** the runtime answers a post with `404`
 - **THEN** the entry is deleted and not posted again
 
+### Requirement: A post has a deadline
+A post of an outbox entry with no answer within 60 seconds SHALL be aborted and count as a failed post.
+
+#### Scenario: A post is never answered
+- **WHEN** the runtime accepts a post's request and never answers it
+- **THEN** the post is aborted after 60 seconds and retried, and if every retry goes the same way, the event stream shows the notice and the next save posts the reply
+
 ### Requirement: The parent's messages reach the model with no sender
 The agent SHALL pass each message from its parent to the model with an empty sender. Messages from anyone else SHALL keep their sender. The store SHALL keep every message's real sender.
 

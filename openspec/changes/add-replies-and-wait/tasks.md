@@ -27,3 +27,9 @@
 - [x] 6.1 Read owner replies as assistant messages with no tool call in the same response in `src/runtime/runtime.live.test.ts` and `src/agent/container.live.test.ts`, and update the commands and `/messages` description in `context/environment.md`; verify with `npm run test:live` passing those checks
 - [x] 6.2 Add `src/runtime/behavior.live.test.ts` from `lab/harness.ts`, with the six tasks three times each and the failure rules in `agent-delegation`; verify by running it on Luna, and report its pass rate to the maintainer before committing it
 - [x] 6.3 Update `docs/architecture.html` where it shows a reply as a send, and run `npm run check`, `npm test` and `openspec validate add-replies-and-wait --strict`; verify all three pass
+
+## 7. Review fixes
+
+- [x] 7.1 Look the receiver up in `message_sub_agent` and go on only for a direct sub-agent, since the runtime also delivers to the parent and every descendant; verify with delegation tests for a grandchild, the parent, a made-up name and a sub-agent deleted before the post, and with the runtime live check
+- [x] 7.2 Leave the parent out of `stop_agent` and `start_agent` results; verify with a delegation test using the runtime's real answer shape
+- [x] 7.3 Abort an outbox post with no answer after 60 seconds, even one that ignores its signal, so retries, the notice and later saves still run; verify with loop tests for a post that's never answered

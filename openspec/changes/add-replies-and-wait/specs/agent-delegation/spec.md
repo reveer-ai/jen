@@ -13,20 +13,24 @@ An agent whose grant has `spawn` SHALL be offered a `message_sub_agent` tool tak
 - **WHEN** the model calls `message_sub_agent` with `urgent` true
 - **THEN** the message is posted with `"urgent": true` in its body
 
-### Requirement: A send to anyone but a sub-agent fails
-A `message_sub_agent` call whose `to` is the agent's parent's ID SHALL post nothing, since the runtime would deliver it. That call, and a send the runtime answers `404`, SHALL fail with `Error: you have no sub-agent <to>. To answer your parent, end your turn with your reply.` The agent SHALL NOT guess at other names the model might use for its parent: the runtime's `404` covers them.
+### Requirement: A send to anyone but a direct sub-agent fails
+Before it records a debt or posts, `message_sub_agent` SHALL look `to` up through the runtime and go on only if `to`'s parent is this agent. A send that fails the check SHALL post nothing and record no debt. It, and a post the runtime answers `404`, SHALL fail with `Error: you have no sub-agent <to>. To answer your parent, end your turn with your reply.`
 
 #### Scenario: A send to the parent
 - **WHEN** a sub-agent's model calls `message_sub_agent` with `to` set to its parent's ID
-- **THEN** no request is made to the runtime, and the call's result is `Error: you have no sub-agent <parent's ID>. To answer your parent, end your turn with your reply.`
+- **THEN** nothing is posted, and the call's result is `Error: you have no sub-agent <parent's ID>. To answer your parent, end your turn with your reply.`
+
+#### Scenario: A send to a grandchild
+- **WHEN** a root's model calls `message_sub_agent` with `to` set to the ID of its sub-agent's sub-agent
+- **THEN** nothing is posted, the grandchild doesn't owe a reply, and the call's result is the no-sub-agent error
 
 #### Scenario: A send to a made-up name for the parent
-- **WHEN** a root's model calls `message_sub_agent` with `to` set to "[user]", and the runtime answers `404`
-- **THEN** the call's result is `Error: you have no sub-agent [user]. To answer your parent, end your turn with your reply.`
+- **WHEN** a root's model calls `message_sub_agent` with `to` set to "[user]"
+- **THEN** nothing is posted, and the call's result is `Error: you have no sub-agent [user]. To answer your parent, end your turn with your reply.`
 
-#### Scenario: A send to an unknown agent
-- **WHEN** the model calls `message_sub_agent` to an ID the runtime answers `404` for
-- **THEN** the call's result is `Error: you have no sub-agent <id>. To answer your parent, end your turn with your reply.`
+#### Scenario: A sub-agent deleted before the post
+- **WHEN** the lookup finds the sub-agent, and the runtime answers the post `404`
+- **THEN** the sub-agent doesn't owe a reply, and the call's result is the no-sub-agent error
 
 ### Requirement: The agent records which sub-agents owe it a reply
 A sub-agent SHALL owe its parent a reply from the time the parent sends it a message until the parent accepts a message from it. `message_sub_agent` SHALL record the receiver as owing a reply before it posts the message, and SHALL remove that record if the post fails. A `stop_agent` or `delete_agent` call the runtime confirms SHALL remove the record of the sub-agent it names.
@@ -48,10 +52,14 @@ A sub-agent SHALL owe its parent a reply from the time the parent sends it a mes
 - **THEN** `a1` doesn't owe a reply
 
 ### Requirement: The model sees no agent ID it can't message
-The only agent IDs the agent SHALL show its model are its sub-agents'. `spawn_agent` SHALL return the new agent's ID, grant and state, with no parent. `list_agents` SHALL list only the agent's own sub-agents, each with its ID, grant and state, with no parent. The agent's instructions SHALL name neither its own ID nor its parent's.
+The only agent IDs the agent SHALL show its model are its sub-agents'. `spawn_agent` SHALL return the new agent's ID, grant and state, with no parent, and so SHALL `stop_agent` and `start_agent` for the agent they name. `list_agents` SHALL list only the agent's own sub-agents, each with its ID, grant and state, with no parent. The agent's instructions SHALL name neither its own ID nor its parent's.
 
 #### Scenario: Spawn result
 - **WHEN** the model calls `spawn_agent` and the runtime answers with the new agent's ID, parent, grant and state
+- **THEN** the call's result holds the ID, grant and state, and not the parent
+
+#### Scenario: Stop and start results
+- **WHEN** the model calls `stop_agent` or `start_agent` and the runtime answers with the agent's ID, parent, grant and state
 - **THEN** the call's result holds the ID, grant and state, and not the parent
 
 #### Scenario: Only direct sub-agents are listed

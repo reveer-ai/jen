@@ -43,20 +43,26 @@ describe("the agent knows who it is", () => {
   });
 });
 
-// A runtime that records each request and answers from answer.
+// A runtime that records each request and answers from answer, except that
+// it answers a lookup of one agent from lookup. By default every agent looked
+// up is the root's sub-agent.
 let runtime: http.Server;
 let requests: { method: string; path: string; auth?: string; body: unknown }[];
 let answer: (method: string, path: string) => { status: number; body?: unknown };
+let lookup: (id: string) => { status: number; body?: unknown };
 let client: RuntimeClient;
+const subAgentOf = (parent: string) => (id: string) => ({ status: 200, body: { id, parent, grant: { spawn: false }, state: "running" } });
 beforeEach(async () => {
   requests = [];
   answer = () => ({ status: 202 });
+  lookup = subAgentOf("a1b2c3d4e5f6");
   runtime = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       requests.push({ method: req.method!, path: req.url!, auth: req.headers.authorization, body: body === "" ? undefined : JSON.parse(body) });
-      const { status, body: reply } = answer(req.method!, req.url!);
+      const one = req.method === "GET" ? req.url!.match(/^\/agents\/([^/]+)$/) : null;
+      const { status, body: reply } = one ? lookup(decodeURIComponent(one[1]!)) : answer(req.method!, req.url!);
       res.writeHead(status, reply === undefined ? {} : { "Content-Type": "application/json" }).end(reply === undefined ? undefined : JSON.stringify(reply));
     });
   });
@@ -92,12 +98,15 @@ describe("an agent messages only its own sub-agents", () => {
     const output = await toolOf(root, "message_sub_agent").run({ to: "d1d1d1d1d1d1", text: "write a haiku" }, signal);
     expect(output).toBe(DELIVERED);
     expect(output).toBe("delivered. The reply will come to you. Call wait when you have nothing else to do.");
-    expect(requests).toEqual([{ method: "POST", path: "/agents/d1d1d1d1d1d1/messages", auth: "Bearer agent-token", body: { text: "write a haiku" } }]);
+    expect(requests).toEqual([
+      { method: "GET", path: "/agents/d1d1d1d1d1d1", auth: "Bearer agent-token", body: undefined },
+      { method: "POST", path: "/agents/d1d1d1d1d1d1/messages", auth: "Bearer agent-token", body: { text: "write a haiku" } },
+    ]);
   });
 
   test("an urgent send posts urgent in its body", async () => {
     await toolOf(root, "message_sub_agent").run({ to: "d1d1d1d1d1d1", text: "stop", urgent: true }, signal);
-    expect(requests[0]!.body).toEqual({ text: "stop", urgent: true });
+    expect(requests.at(-1)!.body).toEqual({ text: "stop", urgent: true });
   });
 
   test("a send with a missing receiver or text is refused before any request", async () => {
@@ -116,18 +125,29 @@ describe("an agent messages only its own sub-agents", () => {
 describe("a send to anyone but a sub-agent fails", () => {
   const hint = (to: string) => `you have no sub-agent ${to}. To answer your parent, end your turn with your reply.`;
 
+  const posts = () => requests.filter((r) => r.method === "POST");
+
   test.each([
     [lead, "a1b2c3d4e5f6"],
     [root, "owner"],
-  ])("a send to the parent's ID %j posts nothing", async (identity, to) => {
+    [root, "[user]"],
+  ])("a send to %j, which the runtime doesn't show the agent, posts nothing", async (identity, to) => {
+    lookup = (id) => ({ status: 404, body: { error: `no agent ${id}` } });
     await expect(toolOf(identity, "message_sub_agent").run({ to, text: "here's the result" }, signal)).rejects.toThrow(hint(to));
-    expect(requests).toEqual([]);
+    expect(posts()).toEqual([]);
     expect(debts.owed.size).toBe(0);
   });
 
-  test.each(["d1d1d1d1d1d1", "[user]"])("a send the runtime answers 404 for, to %j, says how to answer the parent", async (to) => {
-    answer = () => ({ status: 404, body: { error: `no agent ${to}` } });
-    await expect(toolOf(root, "message_sub_agent").run({ to, text: "hi" }, signal)).rejects.toThrow(hint(to));
+  test("a send to a grandchild posts nothing and owes nothing", async () => {
+    lookup = subAgentOf("d1d1d1d1d1d1");
+    await expect(toolOf(root, "message_sub_agent").run({ to: "f1f1f1f1f1f1", text: "hi" }, signal)).rejects.toThrow(hint("f1f1f1f1f1f1"));
+    expect(posts()).toEqual([]);
+    expect(debts.owed.size).toBe(0);
+  });
+
+  test("a sub-agent deleted between the check and the post gets the same error", async () => {
+    answer = () => ({ status: 404, body: { error: "no agent d1d1d1d1d1d1" } });
+    await expect(toolOf(root, "message_sub_agent").run({ to: "d1d1d1d1d1d1", text: "hi" }, signal)).rejects.toThrow(hint("d1d1d1d1d1d1"));
     expect(debts.owed.size).toBe(0);
   });
 });
@@ -144,6 +164,7 @@ describe("the agent records which sub-agents owe it a reply", () => {
   test("a failed send owes nothing, unless the sub-agent owed already", async () => {
     answer = () => ({ status: 500, body: { error: "down" } });
     const send = toolOf(root, "message_sub_agent");
+    // Only the post fails: the lookup still finds the sub-agent.
     await expect(send.run({ to: "d1d1d1d1d1d1", text: "hi" }, signal)).rejects.toThrow("500");
     expect(debts.owed.size).toBe(0);
     debts.owe("d1d1d1d1d1d1");
@@ -202,11 +223,12 @@ describe("delegation tools follow the grant", () => {
     expect(delegationTools(child, client, debts)).toEqual([]);
   });
 
-  test("stop, start and delete call their routes and return the runtime's answer", async () => {
-    answer = (method) => (method === "DELETE" ? { status: 204 } : { status: 200, body: { ok: method } });
+  test("stop, start and delete call their routes and return the runtime's answer, without the parent", async () => {
+    answer = (method, path) =>
+      method === "DELETE" ? { status: 204 } : { status: 200, body: { id: "d1d1d1d1d1d1", parent: root.id, grant: { spawn: false }, state: path.endsWith("/stop") ? "stopped" : "running" } };
     const id = { id: "d1d1d1d1d1d1" };
-    expect(await toolOf(root, "stop_agent").run(id, signal)).toBe('{"ok":"POST"}');
-    expect(await toolOf(root, "start_agent").run(id, signal)).toBe('{"ok":"POST"}');
+    expect(JSON.parse(await toolOf(root, "stop_agent").run(id, signal))).toEqual({ id: "d1d1d1d1d1d1", grant: { spawn: false }, state: "stopped" });
+    expect(JSON.parse(await toolOf(root, "start_agent").run(id, signal))).toEqual({ id: "d1d1d1d1d1d1", grant: { spawn: false }, state: "running" });
     expect(await toolOf(root, "delete_agent").run(id, signal)).toBe("done");
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual(["POST /agents/d1d1d1d1d1d1/stop", "POST /agents/d1d1d1d1d1d1/start", "DELETE /agents/d1d1d1d1d1d1"]);
   });

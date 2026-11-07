@@ -625,6 +625,37 @@ describe("replies are posted from the outbox", () => {
     expect(a.notice).toBeUndefined();
   });
 
+  test("a post that's never answered fails at its deadline, so retries, the notice and the next save still run", async () => {
+    const tries: string[] = [];
+    let answering = false;
+    // Ignores its signal, as a hung request might, until answering is set.
+    const post = (text: string) => (tries.push(text), answering ? Promise.resolve("delivered" as const) : new Promise<never>(() => {}));
+    const a = agent(new ScriptedModel([[assistant("done")], [assistant("again")]]), [], { parent: P, post, postDeadline: 20 });
+    a.start();
+    a.accept(fromParent("go"));
+    await a.idle();
+    expect(tries).toEqual(["done", "done", "done", "done"]);
+    expect(a.notice).toMatch(/couldn't be sent.*no answer within 0.02 seconds/);
+    answering = true;
+    a.accept(fromParent("more"));
+    await a.idle();
+    expect(tries.slice(4)).toEqual(["done", "again"]);
+    expect(store.outbox()).toEqual([]);
+    expect(a.notice).toBeUndefined();
+  });
+
+  test("a post that's never answered is aborted at its deadline", async () => {
+    let aborted = false;
+    const post = (_text: string, signal: AbortSignal) =>
+      new Promise<never>((_, reject) => signal.addEventListener("abort", () => ((aborted = true), reject(signal.reason))));
+    const a = agent(new ScriptedModel([[assistant("done")]]), [], { parent: P, post, postDeadline: 20, delays: [] });
+    a.start();
+    a.accept(fromParent("go"));
+    await a.idle();
+    expect(aborted).toBe(true);
+    expect(store.outbox().map((o) => o.text)).toEqual(["done"]);
+  });
+
   test("a post the runtime answers 404 for is deleted, not sent again", async () => {
     const { sent, post } = poster(["gone"]);
     const a = agent(new ScriptedModel([[assistant("done")]]), [], { parent: P, post });

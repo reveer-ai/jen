@@ -45,12 +45,17 @@ export interface AgentOptions {
   // Offers the model the wait tool, answered by the loop.
   wait?: boolean;
   // Posts an outbox entry to the parent, and resolves "gone" when the parent
-  // no longer exists. A root agent has none: its parent, the owner, reads its
-  // replies on its event stream.
-  post?: (text: string) => Promise<"delivered" | "gone">;
+  // no longer exists. signal aborts the attempt once its deadline passes. A
+  // root agent has none: its parent, the owner, reads its replies on its
+  // event stream.
+  post?: (text: string, signal: AbortSignal) => Promise<"delivered" | "gone">;
   // How long to wait before each retry of a failed model call or post.
   delays?: readonly number[];
+  // How long one post may take before it counts as failed.
+  postDeadline?: number;
 }
+
+export const POST_DEADLINE_MS = 60_000;
 
 // Emits "saved" after each save, "failure" with the message of each failed
 // model call, and "notice" with a notice when watchers should see it: the
@@ -255,13 +260,13 @@ export class Agent extends EventEmitter {
   }
 
   async #drain() {
-    const { store, post, delays } = this.#o;
+    const { store, post, delays, postDeadline = POST_DEADLINE_MS } = this.#o;
     this.#posting = true;
     try {
       for (let next = store.outbox()[0]; next !== undefined; next = store.outbox()[0]) {
         for (let failures = 0; ; failures++) {
           try {
-            await post!(next.text);
+            await attempt(post!, next.text, postDeadline);
             break;
           } catch (error) {
             if (failures === delays.length) {
@@ -279,6 +284,17 @@ export class Agent extends EventEmitter {
       this.#posting = false;
     }
   }
+}
+
+// One post, failed once its deadline passes, even by a post that ignores the
+// signal, so an unanswered request can't hold the outbox.
+async function attempt(post: NonNullable<AgentOptions["post"]>, text: string, deadline: number) {
+  const signal = AbortSignal.timeout(deadline);
+  const expired = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(new Error(`no answer within ${deadline / 1000} seconds`)), { once: true });
+  });
+  expired.catch(() => {});
+  return Promise.race([post(text, signal), expired]);
 }
 
 type ToolCall = Extract<Item, { type: "tool_call" }>;
