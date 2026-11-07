@@ -2,6 +2,14 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-07
+
+Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), designing `add-replies-and-wait`. Details are in its design, decisions 3, 5 and 6:
+
+- **An agent is shown no agent ID it can't message.** It isn't told its own ID or its parent's. Its parent's messages carry no sender line, and tool results leave out the parent field. *Why:* while Luna knew an address for its parent, it sometimes answered with the send tool. Hiding the address took that to 0 of 36 lab runs. Constraining the tool's schema instead only redirected the mistake.
+- **`wait` stays, with no `working` flag and no update messages.** *Why:* the lab tested ending the turn to wait, with replies flagged as still working. Agents then did delegated work themselves or re-asked sub-agents still doing it, and only 25 of 36 runs were clean, against 34 of 36 with `wait`. An open `wait` already shows that an agent is still working.
+- **A sub-agent that stops for good is its parent's to handle.** The runtime's message about it wakes the parent. The parent restarts it, or deletes it and does without it, and stopping or deleting clears what it owes. The runtime doesn't change. *Why:* set by the maintainer. The runtime's message is enough for the model to act on, and a check against the runtime would be a second record.
+
 ## 2026-11-06
 
 Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), aligning on its proposal. The proposal and design are in `openspec/changes/add-replies-and-wait/`:

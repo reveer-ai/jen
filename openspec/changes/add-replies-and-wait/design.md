@@ -9,7 +9,7 @@ See proposal.md for why. Today:
 - **Only one message goes up today without the model sending it:** the give-up notice. It's posted to the parent once, and a failed post falls back to the agent's own stream.
 - **The runtime already routes a child's message to its parent,** and reports a sub-agent whose restarts ran out, from `runtime`.
 
-The prototype behind the proposal is the lab variant `bc3` from 2026-11-06, refined to `bc10` on 2026-11-07 (decisions 3 and 7). It held the reply and `wait` in memory and lost both on a crash. This design keeps its behavior and puts its state in the store.
+The prototype behind the proposal is the lab variant `bc3` from 2026-11-06, refined to `bc10` on 2026-11-07 (decisions 3 and 7). It held the reply, `wait` and its count of who owes a reply in memory, and lost them on a crash. This design keeps its behavior and puts its state in the store. On 2026-11-07 the lab also tested dropping `wait` (decision 5). That did worse, so `wait` stays.
 
 ## Goals / Non-Goals
 
@@ -88,21 +88,29 @@ The result is each message as `From: <sender>`, a blank line, then the text, wit
 
 *Why not block in a promise, as the prototype did?* A promise lives in memory, so a restart lost the wait and marked it interrupted. With the open call as the state, an agent waiting for two weeks is just a conversation whose last item is a tool call. Stop, crash and redeploy then need no special code, which keeps the store-only goal of 2026-11-03.
 
-### 6. Who still owes a reply is kept in the store, and checked against the runtime
+An open `wait` is also how the agent's state shows. An agent with an open `wait` is still working. One that ended its turn has replied. The owner sees a root's open `wait` on its stream, and a parent knows which of its sub-agents still owe it a reply from its own record (decision 6). So no message has to say that work is under way.
+
+*Rejected:* no `wait`. An agent with nothing to do would end its turn, and a reply sent while its sub-agents still owed it theirs would carry a `working: true` flag, shown to the parent as `From: <id> (still working)`. On 2026-11-07 the lab ran this against `bc10`, 36 Luna runs per arm. The flag itself worked: it reached parents, debts cleared, and nothing hung. The behavior got worse, because `wait` was doing two jobs:
+- **It's a way to stop that isn't an answer.** When the turn-ending reply could be a short note on what was under way, roots wrote the haiku themselves in 4 of 6 runs, while their sub-agent was writing it. Told to end the turn empty, they stopped doing that.
+- **Its result says who's still working.** Without it, an agent woken by some of its replies re-asked or re-sent work to a sub-agent still doing it, 5 times in 36 runs. One lead looped through 16 sends. With `wait` that never happened. A status line from `runtime` after each reply, naming who still owed one, made it worse, because every message wakes the agent and gets a response.
+
+Clean runs were 25 of 36 with the turn ended empty, and 21 of 36 with the status line, against 34 of 36 for `bc10`, all by the same tally. The maintainer then dropped the flag along with the update notes it existed to mark. An update message can come back with its flag if one proves needed. Seeing what a sub-agent is doing is [JEN-13](https://linear.app/reveer/issue/JEN-13).
+
+### 6. Who still owes a reply is kept in the store
 
 The store gets an `owed` table of sub-agent IDs:
 - `message_sub_agent` records the receiver before it posts, and removes it again if the post fails. Recording first means a reply that arrives fast can't land before its debt exists.
 - Accepting a message clears its sender's row, in the same transaction that saves the message.
 - `stop_agent` and `delete_agent` clear the row for the sub-agent they name.
 
-A sub-agent counts as working when it owes a reply and the runtime lists it as running. The loop asks the runtime for the agent's list (`GET /agents`) when it answers a `wait`. A sub-agent whose restarts ran out, or that's still stopped after the agent was started again, owes a reply but isn't running. So `wait` never waits on it, and the runtime's notice already tells the model why. If the runtime can't be reached, every owed sub-agent counts as working.
-
-The status line ends every `wait` result:
+A sub-agent counts as working while it owes a reply. The status line ends every `wait` result:
 - "Still working: <ids>."
 - "Every sub-agent you sent work to has replied."
-- for a `wait` answered at once with nobody working and nothing in the inbox, "Nothing to wait for: none of your sub-agents owes you a reply."
+- for a `wait` answered at once with no debt and nothing in the inbox, "Nothing to wait for: none of your sub-agents owes you a reply."
 
-*Why both records?* The runtime knows what's running, but not who owes a reply: a sub-agent that finished is still running, idle. The agent knows who owes it a reply, but not who crashed out. Together they say who will still answer.
+**A sub-agent that stops for good is the parent's to handle.** When a sub-agent's restarts run out, or it's still stopped after the agent itself was started again, the runtime already tells the parent, from `runtime`. That message ends a `wait` like any other. The instructions say what to do with it: start the sub-agent again, or delete it and do without it. Its debt clears when it's stopped or deleted, so a later `wait` doesn't count it. A parent that does without it reports up as usual, by ending its turn when it has its result.
+
+*Rejected:* checking owed sub-agents against the runtime's list of running agents each time a `wait` is answered, so a crashed sub-agent never counts as working. The runtime's message already tells the model, and the parent acting on it is the response the maintainer wants. Leaving the check out keeps the loop from calling the runtime and keeps it to one record. A parent that ignores the message and waits again still isn't stuck, because any message to it ends the `wait`. The owner sees a root's open `wait` on its stream and can message it.
 
 *Rejected:* counting from the conversation, as the prototype did, by matching sends against `From:` lines. It parsed the agent's own result text, and a message containing a `From:` line could forge a reply.
 
@@ -113,7 +121,7 @@ Rewritten around three rules:
 - talk to sub-agents with `message_sub_agent`
 - call `wait` when you can't go on without an answer
 
-They keep the rules that held up in the lab: delegate and let sub-agents manage theirs; ask your parent first; leave delegated work alone while you wait; one complete result; never acknowledge; urgent only when waiting would cause harm or waste. Three lines carry the most weight:
+They keep the rules that held up in the lab: delegate and let sub-agents manage theirs; ask your parent first; leave delegated work alone while you wait; one complete result; never acknowledge; urgent only when waiting would cause harm or waste. They add one rule the lab didn't exercise: when the runtime says a sub-agent stopped, start it again, or delete it and do without it (decision 6). Three lines carry the most weight:
 - "when your parent asks you to send or report something, reply with it"
 - "when you write a task, ask the sub-agent to reply with its result, not to send it"
 - "messages from your parent have no sender line"
@@ -142,6 +150,8 @@ A run fails on any of these:
 
 A failure prints the run's transcript in the lab's compact form.
 
+The check counts replies, not who wrote them. In the follow-up task, a root that answers "Now one about cranes" itself instead of delegating it passes, since the follow-up doesn't name a sub-agent. By these criteria, `bc10` passed 35 of its 36 lab runs. The one failure was a send to an invented ID before any sub-agent existed.
+
 The existing delegation check in `src/runtime/runtime.live.test.ts` keeps its scenario, the sub-agent's question and the root's answer, but reads replies as decision 4 says.
 
 *Why three runs of each, all required?* Luna varies from run to run, and one run of each would pass a design that fails one run in six. Eighteen runs take about two minutes in parallel against Luna.
@@ -152,7 +162,8 @@ The existing delegation check in `src/runtime/runtime.live.test.ts` keeps its sc
 - [A sub-agent's filler reply such as "done" goes to its parent] → The instructions, and a check failure on any reply under 10 characters.
 - [A reply is sent twice after a crash between the runtime's `202` and the outbox delete] → Rare, and the parent's model sees the repeat. It's chosen over a lost reply (decision 1).
 - [A reply waits behind a retry for a parent that's down] → It's durable in the outbox and sent on the next save or start. A parent that's down is stopped, and the runtime starts it for the message.
-- [`wait` answers from a runtime list that's out of date] → The list is read each time a `wait` is answered, and a sub-agent that stops after that sends its notice from `runtime`, which wakes the `wait`.
+- [A parent ignores the runtime's message that a sub-agent stopped, and waits on it again] → The instructions say to restart or delete it. The `wait` still ends on any message, so the owner, or the agent's own parent, can always reach it (decision 6).
+- [The crash rule in the instructions isn't exercised by the lab tasks] → The `owed` clearing on stop and delete gets unit tests. How the model reacts to the runtime's message is left to the instructions, as it is today.
 - [A model that never calls `wait` and ends its turn instead] → Its final text goes to its parent as a status report. The instructions and the check's reply counts catch it.
 
 ## Migration Plan

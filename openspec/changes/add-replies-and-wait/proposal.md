@@ -54,7 +54,10 @@ None.
   - A turn's final text is sent to the parent, and an empty one sends nothing unless the parent is owed a reply.
   - The parent's messages reach the model with an empty sender.
   - A `wait` call is answered by the inbox, not run like other tools. It runs after the rest of its batch, any message ends it, an urgent message doesn't cancel it, and it survives a restart.
-- `agent-store`: the inbox can be delivered as the result of a `wait` call, in one transaction with saving that result.
+- `agent-store`:
+  - The inbox can be delivered as the result of a `wait` call, in one transaction with saving that result.
+  - An outbox holds replies until the parent has them.
+  - A record of which sub-agents owe a reply. It's cleared by their reply, or by stopping or deleting them.
 
 The runtime doesn't change. A reply goes to the parent through the route a child already has to its parent.
 
