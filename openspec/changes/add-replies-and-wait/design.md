@@ -65,7 +65,7 @@ The only agent IDs the model ever sees are its sub-agents', so it has no address
 - **A message from the parent has no sender line.** The loop passes it to the model with an empty sender. The adapter sends a message with an empty sender as plain user content with no `From:` header, and a `wait` result shows the text alone. Messages from sub-agents and from `runtime` keep their `From: <id>` line, and the store keeps the real sender.
 - **Tool results leave out the parent field.** `spawn_agent` returns the new agent's ID, grant and state. `list_agents` lists only the agent's own sub-agents, each with its ID, grant and state.
 
-`message_sub_agent` still refuses a send to the parent's ID, to `owner`, or to a name for the parent ("the user", "your parent", "parent"), with `Error: you answer your parent by ending your turn with your reply, not with message_sub_agent.` A runtime `404` becomes `Error: you have no sub-agent <id>.`
+`message_sub_agent` refuses a send to the parent's ID itself, since the runtime would deliver it. Any other `to` that isn't a sub-agent gets a runtime `404`. Both fail with one error: `Error: you have no sub-agent <to>. To answer your parent, end your turn with your reply.` The agent doesn't guess at names a model might use for its parent. An earlier version refused a fixed list ("owner", "user", "your parent" and so on), and a live run's `[user]` slipped past it. The `404` covers any name.
 
 ### A reply goes up through an outbox
 
@@ -170,8 +170,8 @@ A run is settled after 30 seconds with no new event on any of its agents' stream
 - the owner gets a number of replies other than the task's expected number
 - any `list_agents` call
 - a refused or failed tool call
-- a message sent twice with the same text
-- a reply that's only filler, under 10 characters
+- a message sent twice to the same receiver with the same text
+- a sub-agent's reply that's only filler, 1 to 9 characters. A root's can be that short: the direct answer is "Canberra."
 - a model error event
 - not settling in time
 
@@ -205,7 +205,12 @@ Clean runs were 25 of 36 with the turn ended empty, and 21 of 36 with the status
 | An empty message, delivered like any other | 0 of 6 | 6 of 6 | 9 of 9 |
 | A signal that wakes no one, reported by `wait` as "a1 ended its turn without a reply." | 0 of 6 | 0 of 6 | 9 of 9 |
 
-The maintainer rejected the fixed message as artificial. In the lab, a root woken by its text often wrote the owner a second reply about the thank-you. The empty message, shown as a bare `From:` line, made parents ask again in every run, but delivered like any message it woke the parent after every thank-you. The signal woke no one, but reported the silence in words of the runtime's own. In an earlier version of it, the status line still said every sub-agent had replied, and one root wrote the haiku itself. The design takes the empty message's form and the signal's timing: the reply is shown as it is, and only by a `wait`. With the signal, the full set of tasks was 36 of 36 for the owner's replies and 35 of 36 clean. The one miss delegated the direct question. The combination itself hasn't been run in the lab yet.
+The maintainer rejected the fixed message as artificial. In the lab, a root woken by its text often wrote the owner a second reply about the thank-you. The empty message, shown as a bare `From:` line, made parents ask again in every run, but delivered like any message it woke the parent after every thank-you. The signal woke no one, but reported the silence in words of the runtime's own. In an earlier version of it, the status line still said every sub-agent had replied, and one root wrote the haiku itself. The design takes the empty message's form and the signal's timing: the reply is shown as it is, and only by a `wait`. With the signal, the full set of tasks was 36 of 36 for the owner's replies and 35 of 36 clean. The one miss delegated the direct question.
+
+The combination was run on 2026-11-07, on `bc10` with the approved empty reply:
+- **Thanks, 6 runs:** 6 of 6 clean. No run drew an extra owner reply, and no root was woken by the empty reply. In 5 runs the root replied to the owner straight after thanking. In one it called `wait` first, and the empty reply answered it at once.
+- **Every leaf drops its first reply, 9 runs** (delegation, fan-out and nested team, 3 each): every parent asked again, all 9 times, and every owner got the result. Parents asked for "the haiku text" or said "your reply came through blank". No root wrote the work itself. The faults all came after the re-ask: one `list_agents` call in each of 2 runs, a lead that thanked its sub-agents, and 2 tries to send a result upward. One was refused. The other went to `user`, which the lab didn't refuse, which is why every send to a non-sub-agent now says how to answer the parent (see above).
+- **The six live-check tasks, 3 runs each:** 18 of 18 clean.
 
 **The parent handles a crashed sub-agent, rather than `wait` checking the runtime.** `wait` could ask the runtime which owed sub-agents are still running, so it never counts a crashed one. The runtime's message already tells the model, and the maintainer wants the parent to act on it. Leaving the check out keeps the loop from calling the runtime, and keeps one record of who owes a reply.
 
@@ -218,11 +223,11 @@ The maintainer rejected the fixed message as artificial. In the lab, a root woke
 ## Risks / Trade-offs
 
 - [Luna still slips in about 1 run in 36, for example by sending to a sub-agent before spawning it, so 18 required runs won't always all pass] → The check stays strict, since each slip is a real fault, and the instructions are tuned against it during implementation. Its pass rate is measured and reported to the maintainer before it's committed.
-- [A sub-agent's filler reply such as "done" goes to its parent] → The instructions, and a check failure on any reply under 10 characters.
+- [A sub-agent's filler reply such as "done" goes to its parent] → The instructions, and a check failure on any sub-agent's reply of 1 to 9 characters.
 - [A reply is sent twice after a crash between the runtime's `202` and the outbox delete] → Rare, and the parent's model sees the repeat. It's chosen over a lost reply.
 - [A reply waits behind a retry for a parent that's down] → It's durable in the outbox and sent on the next save or start. A parent that's down is stopped, and the runtime starts it for the message.
 - [A parent ignores the runtime's message that a sub-agent stopped, and waits on it again] → The instructions say to restart or delete it, and any message still ends the `wait`.
-- [The crash rule and the empty reply aren't exercised by the live check's tasks] → The `owed` clearing on stop and delete, and the loop's handling of an empty reply, get unit tests. The empty reply's form was tested in one lab arm and its timing in another, but not the two together. The thanks and dropped-reply lab tasks are run on it during implementation, before the instructions are final.
+- [The crash rule and the empty reply aren't exercised by the live check's tasks] → The `owed` clearing on stop and delete, and the loop's handling of an empty reply, get unit tests. The combination passed the thanks and dropped-reply lab tasks on 2026-11-07.
 - [A model that never calls `wait` and ends its turn instead] → Its final text goes to its parent as its reply. The instructions and the check's reply counts catch it.
 
 ## Migration Plan

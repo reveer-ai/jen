@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Item, Json, Model, ToolSpec } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
-import { Agent, CANCELLED, INTERRUPTED, NOT_RUN_STOPPED, NOT_RUN_URGENT, type AgentOptions, type Tool } from "./loop.ts";
+import { Agent, ALL_REPLIED, CANCELLED, INTERRUPTED, NOT_RUN_STOPPED, NOT_RUN_URGENT, NOTHING_TO_WAIT_FOR, WAITED, type AgentOptions, type Tool } from "./loop.ts";
 import { openStore, type Store } from "./store.ts";
 
 const user = (text: string, from = "owner"): Item => ({ type: "message", role: "user", from, text });
@@ -326,16 +326,6 @@ describe("a start never carries on an old batch", () => {
     expect(store.load().slice(4)).toEqual([result("c1", "A"), result("c2", INTERRUPTED), assistant("ok")]);
   });
 
-  test("a tool that knows its interrupted call wasn't delivered says so", async () => {
-    store.save([user("go"), call("c1", "send_message", { to: "owner", text: "done" })]);
-    const send = { ...tool("send_message"), interrupted: () => "Error: interrupted before it was sent, so it wasn't delivered." };
-    const model = new ScriptedModel([[assistant("ok")]]);
-    const a = agent(model, [send]);
-    a.start();
-    await a.idle();
-    expect(model.calls[0]!.items.at(-1)).toEqual(result("c1", "Error: interrupted before it was sent, so it wasn't delivered."));
-  });
-
   test("a finished spawn isn't repeated", async () => {
     store.save([user("go"), call("c1", "spawn_agent", { grant: { spawn: false } })]);
     store.save([result("c1", '{"id":"a1b2c3d4e5f6"}')]);
@@ -467,7 +457,7 @@ describe("a failed model call is retried, then the agent waits", () => {
 
   test("after every retry fails the loop stops, and a later message resumes it with a model call", async () => {
     const model = failing(4, [[assistant("back")]]);
-    const a = agent(model, [], { report: async () => {} });
+    const a = agent(model, [], { post: async () => "delivered" });
     a.start();
     a.accept(plain("hello"));
     await a.idle();
@@ -491,13 +481,14 @@ describe("a failed model call is retried, then the agent waits", () => {
 describe("an agent that gives up tells its parent", () => {
   const notice = "My model is failing, so I've stopped working. Error: rate limited. Message me to try again.";
 
-  test("a sub-agent sends its parent the notice, with the provider's error", async () => {
+  test("a sub-agent sends its parent the notice through its outbox, with the provider's error", async () => {
     const reported: string[] = [];
-    const a = agent(failing(4, [], "rate limited"), [], { report: async (text) => void reported.push(text) });
+    const a = agent(failing(4, [], "rate limited"), [], { parent: "a1b2c3d4e5f6", post: async (text) => (reported.push(text), "delivered") });
     a.start();
     a.accept(plain("go", "a1b2c3d4e5f6"));
     await a.idle();
     expect(reported).toEqual([notice]);
+    expect(store.outbox()).toEqual([]);
     expect(a.notice).toBeUndefined();
   });
 
@@ -516,11 +507,334 @@ describe("an agent that gives up tells its parent", () => {
     expect(a.notice).toBeUndefined();
   });
 
-  test("an agent whose send fails shows the notice too", async () => {
-    const a = agent(failing(4, [], "rate limited"), [], { report: () => Promise.reject(new Error("runtime unreachable")) });
+  test("a notice that can't be sent stays in the outbox, and the stream says so", async () => {
+    const a = agent(failing(4, [], "rate limited"), [], { parent: "a1b2c3d4e5f6", post: () => Promise.reject(new Error("runtime unreachable")) });
     a.start();
     a.accept(plain("go", "a1b2c3d4e5f6"));
     await a.idle();
-    expect(a.notice).toBe(notice);
+    expect(store.outbox().map((o) => o.text)).toEqual([notice]);
+    expect(a.notice).toMatch(/couldn't be sent.*runtime unreachable/);
+  });
+});
+
+// A post to the parent that records what it was sent.
+function poster(answers: ("delivered" | "gone" | Error)[] = []) {
+  const sent: string[] = [];
+  const post = async (text: string) => {
+    sent.push(text);
+    const next = answers.shift() ?? "delivered";
+    if (next instanceof Error) throw next;
+    return next;
+  };
+  return { sent, post };
+}
+const P = "p0p0p0p0p0p0";
+const fromParent = (text: string) => plain(text, P);
+const waitCall = (id: string) => call(id, "wait");
+
+describe("a turn's final text is the agent's reply to its parent", () => {
+  test("a sub-agent's final text is posted to its parent", async () => {
+    const { sent, post } = poster();
+    const a = agent(new ScriptedModel([[assistant("Herons wait "), assistant("in reeds")]]), [], { parent: P, post });
+    a.start();
+    a.accept(fromParent("write a haiku"));
+    await a.idle();
+    expect(sent).toEqual(["Herons wait in reeds"]);
+    expect(store.outbox()).toEqual([]);
+  });
+
+  test("an empty final text sends nothing when no reply is owed", async () => {
+    const { sent, post } = poster();
+    const a = agent(new ScriptedModel([[assistant("")]]), [], { parent: P, post });
+    a.start();
+    a.accept(plain("a sub-agent stopped", "runtime"));
+    await a.idle();
+    expect(sent).toEqual([]);
+  });
+
+  test("an empty final text sends an empty reply when one is owed", async () => {
+    const { sent, post } = poster();
+    const a = agent(new ScriptedModel([[assistant("")]]), [], { parent: P, post });
+    a.start();
+    a.accept(fromParent("Thanks"));
+    await a.idle();
+    expect(sent).toEqual([""]);
+  });
+
+  test("a message from the parent in a wait result owes a reply", async () => {
+    const { sent, post } = poster();
+    store.owe("a1");
+    store.save([user("go", P), waitCall("w1")]);
+    const a = agent(new ScriptedModel([[assistant("")]]), [], { parent: P, post, wait: true });
+    a.start();
+    a.accept(fromParent("Never mind."));
+    await a.idle();
+    expect(sent).toEqual([""]);
+  });
+
+  test("a root posts nothing: its reply is the assistant message on its stream", async () => {
+    const a = agent(new ScriptedModel([[assistant("Canberra")]]), [], { parent: "owner" });
+    a.start();
+    a.accept(plain("What's the capital of Australia?"));
+    await a.idle();
+    expect(store.outbox()).toEqual([]);
+    expect(store.load().at(-1)).toEqual(assistant("Canberra"));
+  });
+});
+
+describe("replies are posted from the outbox", () => {
+  test("a post that fails once is retried, and the parent gets the reply once", async () => {
+    const { sent, post } = poster([new Error("busy")]);
+    const a = agent(new ScriptedModel([[assistant("done")]]), [], { parent: P, post });
+    a.start();
+    a.accept(fromParent("go"));
+    await a.idle();
+    expect(sent).toEqual(["done", "done"]);
+    expect(store.outbox()).toEqual([]);
+    expect(a.notice).toBeUndefined();
+  });
+
+  test("a reply saved before a crash is posted on start, before the loop runs", async () => {
+    store.endTurn([user("go", P), assistant("done")], "done");
+    const order: string[] = [];
+    const model: Model = { next: async () => (order.push("model"), [assistant("again")]) };
+    const a = agent(model, [], { parent: P, post: async (text) => (order.push(`post ${text}`), "delivered") });
+    store.accept(fromParent("more"));
+    a.start();
+    await a.idle();
+    expect(order).toEqual(["post done", "model", "post again"]);
+  });
+
+  test("a reply that fails every retry stays, the stream shows a notice, and the next save posts it", async () => {
+    const down = new Error("parent unreachable");
+    const { sent, post } = poster([down, down, down, down]);
+    const shown: string[] = [];
+    const a = agent(new ScriptedModel([[assistant("done")], [call("c1", "a")], [assistant("")]]), [tool("a")], { parent: P, post });
+    a.on("notice", (text: string) => shown.push(text));
+    a.start();
+    a.accept(fromParent("go"));
+    await a.idle();
+    expect(sent).toHaveLength(4);
+    expect(store.outbox().map((o) => o.text)).toEqual(["done"]);
+    expect(shown).toHaveLength(1);
+    expect(a.notice).toMatch(/couldn't be sent.*parent unreachable/);
+    a.accept(plain("next", "runtime"));
+    await a.idle();
+    expect(sent.at(-1)).toBe("done");
+    expect(store.outbox()).toEqual([]);
+    expect(a.notice).toBeUndefined();
+  });
+
+  test("a post the runtime answers 404 for is deleted, not sent again", async () => {
+    const { sent, post } = poster(["gone"]);
+    const a = agent(new ScriptedModel([[assistant("done")]]), [], { parent: P, post });
+    a.start();
+    a.accept(fromParent("go"));
+    await a.idle();
+    expect(sent).toEqual(["done"]);
+    expect(store.outbox()).toEqual([]);
+  });
+});
+
+describe("the parent's messages reach the model with no sender", () => {
+  test("a message from the parent has an empty sender for the model, and keeps its own in the store", async () => {
+    const model = new ScriptedModel([[assistant("ok")]]);
+    const a = agent(model, [], { parent: P });
+    a.start();
+    a.accept(fromParent("write a haiku"));
+    a.accept(plain("done: the haiku", "a1"));
+    await a.idle();
+    expect(model.calls[0]!.items).toEqual([user("write a haiku", ""), user("done: the haiku", "a1")]);
+    expect(store.load()[0]).toEqual(user("write a haiku", P));
+  });
+
+  test("a root's first message, from the owner, has an empty sender", async () => {
+    const model = new ScriptedModel([[assistant("hi")]]);
+    const a = agent(model, [], { parent: "owner" });
+    a.start();
+    a.accept(plain("hello"));
+    await a.idle();
+    expect(model.calls[0]!.items).toEqual([user("hello", "")]);
+  });
+});
+
+describe("an empty message never wakes the agent", () => {
+  test("after the turn ended, it calls no model and is dropped, and it clears its sender's debt", async () => {
+    const model = new ScriptedModel([[assistant("the haiku")]]);
+    const a = agent(model, [], { parent: "owner" });
+    a.start();
+    a.accept(plain("go"));
+    await a.idle();
+    store.owe("a1");
+    a.accept(plain("", "a1"));
+    await a.idle();
+    expect(model.calls).toHaveLength(1);
+    expect(store.inbox()).toEqual([]);
+    expect(store.owed()).toEqual([]);
+  });
+
+  test("one that arrives during a step never reaches the model, and is dropped when the turn ends", async () => {
+    const gate = deferred<string>();
+    const model = new ScriptedModel([[call("c1", "slow")], [assistant("done")]]);
+    const a = agent(model, [tool("slow", () => gate.promise)], { parent: "owner" });
+    a.start();
+    a.accept(plain("go"));
+    await vi.waitFor(() => expect(store.load()).toHaveLength(2));
+    a.accept({ from: "a1", text: "", urgent: true });
+    gate.resolve("SLOW");
+    await a.idle();
+    expect(model.calls).toHaveLength(2);
+    expect(model.calls[1]!.items).toEqual([user("go", ""), call("c1", "slow"), result("c1", "SLOW")]);
+    expect(store.inbox()).toEqual([]);
+  });
+
+  test("while others still work, it stays until the next reply ends the wait", async () => {
+    store.owe("a1");
+    store.owe("a2");
+    store.save([user("go"), waitCall("w1")]);
+    const model = new ScriptedModel([[assistant("both")]]);
+    const a = agent(model, [], { wait: true });
+    a.start();
+    a.accept(plain("", "a1"));
+    await a.idle();
+    expect(model.calls).toHaveLength(0);
+    a.accept(plain("second", "a2"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", `From: a1\n\n---\n\nFrom: a2\n\nsecond\n\n---\n\n${ALL_REPLIED}`));
+    expect(model.calls).toHaveLength(1);
+  });
+});
+
+describe("a wait is answered from the inbox", () => {
+  test("it offers the wait tool only when asked to", async () => {
+    const model = new ScriptedModel([[assistant("ok")], [assistant("ok")]]);
+    await run(model, []);
+    expect(model.calls[0]!.tools.map((t) => t.name)).toEqual([]);
+    const waiting = agent(model, [], { wait: true });
+    waiting.start();
+    waiting.accept(plain("again"));
+    await waiting.idle();
+    expect(model.calls[1]!.tools.map((t) => t.name)).toEqual(["wait"]);
+  });
+
+  test("waiting on a sub-agent stops the loop with the call open, and its reply answers it", async () => {
+    store.owe("a1");
+    const model = new ScriptedModel([[waitCall("w1")], [assistant("Herons wait in reeds")]]);
+    const a = agent(model, [], { wait: true });
+    a.start();
+    a.accept(plain("go"));
+    await a.idle();
+    expect(model.calls).toHaveLength(1);
+    expect(store.load().at(-1)).toEqual(waitCall("w1"));
+    a.accept(plain("Herons wait in reeds", "a1"));
+    await a.idle();
+    expect(store.load().slice(2)).toEqual([result("w1", `From: a1\n\nHerons wait in reeds\n\n---\n\n${ALL_REPLIED}`), assistant("Herons wait in reeds")]);
+    expect(store.inbox()).toEqual([]);
+  });
+
+  test("with nothing owed and nothing waiting, it's answered at once", async () => {
+    const model = new ScriptedModel([[waitCall("w1")], [assistant("ok")]]);
+    const a = agent(model, [], { wait: true });
+    a.start();
+    a.accept(plain("go"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", NOTHING_TO_WAIT_FOR));
+  });
+
+  test("a message from the parent ends it, shown as its text alone", async () => {
+    store.owe("a1");
+    store.save([user("go", P), waitCall("w1")]);
+    const a = agent(new ScriptedModel([[assistant("stopped")]]), [], { parent: P, wait: true });
+    a.start();
+    a.accept(fromParent("stop and report"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", "stop and report\n\n---\n\nStill working: a1."));
+  });
+
+  test("an urgent message doesn't cancel it: it answers it", async () => {
+    store.owe("a1");
+    store.save([user("go"), waitCall("w1")]);
+    const a = agent(new ScriptedModel([[assistant("ok")]]), [], { wait: true });
+    a.start();
+    a.accept(urgent("stop now"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", "From: owner\n\nstop now\n\n---\n\nStill working: a1."));
+  });
+
+  test("one reply of two names the sub-agent still working", async () => {
+    store.owe("a1");
+    store.owe("a2");
+    store.save([user("go"), waitCall("w1")]);
+    const a = agent(new ScriptedModel([[waitCall("w2")]]), [], { wait: true });
+    a.start();
+    a.accept(plain("first", "a1"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", "From: a1\n\nfirst\n\n---\n\nStill working: a2."));
+  });
+
+  test("an empty reply, with nothing else owed, answers it as a bare From: line", async () => {
+    store.owe("a1");
+    store.save([user("go"), waitCall("w1")]);
+    const a = agent(new ScriptedModel([[assistant("ok")]]), [], { wait: true });
+    a.start();
+    a.accept(plain("", "a1"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", `From: a1\n\n---\n\n${ALL_REPLIED}`));
+  });
+});
+
+describe("a wait comes after the rest of its batch", () => {
+  test("its batch's sends run first, and a second wait is refused", async () => {
+    const order: string[] = [];
+    const send = tool("message_sub_agent", async () => (order.push("send"), store.owe("a1"), "delivered"));
+    const model = new ScriptedModel([[waitCall("w1"), call("c1", "message_sub_agent"), waitCall("w2")]]);
+    const a = agent(model, [send], { wait: true });
+    a.start();
+    a.accept(plain("go"));
+    await a.idle();
+    expect(order).toEqual(["send"]);
+    expect(store.load().slice(4)).toEqual([result("c1", "delivered"), result("w2", WAITED)]);
+    expect(store.load().at(-1)).not.toEqual(expect.objectContaining({ callId: "w1" }));
+  });
+
+  test("an urgent message that skips the batch's other calls still answers its wait", async () => {
+    store.owe("a1");
+    const gate = deferred<string>();
+    const model = new ScriptedModel([[call("c1", "slow"), waitCall("w1")], [assistant("ok")]]);
+    const a = agent(model, [tool("slow", (_input, signal) => new Promise((resolve) => signal.addEventListener("abort", () => resolve("x"))))], { wait: true });
+    a.start();
+    a.accept(plain("go"));
+    await vi.waitFor(() => expect(store.load()).toHaveLength(3));
+    a.accept(urgent("stop"));
+    gate.resolve("");
+    await a.idle();
+    expect(store.load().slice(3, 5)).toEqual([result("c1", CANCELLED), result("w1", "From: owner\n\nstop\n\n---\n\nStill working: a1.")]);
+  });
+});
+
+describe("an open wait survives a restart", () => {
+  test("a lone open wait stays open across a start, and the reply answers it with no model call before", async () => {
+    store.owe("a1");
+    store.save([user("go"), waitCall("w1")]);
+    const model = new ScriptedModel([[assistant("done")]]);
+    const a = agent(model, [], { wait: true });
+    a.start();
+    await a.idle();
+    expect(model.calls).toHaveLength(0);
+    a.accept(plain("the haiku", "a1"));
+    await a.idle();
+    expect(store.load()[2]).toEqual(result("w1", `From: a1\n\nthe haiku\n\n---\n\n${ALL_REPLIED}`));
+    expect(model.calls).toHaveLength(1);
+  });
+
+  test("a crash before the wait in its batch: the call is interrupted, the wait not run", async () => {
+    store.owe("a1");
+    store.save([user("go"), waitCall("w1"), call("c1", "a")]);
+    const model = new ScriptedModel([[assistant("ok")]]);
+    const a = agent(model, [tool("a")], { wait: true });
+    a.start();
+    await a.idle();
+    expect(store.load().slice(3, 5)).toEqual([result("c1", INTERRUPTED), result("w1", NOT_RUN_STOPPED)]);
+    expect(model.calls).toHaveLength(1);
   });
 });

@@ -72,7 +72,8 @@ export function createServer({ store, agent, token }: { store: Store; agent: Age
       return json(res, 400, { error: "the body is not JSON" });
     }
     const { text, urgent = false } = parsed;
-    if (typeof text !== "string" || text === "") return json(res, 400, { error: "text must be a non-empty string" });
+    // Empty text is an empty reply.
+    if (typeof text !== "string") return json(res, 400, { error: "text must be a string" });
     if (typeof urgent !== "boolean") return json(res, 400, { error: "urgent must be a boolean" });
 
     agent.accept({ from, text, urgent });

@@ -58,7 +58,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
   <figure>
     <div class="scroll">
-      <svg viewBox="0 0 1280 900" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter to the model provider. An urgent message aborts the step in flight. Delegation tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same.">
+      <svg viewBox="0 0 1280 900" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter to the model provider. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -174,7 +174,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <text class="d" x="701" y="376">conversation</text>
         <text class="t" x="655" y="412">Store</text>
         <text class="f" x="655" y="430">store.ts · SQLite</text>
-        <text class="d" x="655" y="452">on /state, the agent's volume</text>
+        <text class="d" x="655" y="452">+ outbox, owed · on /state</text>
 
         <!-- server <-> store -->
         <line class="edge" x1="610" y1="225" x2="610" y2="313" marker-end="url(#arrow)"/>
@@ -189,13 +189,13 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
         <rect class="inner" x="860" y="198" width="180" height="56" rx="4"/>
         <text class="st" x="950" y="221">1 · Settle tool calls</text>
-        <text class="d" x="950" y="240">one at a time, each result saved</text>
+        <text class="d" x="950" y="240">each result saved · wait last</text>
         <rect class="inner" x="860" y="274" width="180" height="56" rx="4"/>
         <text class="st" x="950" y="297">2 · Deliver the inbox</text>
         <text class="d" x="950" y="316">inbox → items, one transaction</text>
         <rect class="inner" x="860" y="350" width="180" height="56" rx="4"/>
         <text class="st" x="950" y="373">3 · Call the model</text>
-        <text class="d" x="950" y="392">response saved at once</text>
+        <text class="d" x="950" y="392">saved at once · reply → outbox</text>
         <line class="edge" x1="950" y1="254" x2="950" y2="272" marker-end="url(#arrow)"/>
         <line class="edge" x1="950" y1="330" x2="950" y2="348" marker-end="url(#arrow)"/>
         <path class="edge" d="M1040,378 H1053 V226 H1042" marker-end="url(#arrow)"/>
@@ -217,7 +217,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <rect class="box" x="555" y="520" width="200" height="90" rx="6"/>
         <text class="t" x="655" y="552">Delegation tools</text>
         <text class="f" x="655" y="570">delegation.ts</text>
-        <text class="d" x="655" y="589">send_message · spawn_agent …</text>
+        <text class="d" x="655" y="589">message_sub_agent · spawn_agent …</text>
 
         <path class="edge" d="M845,435 H800 V555 H757" marker-end="url(#arrow)"/>
         <text class="lbl" x="792" y="500" text-anchor="end">runs</text>
@@ -274,13 +274,14 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
     <section>
       <h2>A message, end to end</h2>
       <ol>
-        <li>The owner sends <code>POST /agents/&lt;id&gt;/messages</code> to the runtime with the owner token. A child messaging its parent does the same through <code>send_message</code>, with its own token.</li>
+        <li>The owner sends <code>POST /agents/&lt;id&gt;/messages</code> to the runtime with the owner token. An agent messaging a sub-agent does the same through <code>message_sub_agent</code>, with its own token.</li>
         <li>The runtime checks the target is the caller's descendant (or parent), starting it first if it's stopped, and relays with the agent's token and <code>Jen-From</code> set to the caller.</li>
         <li>The agent's server inserts the message into the inbox and answers <code>202</code>. Acknowledged means saved. It wakes the loop, or aborts the step in flight if the message is urgent.</li>
         <li>The loop settles any outstanding tool calls, delivers the inbox into the conversation in one transaction, and calls the model with its instructions.</li>
         <li>The response is saved at once, and every saved item streams out on <code>GET /events</code> through the runtime's relay.</li>
-        <li>Its tool calls are settled next step: <code>spawn_agent</code> and the rest call the runtime; <code>send_message</code> to <code>owner</code> calls nothing, and the saved <code>delivered</code> result is the reply.</li>
-        <li>With no calls left and an empty inbox, the loop ends. A child's answer wakes it again.</li>
+        <li>Its tool calls are settled next step: <code>message_sub_agent</code>, <code>spawn_agent</code> and the rest call the runtime. A <code>wait</code> runs last, and the loop answers it from the inbox once a message arrives or no sub-agent owes a reply; until then the loop stops with the call open.</li>
+        <li>A response with no tool calls ends the turn, and its text is the reply. A sub-agent's goes into its outbox in the same transaction and is posted to its parent through the runtime. A root's is the assistant message on its stream, where the owner reads it.</li>
+        <li>With no calls left and an empty inbox, the loop ends. A sub-agent's reply wakes it again.</li>
       </ol>
     </section>
     <section>
@@ -288,7 +289,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
       <ul>
         <li><strong>Restart:</strong> all state is in the store, so the loop resumes. A call that may have been running is reported as unknown; later calls in its batch are marked not run. The model decides what to retry.</li>
         <li><strong>Woken by a message:</strong> the runtime starts the agent with <code>JEN_WAKE</code>, which holds the loop until its first message is saved, so recovery never calls the model without it.</li>
-        <li><strong>Model failing:</strong> retried after 1, 5 and 25 s, each failure an <code>error</code> event. Then the agent messages its parent and waits; any message retries.</li>
+        <li><strong>Model failing:</strong> retried after 1, 5 and 25 s, each failure an <code>error</code> event. Then the agent puts a notice in its outbox for its parent (a root shows it on its stream) and waits; any message retries.</li>
         <li><strong>Runtime notices:</strong> the runtime sends as <code>runtime</code> only what it alone saw: a child whose restarts ran out, or sub-agents still stopped when an agent starts.</li>
         <li><strong>Stop and delete:</strong> both act on the whole subtree. Stop keeps the volume; delete removes it.</li>
       </ul>

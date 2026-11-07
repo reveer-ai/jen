@@ -380,9 +380,9 @@ test("an explicit start with a stopped child sends the notice alone", async () =
 test("the agent's own errors pass through unchanged", async () => {
   const { body: root } = await spawn({ spawn: false });
   await serveAgent(root.id, []);
-  const res = await call(`/agents/${root.id}/messages`, message(""));
+  const res = await call(`/agents/${root.id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: 5 }) });
   expect(res.status).toBe(400);
-  expect(await res.json()).toEqual({ error: "text must be a non-empty string" });
+  expect(await res.json()).toEqual({ error: "text must be a string" });
 });
 
 test("the event stream is relayed, resuming after Last-Event-ID", async () => {

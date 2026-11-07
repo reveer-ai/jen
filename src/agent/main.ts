@@ -4,7 +4,7 @@
 import { openStore } from "./store.ts";
 import { OpenAIResponsesModel } from "./model/openai-responses.ts";
 import { Agent } from "./loop.ts";
-import { delegationTools, instructions, readIdentity, RuntimeClient, type Identity } from "./delegation.ts";
+import { delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, type Identity } from "./delegation.ts";
 import { createServer } from "./server.ts";
 
 // Node is PID 1 in the container, which gets no default signal handling.
@@ -32,14 +32,24 @@ const agent = new Agent({
     apiKey: process.env.JEN_API_KEY!,
     baseURL: process.env.JEN_BASE_URL || undefined,
   }),
-  tools: delegationTools(identity, runtime),
+  tools: delegationTools(identity, runtime, store),
   instructions: instructions(identity),
   wake: identity.wake,
-  // A root's parent is the owner, who reads its event stream instead.
-  report:
+  parent: identity.parent,
+  wait: identity.grant.spawn,
+  // A root's parent is the owner, who reads its replies on its event stream.
+  post:
     identity.parent === "owner"
       ? undefined
-      : async (text) => void (await runtime.request("POST", `/agents/${encodeURIComponent(identity.parent)}/messages`, { text })),
+      : async (text) => {
+          try {
+            await runtime.request("POST", `/agents/${encodeURIComponent(identity.parent)}/messages`, { text });
+            return "delivered";
+          } catch (error) {
+            if (error instanceof RuntimeRefusal && error.status === 404) return "gone";
+            throw error;
+          }
+        },
 });
 agent.on("failure", (message: string) => process.stderr.write(`jen: model call failed: ${message}\n`));
 const server = createServer({ store, agent, token });

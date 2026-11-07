@@ -123,17 +123,20 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: each send to owner whose result is
-// delivered. Its text output reaches no one, so it doesn't count.
+// What a root agent told the owner: the final text of each model response
+// with no tool calls. Text in a response that also calls a tool reaches no one.
 function replies(events: Event[]): string[] {
-  const delivered = new Set(events.flatMap(({ item }) => (item.type === "tool_result" && item.output === "delivered" ? [item.callId] : [])));
-  return events.flatMap(({ item }) => {
-    if (item.type === "tool_call" && item.name === "send_message" && delivered.has(item.id)) {
-      const input = item.input as { to?: string; text?: string };
-      if (input.to === "owner" && typeof input.text === "string") return [input.text];
-    }
-    return [];
-  });
+  const found: string[] = [];
+  let text = "";
+  for (const [i, { item }] of events.entries()) {
+    if (item.type !== "message" || item.role !== "assistant") continue;
+    text += item.text;
+    const next = events[i + 1]?.item;
+    if (next?.type === "message" && next.role === "assistant") continue;
+    if (next?.type !== "tool_call" && text.trim() !== "") found.push(text.trim());
+    text = "";
+  }
+  return found;
 }
 
 // Waits for the agent's reply to what came after position after, and then

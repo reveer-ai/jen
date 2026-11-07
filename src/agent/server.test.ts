@@ -214,12 +214,19 @@ describe("an invalid message is rejected", () => {
   const stalled = { next: () => new Promise<Item[]>(() => {}) };
   const unchanged = () => expect([store.inbox(), store.load()]).toEqual([[], []]);
 
-  test("empty text gets 400 and changes nothing", async () => {
+  test("text that isn't a string gets 400 and changes nothing", async () => {
     await serve(stalled);
-    const res = await post("");
+    const res = await fetch(`${base}/messages`, { method: "POST", headers: sender, body: JSON.stringify({ text: 5 }) });
     expect(res.status).toBe(400);
     expect(await res.json()).toHaveProperty("error");
     unchanged();
+  });
+
+  test("empty text is accepted as an empty reply", async () => {
+    await serve(stalled);
+    expect((await post("")).status).toBe(202);
+    // It reaches no model: the agent has no turn under way, so it's dropped.
+    expect(store.load()).toEqual([]);
   });
 
   test("a body that isn't JSON gets 400 and changes nothing", async () => {
@@ -346,7 +353,7 @@ describe("the event stream sends only saved items, each as it's saved", () => {
     const model = flaky([]);
     let calls = 0;
     const first = new ScriptedModel([[call("c1", "lookup")]]);
-    await serve({ next: (...args) => (++calls === 1 ? first.next(...args) : model.next(...args)) }, { tools: [lookup], report: async () => {} });
+    await serve({ next: (...args) => (++calls === 1 ? first.next(...args) : model.next(...args)) }, { tools: [lookup], post: async () => "delivered" });
     const stream = await openEvents();
     await post("go");
     await agent.idle();

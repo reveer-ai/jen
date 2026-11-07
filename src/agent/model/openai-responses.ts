@@ -57,9 +57,9 @@ export class OpenAIResponsesModel implements Model {
 function toInput(item: Item): ResponseInputItem {
   switch (item.type) {
     case "message":
-      // A received message names its sender in a header line.
+      // A received message names its sender in a header line, unless it has none.
       return item.role === "user"
-        ? { role: "user", content: `From: ${item.from}\n\n${item.text}` }
+        ? { role: "user", content: item.from === "" ? item.text : `From: ${item.from}\n\n${item.text}` }
         : { role: "assistant", content: item.text };
     case "tool_call":
       return { type: "function_call", call_id: item.id, name: item.name, arguments: JSON.stringify(item.input) };
