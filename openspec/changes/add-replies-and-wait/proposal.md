@@ -10,7 +10,7 @@ jen's agents should behave on Luna. This change ([JEN-12](https://linear.app/rev
 
 ## What Changes
 
-- **A turn's final text is the agent's reply to its parent.** **BREAKING:** when an agent ends its turn, its final text is sent to its parent as a message from the agent. A root's final text is its reply to the owner, read on its event stream. An empty final text sends nothing, unless the agent owes its parent a reply. Then it sends a silent signal: the parent's model never sees it as a message, and the parent's next `wait` reports that the agent ended its turn without a reply. Ending a turn means "here's my result" or "here's my question", the same as in a chat, and it's the only way an agent answers its parent.
+- **A turn's final text is the agent's reply to its parent.** **BREAKING:** when an agent ends its turn, its final text is sent to its parent as a message from the agent. A root's final text is its reply to the owner, read on its event stream. An empty final text sends nothing, unless the agent owes its parent a reply. Then it sends an empty reply. That never wakes the parent by itself, and only the parent's next `wait` shows it. Ending a turn means "here's my result" or "here's my question", the same as in a chat, and it's the only way an agent answers its parent.
 - **Agents send only downward.** **BREAKING:** `send_message` becomes `message_sub_agent`. It takes the same fields and reaches only the agent's own sub-agents. A send to the agent's parent or to `owner` is refused, with a result saying to reply by ending the turn. The root's special send to `owner`, delivered by saving its result, is removed, along with its handling of interrupted sends. An agent without `spawn` has no sub-agents, so it has no send tool. **Supersedes in part** the 2026-11-03 decision that agents talk only by sending, and the 2026-11-04 decision that a child can send its parent an urgent message.
 - **An agent sees no agent ID it can't message.** **BREAKING:** the model isn't told the agent's own ID or its parent's. A message from the parent reaches it with no sender line, the way a user's message looks in any chat. `spawn_agent` and `list_agents` leave out the parent field, and `list_agents` lists only the agent's own sub-agents. The only IDs an agent knows are its sub-agents', so it has no address to answer its parent with.
 - **An agent waits for replies with `wait`.** An agent with `spawn` gets a `wait` tool. The call returns as soon as the agent's inbox holds a message, from anyone, plain or urgent, and its result is those messages with their senders. Until then the agent makes no model calls, and its sub-agents keep working. A wait survives a stop, crash or restart and carries on when the agent starts again. An agent that has other work does it first. Replies that arrive meanwhile reach it between steps, as messages do today.
@@ -50,10 +50,10 @@ None.
   - The requirement on what the instructions say.
   - The delegation live check uses replies, and the new behavior live check is added.
 - `openai-responses-adapter`: a message with an empty sender is sent as plain user content, with no `From:` header.
-- `agent-protocol`: `POST /messages` accepts empty `text`, which is the silent signal.
+- `agent-protocol`: `POST /messages` accepts empty `text`, for an empty reply.
 - `agent-loop`:
-  - A turn's final text is sent to the parent. An empty one sends nothing, unless the parent is owed a reply: then it sends the silent signal.
-  - A silent signal is never delivered to the model. It clears the sender's debt and is reported by the next `wait`.
+  - A turn's final text is sent to the parent. An empty one sends nothing, unless the parent is owed a reply: then it sends an empty reply.
+  - An empty reply clears the sender's debt, never wakes the agent by itself, and is shown only by a `wait`. One still pending when the agent ends its turn is dropped.
   - The parent's messages reach the model with an empty sender.
   - A `wait` call is answered by the inbox, not run like other tools. It runs after the rest of its batch, any message ends it, an urgent message doesn't cancel it, and it survives a restart.
 - `agent-store`:

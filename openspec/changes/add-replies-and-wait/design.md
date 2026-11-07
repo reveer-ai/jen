@@ -9,7 +9,7 @@ See proposal.md for why. Today:
 - **One message goes up without the model sending it:** the give-up notice. It's posted to the parent once, and a failed post falls back to the agent's own stream.
 - **The runtime routes a child's message to its parent, and pipes the body through unchanged.** It also reports a sub-agent whose restarts ran out, as a message from `runtime`.
 
-The design was worked out in a lab harness on 2026-11-06 and 2026-11-07, which ran six owner tasks on Luna, three or six times each, against variants of the agent. The variant this design follows is `bc10`. The prototype held its state in memory, and this design moves that state into the store.
+The design was worked out in a lab harness on 2026-11-06 and 2026-11-07, which ran six owner tasks on Luna, three or six times each, against variants of the agent. The variant this design follows is `bc10`. Its instructions, its loop and tool code, and the harness are kept in `lab/` beside this design. The prototype held its state in memory, and this design moves that state into the store.
 
 ## Goals / Non-Goals
 
@@ -75,20 +75,20 @@ When the loop saves a model response with no tool calls, the same transaction co
 - **A root has no outbox.** Its reply is the saved assistant message on its stream, which is where the owner reads it. The root's special send to `owner` is removed, along with its saved-result delivery and its interrupted-send handling. Owner clients read replies as assistant messages with no tool call in the same response. Those are the live checks and the commands in `context/environment.md`.
 - **The give-up notice moves into the outbox**, so it gets the same retries, and there's one way up.
 
-### An empty reply is a silent signal
+### An empty reply never wakes anyone
 
 An agent owes its parent a reply once a message from its parent has been delivered to it since its last reply. A turn's final text can be empty, for example after the parent sent "Thanks". When it is:
 
 - **Nothing is owed:** nothing is sent.
-- **A reply is owed:** the outbox posts a message with empty text.
+- **A reply is owed:** the outbox posts the empty reply, a message with empty text.
 
-The parent never shows an empty message to its model, and the message doesn't wake it:
+At the parent, an empty reply is a reply like any other, with one difference: it never wakes the agent by itself.
 
 - **It clears the sender's debt** when it's accepted, as any message does.
-- **It waits in the inbox until the next `wait`,** whose status reports it: "a1 ended its turn without a reply." When nothing else is owed, it answers an open `wait` straight away. Otherwise the `wait` keeps waiting.
-- **It's never delivered as a conversation message.** An agent that doesn't wait again never sees it. That's the "Thanks" case, where nothing was expected.
+- **Only a `wait` shows it.** It's shown as what the sub-agent replied: `From: a1` with nothing under it. When nothing else is owed, it answers an open `wait` straight away. Otherwise it waits in the inbox and comes with the next message that ends the `wait`.
+- **It's never delivered as a conversation message.** A pending empty reply is dropped when the agent ends its turn, because the agent has moved on and the debt is already cleared. A later `wait` for other work never shows a stale one.
 
-So a parent that said thanks spends no model call on the silence. A parent that was waiting for a result learns that it isn't coming, and can ask again.
+So a parent that said thanks spends no model call on the silence. A parent that was waiting for a result sees that the reply was empty, and can ask again.
 
 The protocol changes in one place: `POST /messages` accepts empty `text`.
 
@@ -102,16 +102,14 @@ The protocol changes in one place: `POST /messages` accepts empty `text`.
 - **Urgent messages** don't cancel a `wait`, since nothing is in flight. In a batch whose earlier calls are skipped for an urgent message, the `wait` is still answered with the inbox, not skipped.
 - **Restarts.** On start, an open `wait` that's the only outstanding call stays open, and the loop answers it as above. If other calls of its batch are still outstanding, the existing recovery applies to the whole batch, and the `wait` gets the not-run result too.
 
-**The result.** Each message is shown as `From: <sender>`, a blank line, then the text, and messages are separated by `---`. Silent signals come after the messages, one line each. A status line ends the result:
+**The result.** Each message is shown as `From: <sender>`, a blank line, then the text, and messages are separated by `---`. An empty reply is the header alone. A status line ends the result:
 
 | When | Status line |
 |---|---|
 | A sub-agent still owes a reply | `Still working: <ids>.` |
 | Every sub-agent replied | `Every sub-agent you sent work to has replied. End your turn with your result for your parent.` |
-| Nothing is owed, but a sub-agent ended its turn silently | `None of your sub-agents is still working.` |
 | The `wait` was answered at once, with nothing owed and nothing in the inbox | `Nothing to wait for: none of your sub-agents owes you a reply.` |
 
-The cue to end the turn is left off when a sub-agent went silent, because the agent may need to ask again.
 
 An open `wait` is also how the agent's state shows. An agent with an open `wait` is still working, and one that ended its turn has replied. The owner sees a root's open `wait` on its stream. A parent knows which sub-agents owe it a reply from its own record. So no message needs to say that work is under way.
 
@@ -120,7 +118,7 @@ An open `wait` is also how the agent's state shows. An agent with an open `wait`
 The store gets an `owed` table of sub-agent IDs:
 
 - **`message_sub_agent`** records the receiver before it posts, and removes it again if the post fails. Recording first means a reply that arrives fast can't land before its debt exists.
-- **Accepting a message** clears its sender's row, in the same transaction that saves the message. A silent signal clears it too.
+- **Accepting a message** clears its sender's row, in the same transaction that saves the message. An empty reply clears it too.
 - **`stop_agent` and `delete_agent`** clear the row of the sub-agent they name.
 
 ### When a sub-agent stops for good
@@ -156,7 +154,7 @@ The tools' text gives cues at the moment of choice:
 - The `wait` status that every sub-agent has replied ends with `End your turn with your result for your parent.`
 - `message_sub_agent`'s description doesn't mention the parent at all.
 
-`bc10`'s text is the starting point. The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
+`bc10`'s text, in `lab/bc10-instructions.md`, is the starting point. The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
 
 ### The behavior live check
 
@@ -199,15 +197,15 @@ All results are Luna lab runs. A clean run is one in which the owner gets exactl
 
 Clean runs were 25 of 36 with the turn ended empty, and 21 of 36 with the status message, against 34 of 36 for `bc10` by the same tally. The maintainer dropped the flag, along with the update notes it existed to mark. Seeing what a sub-agent is doing is [JEN-13](https://linear.app/reveer/issue/JEN-13).
 
-**A silent signal for an empty reply, rather than a message.** Two tests compared three forms. In the first, the root thanks its sub-agent, 6 runs per form. In the second, every leaf drops its first reply, 9 runs per form:
+**An empty reply that only `wait` shows, rather than a fixed message.** Two tests compared the forms. In the first, the root thanks its sub-agent, 6 runs per form. In the second, every leaf drops its first reply, 9 runs per form:
 
 | Form | Thanks: an extra reply to the owner | Thanks: the parent woken for nothing | Missing result: the parent asks again |
 |---|---|---|---|
 | A fixed message, `(I ended my turn without a reply.)` | 3 of 6 | 6 of 6 | 9 of 9 |
-| An empty message, shown as a bare `From:` line | 0 of 6 | 6 of 6 | 9 of 9 |
-| A silent signal, reported by `wait` | 0 of 6 | 0 of 6 | 9 of 9 |
+| An empty message, delivered like any other | 0 of 6 | 6 of 6 | 9 of 9 |
+| A signal that wakes no one, reported by `wait` as "a1 ended its turn without a reply." | 0 of 6 | 0 of 6 | 9 of 9 |
 
-In the fixed form, a root woken by the fixed text often wrote the owner a second reply about the thank-you. In an earlier version of the silent signal, the `wait` status said every sub-agent had replied, and one root wrote the haiku itself. The status table above fixes that. With the silent signal, the full set of tasks was still 36 of 36 for the owner's replies, and 35 of 36 clean. The one miss delegated the direct question.
+The maintainer rejected the fixed message as artificial. In the lab, a root woken by its text often wrote the owner a second reply about the thank-you. The empty message, shown as a bare `From:` line, made parents ask again in every run, but delivered like any message it woke the parent after every thank-you. The signal woke no one, but reported the silence in words of the runtime's own. In an earlier version of it, the status line still said every sub-agent had replied, and one root wrote the haiku itself. The design takes the empty message's form and the signal's timing: the reply is shown as it is, and only by a `wait`. With the signal, the full set of tasks was 36 of 36 for the owner's replies and 35 of 36 clean. The one miss delegated the direct question. The combination itself hasn't been run in the lab yet.
 
 **The parent handles a crashed sub-agent, rather than `wait` checking the runtime.** `wait` could ask the runtime which owed sub-agents are still running, so it never counts a crashed one. The runtime's message already tells the model, and the maintainer wants the parent to act on it. Leaving the check out keeps the loop from calling the runtime, and keeps one record of who owes a reply.
 
@@ -224,7 +222,7 @@ In the fixed form, a root woken by the fixed text often wrote the owner a second
 - [A reply is sent twice after a crash between the runtime's `202` and the outbox delete] → Rare, and the parent's model sees the repeat. It's chosen over a lost reply.
 - [A reply waits behind a retry for a parent that's down] → It's durable in the outbox and sent on the next save or start. A parent that's down is stopped, and the runtime starts it for the message.
 - [A parent ignores the runtime's message that a sub-agent stopped, and waits on it again] → The instructions say to restart or delete it, and any message still ends the `wait`.
-- [The crash rule and the silent signal aren't exercised by the live check's tasks] → The `owed` clearing on stop and delete, and the silent signal's handling in the loop, get unit tests. The lab showed the model asking again after a silent signal, 9 of 9.
+- [The crash rule and the empty reply aren't exercised by the live check's tasks] → The `owed` clearing on stop and delete, and the loop's handling of an empty reply, get unit tests. The empty reply's form was tested in one lab arm and its timing in another, but not the two together. The thanks and dropped-reply lab tasks are run on it during implementation, before the instructions are final.
 - [A model that never calls `wait` and ends its turn instead] → Its final text goes to its parent as its reply. The instructions and the check's reply counts catch it.
 
 ## Migration Plan
