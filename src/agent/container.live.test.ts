@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "./model/port.ts";
+import { replies } from "./model/replies.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -123,27 +124,11 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: the final text of each model response
-// with no tool calls. Text in a response that also calls a tool reaches no one.
-function replies(events: Event[]): string[] {
-  const found: string[] = [];
-  let text = "";
-  for (const [i, { item }] of events.entries()) {
-    if (item.type !== "message" || item.role !== "assistant") continue;
-    text += item.text;
-    const next = events[i + 1]?.item;
-    if (next?.type === "message" && next.role === "assistant") continue;
-    if (next?.type !== "tool_call" && text.trim() !== "") found.push(text.trim());
-    text = "";
-  }
-  return found;
-}
-
 // Waits for the agent's reply to what came after position after, and then
 // for its turn to go quiet. Returns the reply's text and the events read.
 async function reply(url: string, token: string, after: number): Promise<{ text: string; events: Event[] }> {
-  const events = await readEvents(url, token, after, (events) => replies(events).length > 0, 5_000);
-  return { text: replies(events).join("\n"), events };
+  const events = await readEvents(url, token, after, (events) => replies(events.map((e) => e.item)).length > 0, 5_000);
+  return { text: replies(events.map((e) => e.item)).join("\n"), events };
 }
 
 function docker(args: string[], { env, timeout = 30_000 }: { env?: NodeJS.ProcessEnv; timeout?: number } = {}): string {

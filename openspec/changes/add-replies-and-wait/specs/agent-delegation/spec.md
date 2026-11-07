@@ -82,7 +82,7 @@ With Docker running and model credentials configured, a behavior live check SHAL
 - **THEN** all 18 runs settle, and each gets its task's expected number of owner replies with none of the faults
 
 ### Requirement: The behavior live check fails on any fault
-A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, or model error event. A failure SHALL print the run's transcript.
+A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, or model error event. Replies SHALL be read as in the delegation live check. A failure SHALL print the run's transcript.
 
 #### Scenario: A faulty run
 - **WHEN** a run's root calls `list_agents`
@@ -137,7 +137,7 @@ With `spawn`, they SHALL also say:
 - **THEN** its instructions don't mention `message_sub_agent` or `wait`
 
 ### Requirement: An agent delegates and converses in both directions
-With Docker running and model credentials configured, a live check SHALL have the owner ask a root agent for work that it delegates to a sub-agent, the sub-agent ask the root a question and get an answer, and the result reach the owner on the root's event stream. A reply SHALL be read as an assistant message from a model response with no tool calls. Without credentials or Docker it SHALL behave as the existing live checks do.
+With Docker running and model credentials configured, a live check SHALL have the owner ask a root agent for work that it delegates to a sub-agent, the sub-agent ask the root a question and get an answer, and the result reach the owner on the root's event stream. A reply SHALL be read as the text of a model response with no tool call anywhere in it, once the stream has been quiet for a moment. Without credentials or Docker it SHALL behave as the existing live checks do.
 
 #### Scenario: Delegated work with a question
 - **WHEN** the owner messages a root agent with work that needs a sub-agent and a question back

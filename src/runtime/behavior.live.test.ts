@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "../agent/model/port.ts";
+import { replies } from "../agent/model/replies.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -147,7 +148,9 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 2_000));
       await tree();
-      if (task.answer && !answered && replies(events, root).length > 0) {
+      // Read once the stream has been quiet for a moment, so a response
+      // that's still arriving isn't taken for a reply.
+      if (task.answer && !answered && Date.now() - last > 2_000 && repliesOf(events, root).length > 0) {
         answered = true;
         last = Date.now();
         await api(`/agents/${root}/messages`, { method: "POST", body: JSON.stringify({ text: task.answer }) });
@@ -164,7 +167,7 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   for (const abort of watching.values()) abort.abort();
   await api(`/agents/${root}`, { method: "DELETE" });
 
-  const owned = replies(events, root);
+  const owned = repliesOf(events, root);
   if (owned.length !== task.replies) faults.push(`the owner got ${owned.length} replies, not ${task.replies}`);
   const items = events.flatMap((e) => (e.kind === "item" ? [{ agent: e.agent, item: e.item as Item }] : []));
   const calls = items.flatMap(({ agent, item }) => (item.type === "tool_call" ? [{ agent, item }] : []));
@@ -175,28 +178,16 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   const sends = calls.filter(({ item }) => item.name === "message_sub_agent").map(({ agent, item }) => `${agent} ${JSON.stringify(item.input)}`);
   const repeats = sends.length - new Set(sends).size;
   if (repeats > 0) faults.push(`${repeats} messages sent twice`);
-  const filler = ids.filter((id) => id !== root).flatMap((id) => replies(events, id)).filter((text) => text.length < 10);
+  const filler = ids.filter((id) => id !== root).flatMap((id) => repliesOf(events, id)).filter((text) => text.length < 10);
   if (filler.length > 0) faults.push(`filler replies: ${filler.map((text) => JSON.stringify(text)).join(", ")}`);
   const modelErrors = events.filter((e) => e.kind === "error").length;
   if (modelErrors > 0) faults.push(`${modelErrors} model error events`);
   return { label, faults, transcript: transcript(events, ids) };
 }
 
-// What an agent replied to its parent: the final text of each model response
-// with no tool calls, as read from its stream.
-function replies(events: Event[], agent: string): string[] {
-  const items = events.flatMap((e) => (e.agent === agent && e.kind === "item" ? [e.item as Item] : []));
-  const found: string[] = [];
-  let text = "";
-  for (const [i, item] of items.entries()) {
-    if (item.type !== "message" || item.role !== "assistant") continue;
-    text += item.text;
-    const next = items[i + 1];
-    if (next?.type === "message" && next.role === "assistant") continue;
-    if (next?.type !== "tool_call" && text.trim() !== "") found.push(text.trim());
-    text = "";
-  }
-  return found;
+// What an agent replied to its parent, read from its stream.
+function repliesOf(events: Event[], agent: string): string[] {
+  return replies(events.flatMap((e) => (e.agent === agent && e.kind === "item" ? [e.item as Item] : [])));
 }
 
 // The run in the lab's compact form: one line per event, agents named root,

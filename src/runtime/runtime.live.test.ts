@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "../agent/model/port.ts";
+import { replies } from "../agent/model/replies.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -187,8 +188,8 @@ test.skipIf(!apiKey || !model)("an agent delegates and converses in both directi
       "tell it to ask you for the word. Answer its question when it asks. When it gives you the reversed word, pass it on to me.";
     expect((await fetch(`${base}/agents/${rootId}/messages`, { method: "POST", headers: owner, body: JSON.stringify({ text: task }) })).status).toBe(202);
 
-    const toOwner = (events: Event[]) => replies(events).some((text) => text.includes(reversed));
-    const events = await readEvents(`${base}/agents/${rootId}/events`, ownerToken, 0, toOwner, 0, 480_000);
+    const toOwner = (events: Event[]) => replies(events.map((e) => e.item)).some((text) => text.includes(reversed));
+    const events = await readEvents(`${base}/agents/${rootId}/events`, ownerToken, 0, toOwner, 2_000, 480_000);
     const items = events.map((e) => e.item);
 
     const spawned = items.find((i) => i.type === "tool_call" && i.name === "spawn_agent");
@@ -270,27 +271,11 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: the final text of each model response
-// with no tool calls. Text in a response that also calls a tool reaches no one.
-function replies(events: Event[]): string[] {
-  const found: string[] = [];
-  let text = "";
-  for (const [i, { item }] of events.entries()) {
-    if (item.type !== "message" || item.role !== "assistant") continue;
-    text += item.text;
-    const next = events[i + 1]?.item;
-    if (next?.type === "message" && next.role === "assistant") continue;
-    if (next?.type !== "tool_call" && text.trim() !== "") found.push(text.trim());
-    text = "";
-  }
-  return found;
-}
-
 // Waits for the agent's reply to what came after position after, and then
 // for its turn to go quiet. Returns the reply's text and the events read.
 async function reply(url: string, token: string, after: number): Promise<{ text: string; events: Event[] }> {
-  const events = await readEvents(url, token, after, (events) => replies(events).length > 0, 5_000);
-  return { text: replies(events).join("\n"), events };
+  const events = await readEvents(url, token, after, (events) => replies(events.map((e) => e.item)).length > 0, 5_000);
+  return { text: replies(events.map((e) => e.item)).join("\n"), events };
 }
 
 async function until(check: () => boolean | Promise<boolean>, what: string) {
