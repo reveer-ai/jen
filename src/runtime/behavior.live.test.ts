@@ -3,10 +3,13 @@
 // A run settles after 30 seconds with no new event on any of its agents'
 // streams. A failing run prints its transcript. Uses the same JEN_LIVE_*
 // variables as the other live checks. Skipped when the key or model is
-// missing; with them set, a missing Docker fails the check.
+// missing; with them set, a missing Docker fails the check. With
+// JEN_LIVE_RECORD set, it writes one passing run of each task to
+// docs/interactions.data.js, which docs/interactions.html replays.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "../agent/model/port.ts";
@@ -77,7 +80,9 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
     };
 
     const runs = tasks.flatMap((task) => Array.from({ length: RUNS }, (_, i) => runTask(api, base, owner, task, `${task.name}-${i + 1}`)));
-    const failed = (await Promise.all(runs)).filter((run) => run.faults.length > 0);
+    const results = await Promise.all(runs);
+    if (process.env.JEN_LIVE_RECORD) record(results);
+    const failed = results.filter((run) => run.faults.length > 0);
     for (const run of failed) console.log(`${run.label}: ${run.faults.join("; ")}\n${run.transcript}\n`);
     expect(failed.map((run) => `${run.label}: ${run.faults.join("; ")}`)).toEqual([]);
   } finally {
@@ -96,6 +101,7 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   const start = Date.now();
   const root: string = (await api("/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: true } }) })).id;
   const events: Event[] = [];
+  const parents = new Map<string, string | null>();
   const watching = new Map<string, AbortController>();
   let last = Date.now();
 
@@ -130,6 +136,7 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   // The root's tree, with a stream open on each running agent in it.
   const tree = async () => {
     const all = (await api("/agents")) as { id: string; parent: string | null; state: string }[];
+    for (const agent of all) parents.set(agent.id, agent.parent);
     const mine = new Set([root]);
     for (let grew = true; grew; ) {
       grew = false;
@@ -182,7 +189,26 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   if (filler.length > 0) faults.push(`filler replies: ${filler.map((text) => JSON.stringify(text)).join(", ")}`);
   const modelErrors = events.filter((e) => e.kind === "error").length;
   if (modelErrors > 0) faults.push(`${modelErrors} model error events`);
-  return { label, faults, transcript: transcript(events, ids) };
+  return { label, faults, transcript: transcript(events, ids), recording: recording(task, events, ids, parents) };
+}
+
+// The run as docs/interactions.html replays it, with every agent ID replaced
+// by the short name the transcript uses.
+function recording(task: Task, events: Event[], ids: string[], parents: Map<string, string | null>) {
+  const short = (id: string) => (id === ids[0] ? "root" : `a${ids.indexOf(id)}`);
+  let json = JSON.stringify({
+    task: task.name,
+    agents: ids.map((id) => ({ id, parent: id === ids[0] ? "owner" : parents.get(id) })),
+    events: [...events].sort((a, b) => a.t - b.t),
+  });
+  for (const id of ids) json = json.replaceAll(id, short(id));
+  return JSON.parse(json);
+}
+
+function record(results: { label: string; faults: string[]; recording: { task: string } }[]) {
+  const runs = tasks.flatMap((task) => results.find((run) => run.recording.task === task.name && run.faults.length === 0)?.recording ?? []);
+  const data = { recorded: new Date().toISOString().slice(0, 10), model, runs };
+  writeFileSync(join(import.meta.dirname, "../../docs/interactions.data.js"), `// Written by src/runtime/behavior.live.test.ts with JEN_LIVE_RECORD set.\nwindow.JEN_RECORDING = ${JSON.stringify(data, null, 1)};\n`);
 }
 
 // What an agent replied to its parent, read from its stream.

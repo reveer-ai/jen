@@ -2,6 +2,19 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-09
+
+Made in [JEN-15](https://linear.app/reveer/issue/JEN-15), building the skills and docs that keep the project understood and maintained:
+
+- **The record is kept by intent, with no size limits.** *Why:* set by the maintainer. The old line budget was both arbitrary and dodged: `plan.md` passed it at 68 lines while holding 25 KB, mostly a status log that copied its pull requests.
+- **The record and docs hold only what the primary source can't tell, said briefly.** *Why:* a study of repository context files ([Gloaguen et al., 2026](https://arxiv.org/abs/2602.11988)) found LLM-written ones lowered agents' task success and raised cost by over 20%, mostly by repeating what agents could find themselves. Every copy is also one more thing to drift.
+- **Every jen convention lives in the project, and nothing about a particular user does.** *Why:* set by the maintainer. Thirteen conventions had lived only in one assistant's private memory, where Codex and engineers never see them.
+- **`docs/` is for understanding, and nothing loads it by default.** Each view names the files it describes, so `tend` can find drift. The interactions view replays recorded runs of the behavior check. *Why:* detail there costs no agent tokens unless it's needed, and a recording can't drift from how agents behave.
+- **Project skills are written once in `.agents/skills/` and linked from `.claude/skills/`.** *Why:* one copy, and both Codex and Claude Code find them through the link (checked 2026-11-09).
+- **Cleanup only proposes refactors; each is carried out as its own change that alters no requirement or test assertion.** *Why:* agents score about 70% on refactorings specified in detail and under 8% on open-ended cleanup ([CodeTaste](https://arxiv.org/pdf/2603.04177)). The rule makes "no behavior change" checkable.
+- **Upkeep runs once a cycle, not nightly.** *Why:* at about two merged pull requests a week, most nightly runs would find nothing. It's run by hand until it has proven itself, then scheduled.
+- **Nested `AGENTS.md` only where a directory has rules of its own.** `src/agent/` is the first. *Why:* Codex reads one only when started inside its directory (checked 2026-11-09), and Claude Code, by its documentation, only once it reads a file there, so the root's pointers stay the main guide.
+
 ## 2026-11-07
 
 Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), designing `add-replies-and-wait`. Details are in its design, decisions 3, 5 and 6:
