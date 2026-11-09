@@ -9,7 +9,7 @@ See proposal.md for why. Today:
 - **One message goes up without the model sending it:** the give-up notice. It's posted to the parent once, and a failed post falls back to the agent's own stream.
 - **The runtime routes a child's message to its parent, and pipes the body through unchanged.** It also reports a sub-agent whose restarts ran out, as a message from `runtime`.
 
-The design was worked out in a lab harness on 2026-11-06 and 2026-11-07, which ran six owner tasks on Luna, three or six times each, against variants of the agent. The variant this design follows is `bc10`. Its instructions, its loop and tool code, and the harness are kept in `lab/` beside this design. The prototype held its state in memory, and this design moves that state into the store.
+The design was worked out in a lab harness on 2026-11-06 and 2026-11-07, which ran six owner tasks on Luna, three or six times each, against variants of the agent. The variant this design follows is `bc10`. Its instructions, its loop and tool code, and the harness were kept in a `lab/` folder beside this design until the implementation landed. They're in git at commit `b56c25b`, under `openspec/changes/add-replies-and-wait/lab/`, with a README on running the harness. The prototype held its state in memory, and this design moves that state into the store.
 
 ## Goals / Non-Goals
 
@@ -154,7 +154,7 @@ The tools' text gives cues at the moment of choice:
 - The `wait` status that every sub-agent has replied ends with `End your turn with your result for your parent.`
 - `message_sub_agent`'s description doesn't mention the parent at all.
 
-`bc10`'s text, in `lab/bc10-instructions.md`, is the starting point. The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
+`bc10`'s text (`lab/bc10-instructions.md` at `b56c25b`) is the starting point. The spec lists what the instructions must say, not their wording, so the wording can be tuned against the live check.
 
 ### The behavior live check
 
