@@ -10,3 +10,4 @@ Ideas the maintainer wants kept, not yet planned or decided. An idea isn't a com
 ## Workflow
 
 - **The briefing as an OpenSpec artifact.** *Raised 2026-11-09, in [JEN-15](https://linear.app/reveer/issue/JEN-15).* A custom OpenSpec schema could make `deliver-change`'s briefing an artifact of the change, so it's archived in the repo with the change instead of living only in the pull request's description. As of OpenSpec 1.15.0, a schema's artifacts can depend only on other artifacts, and `apply` isn't one. So a `briefing` artifact can be declared, but OpenSpec can't order it after implementation; only a convention or the skill could. `openspec schema fork spec-driven` is the starting point.
+- **A skill for uncovering bugs.** *Raised 2026-11-09, in JEN-15.* `tend` looks at code only for how it's organized and reads. Hunting for bugs, flaky tests, failure handling and performance would be a separate skill.

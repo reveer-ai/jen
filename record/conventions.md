@@ -10,7 +10,7 @@ How work is done on this project. These apply to anyone working on it.
 - **Wording.** Titles describe the work, not Linear's structure. Write "Design and scope the UI engine", not "...and scope the UI engine milestone". Don't call the work a "proof of concept" or a "skeleton". It's the real thing, designed in depth.
 - **Cycles** are one week, starting Monday. Plan conservatively and pull work in if it moves faster.
 - **Estimates measure the maintainer's time, not the agents'.** Agents write the code, or nearly all of it. The maintainer's time goes to everything else the task needs, and that is what a point sizes. 1 point is about 4 hours of the maintainer's time. Capacity is about 8–9 points a week: 4 hours each weekday plus 12–16 hours over the weekend. Check estimates against actuals at the end of each cycle and recalibrate.
-- **Each cycle ends with upkeep.** Run the `tend` skill at the end of each cycle. Its pull request needs no Linear issue.
+- **Each cycle ends with upkeep.** Run the `tend` skill at the end of each cycle. Its pull request needs no Linear issue, and the agent squash-merges it without review: it fixes only the project record, docs and skills, and decides nothing. Read its description afterwards; anything that needs a decision is a question or proposal in it.
 - **Split by deliverable, and lean toward fewer, larger tasks.** A task is something shippable and reviewable on its own, not a file or an artifact. Every task pays a fixed cost (its OpenSpec change, pull request and reviews), so merge work that runs through the same code or whose only output feeds another task. Keep a task separate when it can run in parallel. A 1-point task rarely stands alone.
 
 ## Feature work (OpenSpec)
