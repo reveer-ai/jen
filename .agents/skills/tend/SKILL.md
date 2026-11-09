@@ -5,7 +5,7 @@ description: Periodic upkeep of a project. Keep its project record and docs accu
 
 # Tend the project
 
-This pass checks whether the project record, the docs and the code's organization still match what the code has become, and fixes them where they don't. It never changes what the project does or decides.
+This pass checks whether the project record, the docs and the code's organization still match what the code has become, and fixes them where they don't. It never changes what the project does or decides. Specs describe what the project does, so it never edits them either. Where a spec and the code disagree, ask.
 
 **A pass that changes nothing is a good result.** Running this skill is not a reason to change anything. Make a change only when you can say what's wrong without it: a claim that's false, a reader who would be misled or slowed down, or a gap the evidence shows. Rewording for taste, or reorganizing something that still works, doesn't pass that test. If nothing passes it, the pass is done.
 
