@@ -2,7 +2,7 @@
 
 ## Why
 
-The agent from [JEN-8](https://linear.app/reveer/issue/JEN-8) runs once per message, with the message passed as an argument. Nothing can reach it over the network. The 2026-10-26 decisions in `context/decisions.md` settled that one protocol, over the network, covers user→agent, agent→agent and parent→child. This change defines that protocol and makes the agent speak it ([JEN-9](https://linear.app/reveer/issue/JEN-9)). It's done when a user can start an agent in its container and talk to it.
+The agent from [JEN-8](https://linear.app/reveer/issue/JEN-8) runs once per message, with the message passed as an argument. Nothing can reach it over the network. The 2026-10-26 decisions in `record/decisions.md` settled that one protocol, over the network, covers user→agent, agent→agent and parent→child. This change defines that protocol and makes the agent speak it ([JEN-9](https://linear.app/reveer/issue/JEN-9)). It's done when a user can start an agent in its container and talk to it.
 
 Whoever talks to an agent uses the same protocol: a person with curl, someone self-hosting jen on their own servers, and later a parent agent ([JEN-2](https://linear.app/reveer/issue/JEN-2)), the UI ([JEN-3](https://linear.app/reveer/issue/JEN-3)) and the npm package ([JEN-4](https://linear.app/reveer/issue/JEN-4)). No client gets a privileged path. The image is the unit you deploy, and the protocol is its interface.
 
@@ -34,4 +34,4 @@ No `jen` CLI, npm packaging or UI. Starting an agent is `docker run`, and a wrap
 - `src/main.ts` becomes a server, and a new HTTP module joins it under `src/`. It's built on Node's `node:http`, with no new runtime dependency.
 - The `Dockerfile` exposes the agent's port.
 - The container live check (`src/container.live.test.ts`) changes from two runs to one server that's sent two messages, and then restarted on the same volume.
-- `context/environment.md`: the run instructions change from passing the message as an argument to `docker run` plus curl.
+- `record/environment.md`: the run instructions change from passing the message as an argument to `docker run` plus curl.

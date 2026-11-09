@@ -2,7 +2,7 @@
 
 ## Context
 
-The repo has no code, only `context/`, `openspec/` and agent config. The constraints come from the 2026-10-26 entries in `context/decisions.md`: TypeScript on Node, jen's own loop, and a jen-defined model port with adapters behind it. The first adapter wraps the official `openai` SDK on the Responses API, and a scripted fake is the second implementation. No SDK type crosses the port. See proposal.md for why.
+The repo has no code, only `record/`, `openspec/` and agent config. The constraints come from the 2026-10-26 entries in `record/decisions.md`: TypeScript on Node, jen's own loop, and a jen-defined model port with adapters behind it. The first adapter wraps the official `openai` SDK on the Responses API, and a scripted fake is the second implementation. No SDK type crosses the port. See proposal.md for why.
 
 ## Goals / Non-Goals
 

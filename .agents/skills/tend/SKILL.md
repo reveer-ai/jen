@@ -1,23 +1,23 @@
 ---
 name: tend
-description: Periodic upkeep of a project. Keep its record lean and true, fix docs that drifted, sharpen its skills, and propose concrete refactors. Use at the end of a cycle, or when asked to tend, tidy or spring-clean the project.
+description: Periodic upkeep of a project. Keep its project record lean and true, fix docs that drifted, sharpen its skills, and propose concrete refactors. Use at the end of a cycle, or when asked to tend, tidy or spring-clean the project.
 ---
 
 # Tend the project
 
-Change after change leaves a project less coherent than if it had been designed whole. The record accretes, docs drift, workflows repeat by hand, and code grows by addition. This pass puts it back in shape, and adds no behavior.
+Change after change leaves a project less coherent than if it had been designed whole. The project record accretes, docs drift, workflows repeat by hand, and code grows by addition. This pass puts it back in shape, and adds no behavior.
 
-Your scope is everything since the last pass. Find it with `git log --grep '^Tend '`; if there's none, the scope is the whole project. Read the project's `AGENTS.md` and the record's index first.
+Your scope is everything since the last pass. Find it with `git log --grep '^Tend '`; if there's none, the scope is the whole project. Read the project record first, starting from its index.
 
-## 1. The record
+## 1. The project record
 
 Read all of it as a fresh agent would, and fix what gets in that agent's way:
 
 - **Copies.** If code, a spec, git history, a pull request or the issue tracker already holds it, link there or delete it.
 - **Words.** Say the same thing in fewer.
-- **Staleness.** Retire superseded content as the record's rules say. Check each claim you doubt against the code and the tools; the evidence wins.
+- **Staleness.** Retire superseded content as the project record's rules say. Check each claim you doubt against the code and the tools; the evidence wins.
 - **Shape.** Restructure a file read for two reasons, knowledge with no natural home, or anything a reader has to wade through. Update the index to match.
-- **Stray conventions.** If your tool keeps private memory, look in it for project conventions the record lacks and move them in. Personal and tool-specific notes stay where they are.
+- **Stray conventions.** If your tool keeps private memory, look in it for project conventions the project record lacks and move them in. Personal and tool-specific notes stay where they are.
 
 ## 2. The docs
 
@@ -37,4 +37,4 @@ Each proposal states exactly what to change, the evidence (paths, lines, history
 
 ## Output
 
-One pull request titled `Tend <YYYY-MM-DD>`, holding the record, docs and skill fixes. Its description summarizes what changed and why, and ends with the code proposals, ranked, for the maintainer to choose from. Create issues only for the ones they choose.
+One pull request titled `Tend <YYYY-MM-DD>`, holding the fixes to the project record, docs and skills. Its description summarizes what changed and why, and ends with the code proposals, ranked, for the maintainer to choose from. Create issues only for the ones they choose.

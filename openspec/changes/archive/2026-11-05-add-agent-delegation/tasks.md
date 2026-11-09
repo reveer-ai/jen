@@ -36,7 +36,7 @@
 
 ## 7. Live checks and docs
 
-- [x] 7.1 Move the container and runtime live checks to read replies from the event stream, and update the curl commands and the `/messages` description in `context/environment.md`; verify with `npm run test:live` against Docker passing and the documented commands running as written
+- [x] 7.1 Move the container and runtime live checks to read replies from the event stream, and update the curl commands and the `/messages` description in `record/environment.md`; verify with `npm run test:live` against Docker passing and the documented commands running as written
 - [x] 7.2 Add the delegation live check: the owner asks a root agent for work it delegates to a sub-agent, the sub-agent asks the root a question and gets an answer, and the result reaches the owner as a `delivered` send on the root's stream; verify with `npm run test:live` passing with Docker and credentials, and record in the pull request whether the model followed the instructions without help
 - [x] 7.3 Run `npm run check` and `npm test`, and `openspec validate add-agent-delegation --strict`; verify all three pass
 

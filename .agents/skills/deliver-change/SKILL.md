@@ -5,13 +5,13 @@ description: Hand a finished change to the maintainer, then close it out once ap
 
 # Deliver a change
 
-Delivery has two moments. The handoff comes once the change is built and its agent review has settled: it leaves the record and docs true and briefs the maintainer, whose review starts there. The close-out comes once the maintainer approves.
+Delivery has two moments. The handoff comes once the change is built and its agent review has settled: it leaves the project record and docs true and briefs the maintainer, whose review starts there. The close-out comes once the maintainer approves.
 
 ## Handoff
 
 Run it once `review-change` finds nothing new. If the maintainer asks for changes, make them, let the agent review settle again, and run the handoff again.
 
-1. **The record.** Read the record's index and update what this change made true or false: decisions and their reasons, conventions the maintainer set during the work, and new environment facts or quirks. Write only what the code, specs, pull request and issue tracker don't already say. Link to those instead.
+1. **The project record.** Make sure it reflects this change, following its own rules for keeping it. In particular, check that decisions recorded during design still hold now that it's built.
 2. **The docs.** Find every docs view that describes what the change touched, using the paths in its `<meta name="describes">`. Update each one, or confirm it still holds and bump its `<meta name="checked">` date. If a new component or interaction has no view to explain it, say so in the briefing.
 3. **The design.** If the change has a design document, make it describe what was built: where the implementation departed from it, and what it settled that the design left open.
 4. **The briefing**, in the pull request's description. It's a short report for the maintainer, and for whoever changes this code next. Point to the design rather than repeating it:
@@ -27,5 +27,5 @@ Run it once `review-change` finds nothing new. If the maintainer asks for change
 Once the maintainer approves:
 
 1. Run the project's close-out. With OpenSpec, archive the change and sync its specs (the `openspec-archive-change` skill).
-2. Record the work as done in the record's status, as one line linking the pull request.
+2. Record the work as done in the project record's status, as one line linking the pull request.
 3. Merge as the project's conventions say. If the issue tracker doesn't close the issue on merge, close it.

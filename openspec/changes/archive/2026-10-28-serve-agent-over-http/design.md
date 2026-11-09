@@ -120,4 +120,4 @@ The live container check, `src/container.live.test.ts`, keeps its existing skip 
 
 ## Migration Plan
 
-None needed. jen has no installs, and the store's table is unchanged, so a JEN-8 volume keeps its conversation. The `docker run … jen "message"` form stops working. `context/environment.md` switches to `docker run -d -p …` plus curl.
+None needed. jen has no installs, and the store's table is unchanged, so a JEN-8 volume keeps its conversation. The `docker run … jen "message"` form stops working. `record/environment.md` switches to `docker run -d -p …` plus curl.

@@ -2,7 +2,7 @@
 
 ## Why
 
-Today nothing in jen starts an agent. The user runs `docker run` by hand, and an agent has no way to start another. The 2026-11-01 decisions in `context/decisions.md` settled that one runtime starts and stops every agent, the root included. That runtime owns the tree of agents, so no sub-agent outlives its place in it, and it applies each agent's grant, which can only narrow. This change builds that runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). It's done when an agent can be started through the runtime, stopping an agent stops its sub-agents, and no agent can be granted more than its owner has. Teaching an agent to delegate is [JEN-11](https://linear.app/reveer/issue/JEN-11).
+Today nothing in jen starts an agent. The user runs `docker run` by hand, and an agent has no way to start another. The 2026-11-01 decisions in `record/decisions.md` settled that one runtime starts and stops every agent, the root included. That runtime owns the tree of agents, so no sub-agent outlives its place in it, and it applies each agent's grant, which can only narrow. This change builds that runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). It's done when an agent can be started through the runtime, stopping an agent stops its sub-agents, and no agent can be granted more than its owner has. Teaching an agent to delegate is [JEN-11](https://linear.app/reveer/issue/JEN-11).
 
 The runtime is the minimum that lets agents do their work. It's also where security will grow, so its boundaries are drawn carefully from the start. The same runtime has to work locally and in a deployed setup, including when agents run on a machine other than the user's.
 
@@ -35,4 +35,4 @@ None. The agent's image is the one `agent-container` defines. What an agent's co
 - A new runtime module under `src/runtime/` with its own entrypoint and its own image, `jen-runtime`. It talks to the Docker Engine API over `node:http`, with no new dependency.
 - The agent's code moves, unchanged, into `src/agent/`, so `src/` holds one directory per image. The `Dockerfile` gains a second target, and the agent's image, built from the other, is named `jen-agent` and holds only `src/agent/`.
 - A live check with Docker running: the owner starts an agent through the runtime, that agent's credential starts a sub-agent, stopping the root removes both containers, a grant wider than its parent's is refused, and a restarted runtime still knows the tree.
-- `context/environment.md`: run instructions move from `docker run` to starting the runtime and spawning through it.
+- `record/environment.md`: run instructions move from `docker run` to starting the runtime and spawning through it.
