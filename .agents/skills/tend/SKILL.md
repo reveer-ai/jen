@@ -5,9 +5,9 @@ description: Periodic upkeep of a project. Keep its project record and docs accu
 
 # Tend the project
 
-Change after change, a project drifts. The project record and docs fall behind the code, and the code's organization falls behind what the code has become. This pass catches that drift. It never changes what the project does or decides.
+This pass checks whether the project record, the docs and the code's organization still match what the code has become, and fixes them where they don't. It never changes what the project does or decides.
 
-**Most passes should change little or nothing.** Running this skill is not a reason to change anything. Make a change only when you can say what's wrong without it: a claim that's false, a reader who would be misled or slowed down, or a gap the evidence shows. Rewording for taste, or reorganizing something that still works, doesn't pass that test. If nothing passes it, the pass is done.
+**A pass that changes nothing is a good result.** Running this skill is not a reason to change anything. Make a change only when you can say what's wrong without it: a claim that's false, a reader who would be misled or slowed down, or a gap the evidence shows. Rewording for taste, or reorganizing something that still works, doesn't pass that test. If nothing passes it, the pass is done.
 
 Survey everything first. List each change you'd make and why, drop the ones that don't pass, and only then edit.
 
@@ -35,6 +35,9 @@ Propose; don't change anything. Each proposal says exactly what to change, where
 
 ## Output
 
-If you changed anything, open one pull request titled `Tend <YYYY-MM-DD>` with the fixes to the project record, docs and skills, and merge it as the project's conventions say. Its description lists what was changed, moved or removed, and why. It then lists any questions and proposals for the maintainer: new views, new or changed skills, and code cleanups.
+Everything this pass produces goes through the project's issue tracker, labeled `tend` and outside any planned cycle or milestone, so the maintainer sees it there:
 
-If you changed nothing, open nothing. Report any questions and proposals to the maintainer directly.
+- **Fixes.** If you have any, create one issue for them before you start, and do the work under it as the project's conventions say, with ` [tend]` at the end of the pull request's title. The pull request's description lists what was changed, moved or removed, and why. Merge it as the project's conventions say.
+- **Questions and proposals.** Create one issue each, in the backlog, for the maintainer to take up or cancel.
+
+If there's nothing to fix, ask or propose, create nothing.
