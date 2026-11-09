@@ -13,7 +13,7 @@ Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), designing `add-replies
 
 ## 2026-11-06
 
-Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), aligning on its proposal. The proposal and design are in `openspec/changes/add-replies-and-wait/`:
+Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), aligning on its proposal. The proposal and design are in `openspec/changes/archive/2026-11-08-add-replies-and-wait/`:
 
 - **jen's agents must behave on a model of `openai/gpt-6-luna`'s class.** *Why:* set by the maintainer. The tasks are simple, and if they only work on a stronger model, the instructions or the architecture are at fault. Luna stays the model for live checks because it exposes what a stronger model forgives.
 - **An agent answers its parent by ending its turn, sends only to its own sub-agents, and waits with a `wait` tool.** A turn's final text is the reply. A root's goes to the owner on its stream. *Why:* ending a turn to wait, with text that reached no one, went against how models are trained, and every failure left on Luna happened while an agent was waiting. A prototype passed 18 of 18 Luna runs against 15 of 18 for tuned wording. Supersedes in part 2026-11-03 ("agents talk only by sending") and 2026-11-04 (a child may send its parent an urgent message).

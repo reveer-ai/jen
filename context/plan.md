@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-07.
+Last updated 2026-11-08.
 
 ## Current project: Agent harness & UI engine
 
@@ -55,6 +55,7 @@ Each opening issue is done when its decisions are written down and every remaini
 - 2026-11-07: The [full review on PR #10](https://github.com/reveer-ai/jen/pull/10#pullrequestreview-5815175984) at `fba8a37` supports the reply-and-wait approach but recommends three fixes before merge (all P2): enforce direct-child recipients rather than relying on the runtime, which permits all descendants; strip the agent's own ID from stop/start results; and give outbox posts a deadline so an unanswered request cannot block every later reply. Each was independently reproduced. The behavior check is committed and all tasks are marked done. Typecheck, strict validation and 274 unit tests pass at this commit (correcting the earlier count of 278). Live checks were not rerun during review. No implementation changes were made.
 - 2026-11-07: The [full re-review on PR #10](https://github.com/reveer-ai/jen/pull/10#pullrequestreview-5815213132) at `af5408e` independently verified all three fixes and resolved their threads. One new P2 remains: the live checks count trailing assistant text from a response containing tools as a reply, reproduced with commentary after an open `wait`. The approach remains sound; no additional production-code correctness finding emerged. Typecheck, strict validation and 277 unit tests pass after one occurrence of the previously recorded oversized-body connection-reset flake; five subsequent focused server runs pass too. The live behavior check passed all 18 runs, alongside the container, delegation and adapter checks. The runtime tree check failed at its deliberate-crash `docker exec` with exit 137 in the full suite; both runtime checks passed on an isolated rerun. CI is green. No implementation changes were made. Fixed after it: the live checks read a reply from the whole model response through one shared helper (`src/agent/model/replies.ts`), and only once the stream has been quiet.
 - 2026-11-07: The [re-review on PR #10](https://github.com/reveer-ai/jen/pull/10#pullrequestreview-5815244669) at `36b6967` verified the shared reply parser against the original open-wait reproduction, both actual SSE readers with split records, and 126 response layouts. All four review findings are addressed and their threads resolved; no new actionable findings. Typecheck, 283 unit tests, strict validation, all five live checks (including all 18 behavior runs) and CI pass. The review recommends merge. No implementation changes were made.
+- 2026-11-08: The maintainer approved [PR #10](https://github.com/reveer-ai/jen/pull/10) after four reviews, the last finding nothing new. The change's `lab/` folder was removed before merge (it's in git at `b56c25b`). The OpenSpec change was archived as `2026-11-08-add-replies-and-wait`, with its specs synced to `openspec/specs/`; the instructions requirement in `agent-delegation` was split in two to pass strict validation. JEN-12 is done, which unblocks [JEN-13](https://linear.app/reveer/issue/JEN-13).
 
 ## Open questions, held for their tasks
 
