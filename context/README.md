@@ -20,7 +20,7 @@ The project's own skills live in `.agents/skills/<name>/`, where Codex finds the
 | Skill | Use it |
 |---|---|
 | `review-change` | To review a pull request, or re-review it after fixes |
-| `deliver-change` | When a change's implementation is verified, and again once it's approved |
+| `deliver-change` | When the agent review of a change finds nothing new, to hand it to the maintainer, and again once it's approved |
 | `tend` | At the end of each cycle, to keep the record, docs, skills and code in shape |
 
 When you catch yourself doing the same workflow by hand a second time, capture it as a skill and add it here.
