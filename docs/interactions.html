@@ -35,7 +35,7 @@ button[aria-pressed="true"] { background: var(--accent); border-color: var(--acc
 .stage { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 16px; align-items: start; }
 @media (max-width: 860px) { .stage { grid-template-columns: 1fr; } }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-svg { display: block; width: 100%; height: auto; }
+svg { display: block; width: 100%; height: auto; margin: 0 auto; }
 .node rect { fill: var(--bg); stroke: var(--line); stroke-width: 1.4; transition: stroke .2s, fill .2s; }
 .node.active rect { stroke: var(--accent); stroke-width: 2.4; fill: var(--soft); }
 .node .name { font: 600 14px var(--sans); fill: var(--fg); text-anchor: middle; }
@@ -165,7 +165,7 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
   // What each agent is doing once step `upto` has been saved.
   function states(p, upto) {
     const st = {};
-    for (const a of p.run.agents) st[a.id] = { label: "not started", cls: "" };
+    for (const a of p.run.agents) st[a.id] = { label: "idle", cls: "" };
     p.steps.slice(0, upto + 1).forEach((s) => {
       const k = s.kind;
       if (k === "in" || (k === "result" && s.tool !== "wait") || k === "said") st[s.agent] = { label: "thinking…", cls: "" };
@@ -189,9 +189,9 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
       else { c.forEach((k) => walk(k, d + 1)); pos[id] = { x: (pos[c[0]].x + pos[c[c.length - 1]].x) / 2, d }; }
     };
     walk("owner", 0);
-    const W = 640, rowH = 104, slot = W / Math.max(leaf, 1);
+    const W = Math.max(leaf * 136, 300), rowH = 104, slot = W / Math.max(leaf, 1);
     for (const id in pos) pos[id] = { x: slot * (pos[id].x + 0.5), y: 40 + pos[id].d * rowH };
-    return { pos, height: 40 + depth * rowH + 44 };
+    return { pos, width: W, height: 40 + depth * rowH + 44 };
   }
 
   let prepared = data.runs.map(prepare), current = 0, step = 0, timer = null;
@@ -221,7 +221,7 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     $("scrub").max = p.steps.length - 1; $("scrub").value = step;
     $("clock").textContent = `${step + 1}/${p.steps.length} · ${(s.t / 1000).toFixed(0)}s`;
 
-    const { pos, height } = layout(p);
+    const { pos, width, height } = layout(p);
     const st = states(p, step);
     const seen = (id) => id === "owner" || p.appear[id] <= step;
     let svg = `<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>`;
@@ -235,7 +235,8 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     const node = (id, label, cls) => { const q = pos[id]; return `<g class="node ${cls}"><rect x="${q.x - 62}" y="${q.y - 22}" width="124" height="44" rx="6"/><text class="name" x="${q.x}" y="${q.y - 3}">${esc(name(id))}</text><text class="state" x="${q.x}" y="${q.y + 13}">${esc(label)}</text></g>`; };
     svg += node("owner", "", s.flow && s.flow.to === "owner" ? "active idle" : "");
     for (const a of p.run.agents) if (seen(a.id)) svg += node(a.id, st[a.id].label, `${st[a.id].cls}${a.id === s.agent ? " active" : ""}`);
-    $("svg").setAttribute("viewBox", `0 0 640 ${height}`);
+    $("svg").setAttribute("viewBox", `0 0 ${width} ${height}`);
+    $("svg").style.maxWidth = `${width * 1.3}px`;
     $("svg").innerHTML = svg;
     const motion = $("svg").querySelector("animateMotion");
     if (motion) motion.beginElement();
