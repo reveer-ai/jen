@@ -6,6 +6,7 @@
 import http from "node:http";
 import type { Json } from "./model/port.ts";
 import type { Tool } from "./loop.ts";
+import type { Store } from "./store.ts";
 
 export interface Grant {
   spawn: boolean;
@@ -43,11 +44,23 @@ function isGrant(value: unknown): value is Grant {
   return keys.length === 1 && keys[0] === "spawn" && typeof (value as Grant).spawn === "boolean";
 }
 
-export const DELIVERED = "delivered";
-const OWNER_NOT_DELIVERED = "Error: interrupted before it was sent, so it wasn't delivered.";
+export const DELIVERED = "delivered. The reply will come to you. Call wait when you have nothing else to do.";
+// The error for a send to anyone but a direct sub-agent. It names how to
+// answer the parent, since that's what a send to a made-up name like "user"
+// is after.
+export const notSubAgent = (to: string) => `you have no sub-agent ${to}. To answer your parent, end your turn with your reply.`;
 
-// The runtime's API, called with the agent's own token. A refusal throws an
-// error with the runtime's status and message.
+// A refusal from the runtime, with its status.
+export class RuntimeRefusal extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(`the runtime answered ${status}: ${message}`);
+    this.status = status;
+  }
+}
+
+// The runtime's API, called with the agent's own token. A refusal throws a
+// RuntimeRefusal with the runtime's status and message.
 export class RuntimeClient {
   readonly #url: string;
   readonly #token: string;
@@ -78,7 +91,7 @@ export class RuntimeClient {
           const status = res.statusCode ?? 0;
           if (status < 400) return resolve(parsed);
           const message = typeof parsed === "object" && parsed !== null && "error" in parsed ? parsed.error : parsed;
-          reject(new Error(`the runtime answered ${status}: ${typeof message === "string" ? message : JSON.stringify(message)}`));
+          reject(new RuntimeRefusal(status, typeof message === "string" ? message : JSON.stringify(message)));
         });
       });
       req.on("error", reject);
@@ -87,24 +100,34 @@ export class RuntimeClient {
   }
 }
 
-// The tools the agent's grant allows: send_message always, and the tools that
-// manage sub-agents only with spawn.
-export function delegationTools(identity: Identity, runtime: RuntimeClient): Tool[] {
-  const root = identity.parent === "owner";
-  const toOwner = (input: Json) => root && field(input, "to") === "owner";
-  const agentPath = (input: Json, action = "") => `/agents/${encodeURIComponent(text(input, "id"))}${action}`;
+// The tools the agent's grant allows: with spawn, message_sub_agent and the
+// tools that manage sub-agents, and without it none, since it has no one to
+// send to. debts is the record of which sub-agents owe a reply. No result
+// shows the model an ID it can't message, such as a sub-agent's parent, which
+// is the agent itself.
+export function delegationTools(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
+  if (!identity.grant.spawn) return [];
+  const id = (input: Json) => text(input, "id");
+  const agentPath = (input: Json, action = "") => `/agents/${encodeURIComponent(id(input))}${action}`;
   const answer = (value: Json | undefined) => (value === undefined ? "done" : JSON.stringify(value));
+  const isSubAgent = async (to: string, signal?: AbortSignal) => {
+    try {
+      return field((await runtime.request("GET", `/agents/${encodeURIComponent(to)}`, undefined, signal)) ?? null, "parent") === identity.id;
+    } catch (error) {
+      if (error instanceof RuntimeRefusal && error.status === 404) return false;
+      throw error;
+    }
+  };
 
   const send: Tool = {
-    name: "send_message",
+    name: "message_sub_agent",
     description:
-      "Send a message to another agent by its ID: your parent, or one of your sub-agents. " +
-      (root ? 'Your parent is the user, whose ID is "owner". ' : "") +
+      "Send a task, or an answer to its question, to one of your sub-agents by its ID. It returns at once, and the sub-agent's reply will come back to you. " +
       "Set urgent only when waiting for the receiver's current batch of work would cause harm or waste: it cancels the receiver's work in flight.",
     inputSchema: {
       type: "object",
       properties: {
-        to: { type: "string", description: "The receiver's ID." },
+        to: { type: "string", description: "The sub-agent's ID." },
         text: { type: "string", description: "The message." },
         urgent: { type: "boolean", description: "Cancel the receiver's work in flight so it reads this at once." },
       },
@@ -115,18 +138,30 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient): Too
       const message = text(input, "text");
       const urgent = field(input, "urgent");
       if (urgent !== undefined && typeof urgent !== "boolean") throw new Error("urgent must be a boolean");
-      // The owner reads a root's event stream, where this call's result is the
-      // delivery.
-      if (toOwner(input)) return DELIVERED;
-      await runtime.request("POST", `/agents/${encodeURIComponent(to)}/messages`, urgent ? { text: message, urgent } : { text: message }, signal);
+      // The runtime delivers to the parent and to every descendant, so the
+      // tool checks that the receiver is its own sub-agent: a grandchild's
+      // reply would go to its own parent, and this agent would wait forever.
+      if (!(await isSubAgent(to, signal))) throw new Error(notSubAgent(to));
+      // Recorded first, so a reply that comes back fast can't land before its debt.
+      const added = debts.owe(to);
+      try {
+        await runtime.request("POST", `/agents/${encodeURIComponent(to)}/messages`, urgent ? { text: message, urgent } : { text: message }, signal);
+      } catch (error) {
+        if (added) debts.clear(to);
+        if (error instanceof RuntimeRefusal && error.status === 404) throw new Error(notSubAgent(to));
+        throw error;
+      }
       return DELIVERED;
     },
-    // A send to the owner has no effect until its result is saved.
-    interrupted: (input) => (toOwner(input) ? OWNER_NOT_DELIVERED : undefined),
   };
-  if (!identity.grant.spawn) return [send];
 
   const byId = { type: "object", properties: { id: { type: "string", description: "The sub-agent's ID." } }, required: ["id"] };
+  // Stopping or deleting a sub-agent ends what it owes.
+  const ending = async (input: Json, request: Promise<Json | undefined>) => {
+    const value = await request;
+    debts.clear(id(input));
+    return answer(value === undefined ? undefined : withoutParent(value));
+  };
   return [
     send,
     {
@@ -138,48 +173,68 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient): Too
         properties: { grant: { type: "object", properties: { spawn: { type: "boolean" } }, required: ["spawn"] } },
         required: ["grant"],
       },
-      run: async (input, signal) => answer(await runtime.request("POST", "/agents", { grant: field(input, "grant") ?? null }, signal)),
+      run: async (input, signal) => answer(withoutParent(await runtime.request("POST", "/agents", { grant: field(input, "grant") ?? null }, signal))),
     },
     {
       name: "list_agents",
-      description: "List your sub-agents and theirs, with each one's parent, grant and state.",
+      description: "List your sub-agents, with each one's grant and state.",
       inputSchema: { type: "object", properties: {} },
-      run: async (_input, signal) => answer(await runtime.request("GET", "/agents", undefined, signal)),
+      run: async (_input, signal) => {
+        const all = await runtime.request("GET", "/agents", undefined, signal);
+        const mine = Array.isArray(all) ? all.filter((agent) => field(agent, "parent") === identity.id) : [];
+        return answer(mine.map(withoutParent));
+      },
     },
     {
       name: "stop_agent",
       description: "Stop a sub-agent and everything under it, keeping their conversations. Messaging a stopped agent starts it again.",
       inputSchema: byId,
-      run: async (input, signal) => answer(await runtime.request("POST", agentPath(input, "/stop"), undefined, signal)),
+      run: (input, signal) => ending(input, runtime.request("POST", agentPath(input, "/stop"), undefined, signal)),
     },
     {
       name: "start_agent",
       description: "Start a stopped sub-agent from its conversation. Its own sub-agents stay stopped.",
       inputSchema: byId,
-      run: async (input, signal) => answer(await runtime.request("POST", agentPath(input, "/start"), undefined, signal)),
+      run: async (input, signal) => answer(withoutParent(await runtime.request("POST", agentPath(input, "/start"), undefined, signal))),
     },
     {
       name: "delete_agent",
       description: "Delete a sub-agent and everything under it, with their conversations. This can't be undone.",
       inputSchema: byId,
-      run: async (input, signal) => answer(await runtime.request("DELETE", agentPath(input), undefined, signal)),
+      run: (input, signal) => ending(input, runtime.request("DELETE", agentPath(input), undefined, signal)),
     },
   ];
 }
 
-// The system instructions: who the agent is, and how agents work together.
-export function instructions({ id, parent, grant }: Identity): string {
-  const parentLine =
-    parent === "owner" ? 'Your parent is the user, whose ID is "owner".' : `Your parent is agent ${parent}.`;
-  return [
-    `You are agent ${id}, one of a tree of agents. ${parentLine} Your grant is ${JSON.stringify(grant)}${grant.spawn ? ", so you may start sub-agents of your own" : ", so you can't start sub-agents"}.`,
-    "Your text output reaches no one. Anything meant for another agent, the user included, must be sent with send_message, and that includes answering a question.",
-    'Messages from others arrive as user messages that start with "From: <sender>". Messages from "runtime" report what happened to the tree of agents.',
-    "To wait for an answer, end your turn. The answer will wake you.",
-    "When your work is done, send your parent the result.",
-    "Every message wakes its receiver and costs it a model call, so send only what the receiver needs, such as a question, a decision or a result. Don't narrate your progress, don't acknowledge, and don't reply to a message that needs no reply.",
-    "A plain message reaches a busy receiver after its current batch of work. An urgent one cancels its work in flight and makes it re-plan, so mark a message urgent only when waiting would cause harm or waste, such as a call that must be stopped.",
-  ].join("\n\n");
+// The system instructions: how agents work together. They name no agent ID,
+// so the only IDs the model knows are its sub-agents'.
+export function instructions({ parent, grant }: Identity): string {
+  const them = parent === "owner" ? "the user" : "your parent";
+  const lines = [
+    `You are an agent in a tree of agents. Your parent is ${parent === "owner" ? "the user" : "the agent that started you"}. Your grant is ${JSON.stringify(grant)}${grant.spawn ? ", so you may start sub-agents of your own" : ", so you can't start sub-agents"}.`,
+    `You work in turns. A turn begins when messages arrive and ends when you reply without calling a tool. That reply goes to ${them}, and it's the only way to answer: when ${them} asks you to send or report something, reply with it. So end your turn only when you have something for ${them}: your finished result, complete, in one reply, or a question only ${them} can answer. If the messages that woke you need nothing from you, end your turn with an empty reply.`,
+    `Messages from others arrive as user messages that start with "From: <sender>", except messages from ${them}, which have no sender line${grant.spawn ? ", or as the result of wait" : ""}. Messages from "runtime" report what happened to the tree of agents.`,
+  ];
+  if (grant.spawn) {
+    lines.push(
+      "Hand each piece of work to a sub-agent of your own with message_sub_agent. It returns at once, and the sub-agent's reply comes back to you. To start several tasks together, send them in one response. Let each sub-agent manage any sub-agents of its own. When you write a task, ask the sub-agent to reply with its result, not to send it.",
+      "While your sub-agents work, carry on with your own part; replies that arrive reach you between steps. When you can't go on without an answer, call wait. Until the answer comes, leave the work alone: don't re-ask the agent doing it, don't do its work yourself, and don't give it to another agent.",
+      'If "runtime" tells you a sub-agent has stopped and won\'t restart, start it again with start_agent, or delete it with delete_agent and do without it.',
+      `If the work needs something only ${them} can tell you, ask for it before you hand the work out, by ending your turn with the question.`,
+    );
+  }
+  lines.push("Every message wakes its receiver and costs it a model call, so send only a task, a question only the receiver can answer, or a result. Never acknowledge, thank or confirm, and never reply to a message that needs no reply.");
+  if (grant.spawn) {
+    lines.push("A plain message reaches a busy sub-agent after its current batch of work. An urgent one cancels its work in flight and makes it re-plan, so mark a message urgent only when waiting would cause harm or waste, such as a call that must be stopped.");
+  }
+  return lines.join("\n\n");
+}
+
+// An agent's record from the runtime, without its parent.
+function withoutParent(agent: Json | undefined): Json {
+  if (typeof agent !== "object" || agent === null || Array.isArray(agent)) return agent ?? null;
+  const { parent: _parent, ...rest } = agent;
+  return rest;
 }
 
 function field(input: Json, name: string): Json | undefined {

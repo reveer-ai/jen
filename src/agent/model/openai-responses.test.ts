@@ -160,6 +160,12 @@ test("a received message is sent as a user message naming its sender", async () 
   expect(sent[0]!.body.input).toEqual([{ role: "user", content: "From: a1b2c3d4e5f6\n\nhi" }]);
 });
 
+test("a received message with an empty sender is sent as its text alone", async () => {
+  const { fetch, sent } = stubFetch(200, response([outputMessage("hello")]));
+  await new OpenAIResponsesModel({ model: "m", apiKey: "k", fetch }).next([{ type: "message", role: "user", from: "", text: "hi" }], [], "");
+  expect(sent[0]!.body.input).toEqual([{ role: "user", content: "hi" }]);
+});
+
 test("sends the system instructions as the request's instructions", async () => {
   const { fetch, sent } = stubFetch(200, response([outputMessage("hi")]));
   await new OpenAIResponsesModel({ model: "m", apiKey: "k", fetch }).next(exchange, [], "You are agent a1.");

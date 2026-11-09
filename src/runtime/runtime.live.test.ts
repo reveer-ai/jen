@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "../agent/model/port.ts";
+import { replies } from "../agent/model/replies.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -187,8 +188,8 @@ test.skipIf(!apiKey || !model)("an agent delegates and converses in both directi
       "tell it to ask you for the word. Answer its question when it asks. When it gives you the reversed word, pass it on to me.";
     expect((await fetch(`${base}/agents/${rootId}/messages`, { method: "POST", headers: owner, body: JSON.stringify({ text: task }) })).status).toBe(202);
 
-    const toOwner = (events: Event[]) => replies(events).some((text) => text.includes(reversed));
-    const events = await readEvents(`${base}/agents/${rootId}/events`, ownerToken, 0, toOwner, 0, 480_000);
+    const toOwner = (events: Event[]) => replies(events.map((e) => e.item)).some((text) => text.includes(reversed));
+    const events = await readEvents(`${base}/agents/${rootId}/events`, ownerToken, 0, toOwner, 2_000, 480_000);
     const items = events.map((e) => e.item);
 
     const spawned = items.find((i) => i.type === "tool_call" && i.name === "spawn_agent");
@@ -196,13 +197,20 @@ test.skipIf(!apiKey || !model)("an agent delegates and converses in both directi
     const children = ((await (await fetch(`${base}/agents`, { headers: owner })).json()) as { id: string; parent: string | null }[]).filter((a) => a.parent === rootId);
     expect(children).toHaveLength(1);
     const childId = children[0]!.id;
-    const fromChild = items.filter((i) => i.type === "message" && i.role === "user" && i.from === childId);
-    const toChild = items.filter((i) => i.type === "tool_call" && i.name === "send_message" && (i.input as { to?: string }).to === childId);
+    // The child's replies reach the root as messages, or in the results of
+    // its wait calls.
+    const waits = new Set(items.flatMap((i) => (i.type === "tool_call" && i.name === "wait" ? [i.id] : [])));
+    const fromChild = items.flatMap((i) => {
+      if (i.type === "message" && i.role === "user" && i.from === childId) return [i.text];
+      if (i.type === "tool_result" && waits.has(i.callId) && i.output.includes(`From: ${childId}`)) return [i.output];
+      return [];
+    });
+    const toChild = items.filter((i) => i.type === "tool_call" && i.name === "message_sub_agent" && (i.input as { to?: string }).to === childId);
     // The child asked, the root answered with the word, and the child's
     // result came back before the root passed it on.
     expect(fromChild.length).toBeGreaterThanOrEqual(2);
     expect(toChild.some((i) => JSON.stringify(i).includes(word))).toBe(true);
-    expect(fromChild.some((i) => i.type === "message" && i.text.includes(reversed))).toBe(true);
+    expect(fromChild.some((text) => text.includes(reversed))).toBe(true);
     expect(toOwner(events)).toBe(true);
   } finally {
     if (base && rootId) {
@@ -263,24 +271,11 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: each send to owner whose result is
-// delivered. Its text output reaches no one, so it doesn't count.
-function replies(events: Event[]): string[] {
-  const delivered = new Set(events.flatMap(({ item }) => (item.type === "tool_result" && item.output === "delivered" ? [item.callId] : [])));
-  return events.flatMap(({ item }) => {
-    if (item.type === "tool_call" && item.name === "send_message" && delivered.has(item.id)) {
-      const input = item.input as { to?: string; text?: string };
-      if (input.to === "owner" && typeof input.text === "string") return [input.text];
-    }
-    return [];
-  });
-}
-
 // Waits for the agent's reply to what came after position after, and then
 // for its turn to go quiet. Returns the reply's text and the events read.
 async function reply(url: string, token: string, after: number): Promise<{ text: string; events: Event[] }> {
-  const events = await readEvents(url, token, after, (events) => replies(events).length > 0, 5_000);
-  return { text: replies(events).join("\n"), events };
+  const events = await readEvents(url, token, after, (events) => replies(events.map((e) => e.item)).length > 0, 5_000);
+  return { text: replies(events.map((e) => e.item)).join("\n"), events };
 }
 
 async function until(check: () => boolean | Promise<boolean>, what: string) {

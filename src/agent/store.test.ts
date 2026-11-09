@@ -131,6 +131,142 @@ describe("the inbox holds messages until they're delivered", () => {
   });
 });
 
+describe("delivery leaves empty messages", () => {
+  test("a message with text is delivered, and the empty one stays until dropped", () => {
+    const store = openStore(path);
+    store.accept({ from: "a1", text: "", urgent: false });
+    store.accept({ from: "owner", text: "one", urgent: false });
+    expect(store.deliver()).toBe(1);
+    expect(store.load()).toEqual([user("one")]);
+    expect(store.inbox()).toEqual([{ from: "a1", text: "", urgent: false }]);
+    store.dropEmpty();
+    expect(store.inbox()).toEqual([]);
+    store.close();
+  });
+});
+
+describe("the inbox can be delivered as a wait's result", () => {
+  test("the result shows every message, and the inbox is empty", () => {
+    const store = openStore(path);
+    store.save([{ type: "tool_call", id: "w1", name: "wait", input: {} }]);
+    store.accept({ from: "a1", text: "first", urgent: false });
+    store.accept({ from: "a2", text: "", urgent: false });
+    store.answerWait("w1", undefined, (messages) => messages.map((m) => `${m.from}:${m.text}`).join("|"));
+    expect(store.load().at(-1)).toEqual({ type: "tool_result", callId: "w1", output: "a1:first|a2:" });
+    expect(store.inbox()).toEqual([]);
+    store.close();
+  });
+
+  test("a failure while answering leaves the inbox and gives the call no result", () => {
+    const store = openStore(path);
+    store.save([{ type: "tool_call", id: "w1", name: "wait", input: {} }]);
+    store.accept({ from: "a1", text: "first", urgent: false });
+    expect(() =>
+      store.answerWait("w1", undefined, () => {
+        throw new Error("render failed");
+      }),
+    ).toThrow("render failed");
+    expect(store.inbox()).toHaveLength(1);
+    expect(store.load()).toHaveLength(1);
+    store.close();
+  });
+});
+
+describe("the store records whether a reply to the parent is owed", () => {
+  test("a delivered message from the parent owes a reply, across reopening", () => {
+    const store = openStore(path);
+    store.accept({ from: "runtime", text: "a notice", urgent: false });
+    store.deliver("p1");
+    expect(store.replyOwed()).toBe(false);
+    store.accept({ from: "p1", text: "write a haiku", urgent: false });
+    store.deliver("p1");
+    store.close();
+    const reopened = openStore(path);
+    expect(reopened.replyOwed()).toBe(true);
+    reopened.close();
+  });
+
+  test("a message from the parent in a wait result owes a reply", () => {
+    const store = openStore(path);
+    store.save([{ type: "tool_call", id: "w1", name: "wait", input: {} }]);
+    store.accept({ from: "p1", text: "stop and report", urgent: false });
+    store.answerWait("w1", "p1", () => "x");
+    expect(store.replyOwed()).toBe(true);
+    store.close();
+  });
+
+  test("ending the turn clears it", () => {
+    const store = openStore(path);
+    store.accept({ from: "p1", text: "thanks", urgent: false });
+    store.deliver("p1");
+    store.endTurn([assistant("")], "");
+    expect(store.replyOwed()).toBe(false);
+    store.close();
+  });
+});
+
+describe("the outbox holds replies until the parent has them", () => {
+  test("a reply is saved with its response, and survives reopening in order", () => {
+    const store = openStore(path);
+    store.endTurn([assistant("done")], "done");
+    store.queue("second");
+    expect(store.load()).toEqual([assistant("done")]);
+    store.close();
+    const reopened = openStore(path);
+    expect(reopened.outbox().map((o) => o.text)).toEqual(["done", "second"]);
+    reopened.sent(reopened.outbox()[0]!.seq);
+    expect(reopened.outbox().map((o) => o.text)).toEqual(["second"]);
+    reopened.close();
+  });
+
+  test("an empty reply goes in only when a reply is owed", () => {
+    const store = openStore(path);
+    store.endTurn([assistant("")], "");
+    expect(store.outbox()).toEqual([]);
+    store.accept({ from: "p1", text: "thanks", urgent: false });
+    store.deliver("p1");
+    store.endTurn([assistant("")], "");
+    expect(store.outbox().map((o) => o.text)).toEqual([""]);
+    store.close();
+  });
+
+  test("a root gives no reply, and ending the turn drops empty messages", () => {
+    const store = openStore(path);
+    store.accept({ from: "a1", text: "", urgent: false });
+    store.endTurn([assistant("Canberra")]);
+    expect(store.outbox()).toEqual([]);
+    expect(store.inbox()).toEqual([]);
+    store.close();
+  });
+});
+
+describe("the store records which sub-agents owe a reply", () => {
+  test("accepting a message clears its sender, and the record survives reopening", () => {
+    const store = openStore(path);
+    expect(store.owe("a1")).toBe(true);
+    expect(store.owe("a2")).toBe(true);
+    expect(store.owe("a1")).toBe(false);
+    store.accept({ from: "a1", text: "", urgent: false });
+    expect(store.owed()).toEqual(["a2"]);
+    store.close();
+    const reopened = openStore(path);
+    expect(reopened.owed()).toEqual(["a2"]);
+    reopened.clear("a2");
+    expect(reopened.owed()).toEqual([]);
+    reopened.close();
+  });
+
+  test("a discarded message clears its sender's debt and isn't saved", () => {
+    const store = openStore(path);
+    store.owe("a1");
+    store.accept({ from: "a1", text: "", urgent: false }, "w1", true);
+    expect(store.owed()).toEqual([]);
+    expect(store.inbox()).toEqual([]);
+    expect(store.woken("w1")).toBe(true);
+    store.close();
+  });
+});
+
 describe("the store keeps the wake ID that ended a hold", () => {
   test("a wake ID saved with its message survives reopening", () => {
     const store = openStore(path);

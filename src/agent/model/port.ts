@@ -4,7 +4,8 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 // A user message is one the agent received, and from is its sender: an agent's
-// ID, "owner" or "runtime". An assistant message is the agent's own.
+// ID, "owner" or "runtime", or empty for the agent's parent as its model sees
+// it. An assistant message is the agent's own.
 export type Item =
   | { type: "message"; role: "user"; from: string; text: string }
   | { type: "message"; role: "assistant"; text: string }

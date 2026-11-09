@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "./model/port.ts";
+import { replies } from "./model/replies.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
@@ -123,24 +124,11 @@ async function readEvents(url: string, token: string, after: number, done: (even
   }
 }
 
-// What a root agent told the owner: each send to owner whose result is
-// delivered. Its text output reaches no one, so it doesn't count.
-function replies(events: Event[]): string[] {
-  const delivered = new Set(events.flatMap(({ item }) => (item.type === "tool_result" && item.output === "delivered" ? [item.callId] : [])));
-  return events.flatMap(({ item }) => {
-    if (item.type === "tool_call" && item.name === "send_message" && delivered.has(item.id)) {
-      const input = item.input as { to?: string; text?: string };
-      if (input.to === "owner" && typeof input.text === "string") return [input.text];
-    }
-    return [];
-  });
-}
-
 // Waits for the agent's reply to what came after position after, and then
 // for its turn to go quiet. Returns the reply's text and the events read.
 async function reply(url: string, token: string, after: number): Promise<{ text: string; events: Event[] }> {
-  const events = await readEvents(url, token, after, (events) => replies(events).length > 0, 5_000);
-  return { text: replies(events).join("\n"), events };
+  const events = await readEvents(url, token, after, (events) => replies(events.map((e) => e.item)).length > 0, 5_000);
+  return { text: replies(events.map((e) => e.item)).join("\n"), events };
 }
 
 function docker(args: string[], { env, timeout = 30_000 }: { env?: NodeJS.ProcessEnv; timeout?: number } = {}): string {
