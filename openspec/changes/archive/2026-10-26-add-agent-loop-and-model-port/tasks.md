@@ -5,7 +5,7 @@
 - [x] 1.1 Create `package.json` (ESM, Node ≥ 26, scripts `check`, `test`, `test:live`) and install `openai`, `typescript`, `vitest` and `@types/node`. Verify with `npm ci` from a clean checkout.
 - [x] 1.2 Add `tsconfig.json` (strict, `noEmit`, `erasableSyntaxOnly`, `verbatimModuleSyntax`, `.ts` import extensions) and the Vitest config, with `npm test` excluding `*.live.test.ts` and `test:live` running only those files. Verify that `npm run check` passes and that a non-erasable construct such as an `enum` fails it.
 - [x] 1.3 Add `.github/workflows/ci.yml` running `npm ci`, `npm run check` and `npm test` on Node 26 for every push and pull request. Verify the workflow passes on this branch's pull request.
-- [x] 1.4 Record the layout and the `check`, `test` and `test:live` commands in `context/environment.md`. Verify each documented command runs as written.
+- [x] 1.4 Record the layout and the `check`, `test` and `test:live` commands in `record/environment.md`. Verify each documented command runs as written.
 
 ## 2. Model port and scripted model
 
@@ -23,7 +23,7 @@
 
 ## 5. Record
 
-- [x] 5.1 Add the project-level decisions to `context/decisions.md`: jen keeps the conversation and never relies on the provider keeping it; the port is request/response with no streaming yet; it carries only what's needed; and TypeScript runs with no build output. Update the JEN-7 status in `context/plan.md`. Verify each file stays within its size budget in `context/README.md`.
+- [x] 5.1 Add the project-level decisions to `record/decisions.md`: jen keeps the conversation and never relies on the provider keeping it; the port is request/response with no streaming yet; it carries only what's needed; and TypeScript runs with no build output. Update the JEN-7 status in `record/plan.md`. Verify each file stays within its size budget in `record/README.md`.
 
 ## Workflow follow-up
 

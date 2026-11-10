@@ -156,4 +156,4 @@ This is the caller the 2026-10-26 rule was waiting for. An agent can't follow "t
 
 ## Migration Plan
 
-None. Stored conversations from before this change hold user messages without a sender, which aren't supported, so delete and spawn existing agents again. The live checks and the commands in `context/environment.md` change to read replies from the event stream.
+None. Stored conversations from before this change hold user messages without a sender, which aren't supported, so delete and spawn existing agents again. The live checks and the commands in `record/environment.md` change to read replies from the event stream.

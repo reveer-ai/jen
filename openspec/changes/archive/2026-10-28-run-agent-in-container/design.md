@@ -2,7 +2,7 @@
 
 ## Context
 
-JEN-7 left a stateless loop: `runTurn(model, tools, conversation, text)` returns the turn's new items and leaves its caller's conversation untouched. A model failure throws, and no items are returned. Items are plain JSON. The model is bound when `OpenAIResponsesModel` is constructed, from a model ID, an API key and an optional base URL. The 2026-10-26 entries in `context/decisions.md` set the container, the volume and SQLite. See proposal.md for why.
+JEN-7 left a stateless loop: `runTurn(model, tools, conversation, text)` returns the turn's new items and leaves its caller's conversation untouched. A model failure throws, and no items are returned. Items are plain JSON. The model is bound when `OpenAIResponsesModel` is constructed, from a model ID, an API key and an optional base URL. The 2026-10-26 entries in `record/decisions.md` set the container, the volume and SQLite. See proposal.md for why.
 
 Node 26 runs the TypeScript sources directly, and it ships `node:sqlite` without an experimental warning. Both were checked on this machine on 2026-10-27.
 
@@ -78,7 +78,7 @@ ENTRYPOINT ["node", "src/main.ts"]
 - **`node:26-slim`**: Debian-based, so the Node is the official build, with none of Alpine's musl differences. The tag isn't pinned to a digest (see Non-Goals).
 - **Runtime dependencies only.** `.dockerignore` keeps out `node_modules`, `.env`, `.git`, `openspec`, `context` and the test files. Above all, `.env` holds live credentials.
 - **`/state` is created owned by `node` before `VOLUME`.** A new named volume copies that ownership, so the non-root user can write to it with no setup.
-- **No npm script for the build.** `docker build -t jen .` is the command, and it's documented in `context/environment.md`. The persistence check runs it itself.
+- **No npm script for the build.** `docker build -t jen .` is the command, and it's documented in `record/environment.md`. The persistence check runs it itself.
 
 ### The persistence check
 

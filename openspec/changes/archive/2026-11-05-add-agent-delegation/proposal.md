@@ -44,5 +44,5 @@ Two agents could message each other forever and spend without limit. The real bo
 - `src/agent/`: the server's inbox and the end of the `409`, the loop's step-by-step run and resume, the store's per-step saves, a new message item in the model port and the Responses adapter, and the delegation tools, which call the runtime over `node:http` with no new dependency.
 - `src/agent/` also gains cancellation: an abort signal through the model port, the Responses adapter and every tool.
 - `src/runtime/`: sender stamping, a child's route to its parent, the `owner` and `runtime` IDs, waking a stopped agent on a message, the parent's ID in each agent's environment, and a watch on the engine's events so it can report a sub-agent whose restarts ran out.
-- Every client of `POST /messages` changes, since the reply now arrives on the event stream. That's the live checks and the commands in `context/environment.md`.
+- Every client of `POST /messages` changes, since the reply now arrives on the event stream. That's the live checks and the commands in `record/environment.md`.
 - A live check with Docker running: the owner asks a root agent for work that it delegates to a sub-agent, the sub-agent asks the root a question and gets an answer, and the result comes back to the owner on the root's event stream.

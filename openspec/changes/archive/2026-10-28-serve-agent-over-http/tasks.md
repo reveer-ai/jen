@@ -14,18 +14,18 @@
 
 - [x] 3.1 Rewrite `src/main.ts` as the server's entrypoint: require `JEN_MODEL`, `JEN_API_KEY` and `JEN_TOKEN`, open `/state/agent.db`, listen on `0.0.0.0:8080`, and keep the SIGINT/SIGTERM handlers. Add `EXPOSE 8080` to the `Dockerfile`. Verify with `docker build -t jen .`. Then run the `agent-container` scenarios by hand and record the results in the PR: a missing `JEN_TOKEN`, two messages to one container with curl, a non-root process, and `docker stop` mid-turn returning well inside the 10-second timeout.
 - [x] 3.2 Rewrite `src/container.live.test.ts` per the design: one container is sent a message, then a new container on the same volume is asked to recall it. Also check a request without the token gets 401, and that `GET /events` returns all four items in order. Always remove the containers and the volume. It skips without live credentials and fails without Docker. Verify that it skips with no credentials and passes against a real model.
-- [x] 3.3 Replace the `docker run` example in `context/environment.md` with starting the agent detached on `-p 127.0.0.1:8080:8080` with `JEN_TOKEN`, then talking to it with curl (`POST /messages`, and `curl -N` on `/events`). Update the code layout for `src/server.ts` and `src/agent/respond.ts`. Verify the documented commands run as written.
+- [x] 3.3 Replace the `docker run` example in `record/environment.md` with starting the agent detached on `-p 127.0.0.1:8080:8080` with `JEN_TOKEN`, then talking to it with curl (`POST /messages`, and `curl -N` on `/events`). Update the code layout for `src/server.ts` and `src/agent/respond.ts`. Verify the documented commands run as written.
 
 ## 4. Record
 
-- [x] 4.1 Add JEN-9's project-level decisions to `context/decisions.md`:
+- [x] 4.1 Add JEN-9's project-level decisions to `record/decisions.md`:
   - jen's own protocol over HTTP and SSE, not WebSocket or A2A
   - the stream carries saved items only, with resumption by position
   - a required bearer token, explicitly a minimum, with auth to be designed in depth later
   - one turn at a time, as a placeholder for JEN-2
   - no `jen` CLI until distribution
 
-  Mark the JEN-8 entry on the one-shot entrypoint superseded. Update the JEN-9 status in `context/plan.md`, and add deeper auth design to its open questions. Verify each file stays within its size budget in `context/README.md`.
+  Mark the JEN-8 entry on the one-shot entrypoint superseded. Update the JEN-9 status in `record/plan.md`, and add deeper auth design to its open questions. Verify each file stays within its size budget in `record/README.md`.
 
 ## 5. Review fixes
 

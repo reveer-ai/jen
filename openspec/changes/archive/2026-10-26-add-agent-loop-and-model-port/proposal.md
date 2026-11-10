@@ -2,7 +2,7 @@
 
 ## Why
 
-jen has no code yet. Every later milestone (the container, delegation, the UI engine) runs on the agent loop, and the loop runs on model access. The 2026-10-26 decisions in `context/decisions.md` settled that jen builds its own loop on a model port it defines. This change builds both, plus the TypeScript project they live in ([JEN-7](https://linear.app/reveer/issue/JEN-7)).
+jen has no code yet. Every later milestone (the container, delegation, the UI engine) runs on the agent loop, and the loop runs on model access. The 2026-10-26 decisions in `record/decisions.md` settled that jen builds its own loop on a model port it defines. This change builds both, plus the TypeScript project they live in ([JEN-7](https://linear.app/reveer/issue/JEN-7)).
 
 The port and the loop carry only what this milestone needs: a conversation with tool calls. Everything else is added when something uses it.
 
