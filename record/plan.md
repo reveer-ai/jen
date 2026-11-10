@@ -38,7 +38,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-In progress: [JEN-15](https://linear.app/reveer/issue/JEN-15), the skills and docs that keep the project understood and maintained. Up next in cycle 3: [JEN-3](https://linear.app/reveer/issue/JEN-3) and [JEN-13](https://linear.app/reveer/issue/JEN-13).
+In progress: [JEN-15](https://linear.app/reveer/issue/JEN-15), the skills that keep the project understood and maintained. Up next in cycle 3: [JEN-3](https://linear.app/reveer/issue/JEN-3) and [JEN-13](https://linear.app/reveer/issue/JEN-13).
 
 ## Open questions, held for their tasks
 
