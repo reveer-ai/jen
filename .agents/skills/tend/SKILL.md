@@ -38,6 +38,6 @@ Propose; don't change anything. Each proposal says exactly what to change, where
 Everything this pass produces goes through the project's issue tracker, labeled `tend` and outside any planned cycle or milestone, so the maintainer sees it there:
 
 - **Fixes.** If you have any, create one issue for them before you start, and do the work under it as the project's conventions say, with ` [tend]` at the end of the pull request's title. The pull request's description lists what was changed, moved or removed, and why. Merge it as the project's conventions say.
-- **Questions and proposals.** Create one issue each, in the backlog, for the maintainer to take up or cancel.
+- **Questions and proposals.** Create one issue each, in the backlog, for the maintainer to take up or cancel. The issue is the whole proposal: what and why, briefly. Don't start any work on it; that waits until the maintainer takes it up.
 
 If there's nothing to fix, ask or propose, create nothing.
