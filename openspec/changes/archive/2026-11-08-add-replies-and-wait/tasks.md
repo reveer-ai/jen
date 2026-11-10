@@ -24,7 +24,7 @@
 
 ## 6. Live checks and docs
 
-- [x] 6.1 Read owner replies as assistant messages with no tool call in the same response in `src/runtime/runtime.live.test.ts` and `src/agent/container.live.test.ts`, and update the commands and `/messages` description in `context/environment.md`; verify with `npm run test:live` passing those checks
+- [x] 6.1 Read owner replies as assistant messages with no tool call in the same response in `src/runtime/runtime.live.test.ts` and `src/agent/container.live.test.ts`, and update the commands and `/messages` description in `record/environment.md`; verify with `npm run test:live` passing those checks
 - [x] 6.2 Add `src/runtime/behavior.live.test.ts` from `lab/harness.ts`, with the six tasks three times each and the failure rules in `agent-delegation`; verify by running it on Luna, and report its pass rate to the maintainer before committing it
 - [x] 6.3 Update `docs/architecture.html` where it shows a reply as a send, and run `npm run check`, `npm test` and `openspec validate add-replies-and-wait --strict`; verify all three pass
 

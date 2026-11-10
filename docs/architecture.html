@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="describes" content="src/agent src/runtime Dockerfile">
+<meta name="checked" content="2026-11-09">
 <title>jen Agent Components</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -53,7 +55,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 <main>
   <header>
     <h1>jen Agent Components</h1>
-    <p class="lede">The runtime and the agents it runs, as of JEN-11 (<code>add-agent-delegation</code>), which built delegation on JEN-10's runtime. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime.</p>
+    <p class="lede">The runtime and the agents it runs, as of JEN-12 (<code>add-replies-and-wait</code>). One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime.</p>
   </header>
 
   <figure>

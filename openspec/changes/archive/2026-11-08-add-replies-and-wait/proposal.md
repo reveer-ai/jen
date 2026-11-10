@@ -70,7 +70,7 @@ The runtime doesn't change. A reply goes to the parent through the route a child
   - `src/agent/loop.ts`: the turn-end reply and `wait`
   - `src/agent/store.ts`: delivering the inbox as a wait's result
   - `src/agent/main.ts`: wiring the reply to the parent
-- **Owner clients:** every owner client reads a root's reply as its final assistant text, not as a `send_message` call to `owner`. That covers the live checks in `src/runtime/runtime.live.test.ts` and the commands in `context/environment.md`.
+- **Owner clients:** every owner client reads a root's reply as its final assistant text, not as a `send_message` call to `owner`. That covers the live checks in `src/runtime/runtime.live.test.ts` and the commands in `record/environment.md`.
 - **The new live check** is on the order of 18 model-backed runs. It takes a few minutes against Luna.
 - **The architecture diagram:** `docs/architecture.html` changes where it shows a reply as a send.
 - **Conversations saved before this change** end their turns the old way. jen has no adopters, so they aren't migrated.

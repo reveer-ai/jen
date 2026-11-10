@@ -12,11 +12,11 @@
 
 - [x] 3.1 Add the `Dockerfile` and `.dockerignore` per the design. Verify that `docker build -t jen .` succeeds, and that the image holds no `.env`, tests or dev dependencies. Run the `agent-container` scenarios by hand and record the results in the PR: no message, missing `JEN_API_KEY`, a non-root process, and `docker stop` mid-turn returning well inside the 10-second timeout.
 - [x] 3.2 Write `src/container.live.test.ts` per the design: build the image, run two messages in two fresh containers on one new named volume, check that the second reply contains the remembered word, and always remove the volume. It skips without live credentials and fails without Docker. Verify that it skips with no credentials and passes against a real model.
-- [x] 3.3 Document `docker build -t jen .` and a two-message `docker run` example on a named volume in `context/environment.md`, alongside `test:live`'s new Docker requirement. Verify the documented commands run as written.
+- [x] 3.3 Document `docker build -t jen .` and a two-message `docker run` example on a named volume in `record/environment.md`, alongside `test:live`'s new Docker requirement. Verify the documented commands run as written.
 
 ## 4. Record
 
-- [x] 4.1 Add JEN-8's project-level decisions to `context/decisions.md`: the container is the only supported way to run an agent, the conversation is stored as one JSON row per item, and the one-shot entrypoint stands until JEN-9. Update the JEN-8 status in `context/plan.md`. Verify each file stays within its size budget in `context/README.md`.
+- [x] 4.1 Add JEN-8's project-level decisions to `record/decisions.md`: the container is the only supported way to run an agent, the conversation is stored as one JSON row per item, and the one-shot entrypoint stands until JEN-9. Update the JEN-8 status in `record/plan.md`. Verify each file stays within its size budget in `record/README.md`.
 
 ## Workflow follow-up
 

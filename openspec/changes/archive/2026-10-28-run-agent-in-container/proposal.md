@@ -2,7 +2,7 @@
 
 ## Why
 
-The agent loop from [JEN-7](https://linear.app/reveer/issue/JEN-7) runs only inside a test, and its conversation lives in memory for a single call. The 2026-10-26 decisions in `context/decisions.md` made each jen agent an OCI container, with a mounted volume and SQLite on that volume. This change packages the agent that way ([JEN-8](https://linear.app/reveer/issue/JEN-8)). The container is the agent. The loop runs in it, its state lives there, and it is the boundary for whatever the agent will be allowed to do. Delegation and invocation both build on an agent that exists and remembers.
+The agent loop from [JEN-7](https://linear.app/reveer/issue/JEN-7) runs only inside a test, and its conversation lives in memory for a single call. The 2026-10-26 decisions in `record/decisions.md` made each jen agent an OCI container, with a mounted volume and SQLite on that volume. This change packages the agent that way ([JEN-8](https://linear.app/reveer/issue/JEN-8)). The container is the agent. The loop runs in it, its state lives there, and it is the boundary for whatever the agent will be allowed to do. Delegation and invocation both build on an agent that exists and remembers.
 
 The container matches the agent as it is today. It has no tools, its only state is its conversation, and it runs once per message. It grows as the agent grows.
 

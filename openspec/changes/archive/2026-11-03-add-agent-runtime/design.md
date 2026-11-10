@@ -195,4 +195,4 @@ Its restart policy is `on-failure` with at most 3 retries. Nothing a caller send
 
 ## Migration Plan
 
-No data migrates. An agent volume from JEN-9 has no labels, so the runtime ignores it. The agent's image is renamed from `jen` to `jen-agent`, and there are no adopters. `context/environment.md` changes to: build both images, start the runtime, spawn and talk through it.
+No data migrates. An agent volume from JEN-9 has no labels, so the runtime ignores it. The agent's image is renamed from `jen` to `jen-agent`, and there are no adopters. `record/environment.md` changes to: build both images, start the runtime, spawn and talk through it.
