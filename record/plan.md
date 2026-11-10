@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-09.
+Last updated 2026-11-10.
 
 ## Current project: Agent harness & UI engine
 
@@ -27,6 +27,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-10 | [JEN-3](https://linear.app/reveer/issue/JEN-3) | [#13](https://github.com/reveer-ai/jen/pull/13) | Recorded how agents present themselves and scoped the UI engine milestone. |
 | 2026-11-09 | [JEN-15](https://linear.app/reveer/issue/JEN-15) | [#11](https://github.com/reveer-ai/jen/pull/11) | Skills to review, deliver and tend changes; `context/` renamed `record/` and kept by intent; conventions moved in from private memory. |
 | 2026-11-09 | [JEN-12](https://linear.app/reveer/issue/JEN-12) | [#10](https://github.com/reveer-ai/jen/pull/10) | Agents answer by ending their turn and wait with a `wait` tool; the behavior check holds them to it on Luna. |
 | 2026-11-05 | [JEN-11](https://linear.app/reveer/issue/JEN-11) | [#9](https://github.com/reveer-ai/jen/pull/9) | Delegation: saved steps, the inbox, urgent messages, recovery and the runtime's notices. |
@@ -39,14 +40,13 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-3](https://linear.app/reveer/issue/JEN-3) and [JEN-13](https://linear.app/reveer/issue/JEN-13).
+Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write, and [JEN-13](https://linear.app/reveer/issue/JEN-13).
 
 ## Open questions, held for their tasks
 
 These are recorded so they aren't lost. Don't settle them ahead of the task that owns them.
 
-- **JEN-3:** where generated UI renders. This needs to be explored deliberately in the task. Keep in view that an agent and whatever renders it may end up on different machines, so JEN-4 doesn't force a redesign.
-- **Auth, beyond the runtime's tokens:** [JEN-10](https://linear.app/reveer/issue/JEN-10) built an owner token and a per-agent token renewed on every start (see [decisions.md](decisions.md), 2026-11-02). Still open: human login, TLS on the runtime's port, and how a browser's `EventSource` gets a token, which belong with hosting (JEN-4). Agents call the runtime with their own tokens since [JEN-11](https://linear.app/reveer/issue/JEN-11).
+- **Auth, beyond the runtime's tokens:** [JEN-10](https://linear.app/reveer/issue/JEN-10) built an owner token and a per-agent token renewed on every start (see [decisions.md](decisions.md), 2026-11-02). Still open: human login, TLS on the runtime's port, and how a browser's `EventSource` gets a token, which belong with hosting (JEN-4). [JEN-18](https://linear.app/reveer/issue/JEN-18) needs a browser to reach an agent's UI, but only locally (see [decisions.md](decisions.md), 2026-11-10). Agents call the runtime with their own tokens since [JEN-11](https://linear.app/reveer/issue/JEN-11).
 - **Model access isn't narrowable yet.** From [JEN-10](https://linear.app/reveer/issue/JEN-10) on, every agent gets the owner's raw API key, so any agent can call any model the key allows, spend without limit, and leak the key if compromised. The fix is a model proxy in the runtime: agents call models through it, never see the key, and model access becomes a grant (which models, how much spend). Spend as a recursion bound waits on it too. It needs its own issue once scoped.
 - **Organizing and cleaning up agents.** Persistent sub-agents are kept until a parent deletes them, and every agent counts toward the runtime's limit until deleted. How agents stay organized and get cleaned up over time needs more thought once real trees exist.
-- **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface). Each account gets its own runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). That isolates accounts only if each runtime also has its own Docker engine, typically one VM per account, because controlling an engine means controlling everything on it.
+- **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface). Each account gets its own runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). That isolates accounts only if each runtime also has its own Docker engine, typically one VM per account, because controlling an engine means controlling everything on it. JEN-4 must also leave any application able to connect to jen as a service (see [product.md](product.md)). How it connects is JEN-4's to decide.
