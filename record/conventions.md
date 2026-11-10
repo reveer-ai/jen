@@ -30,6 +30,11 @@ How work is done on this project. These apply to anyone working on it.
 - **No machinery for a case that doesn't exist.** If nothing a mechanism would serve exists yet, a line in the docs covers it until something does. The same goes for guarding something transient: remove it when it's done rather than adding configuration around it.
 - **A prompted convention can beat costly enforcement.** When enforcing a rule would take new infrastructure, identities or configuration to keep in sync, state it as a convention instead. Unenforced is acceptable; undetectable isn't, so say how a breach would show.
 
+## Skills and prompts
+
+- **Say only what's specific to this project, or what a capable model wouldn't do on its own.** Generic advice, such as an API's contract, a list of common failure modes or a severity scale, costs every run tokens and pulls the model toward it.
+- **State nothing more certainly than it holds.** Phrase a claim as a check or an outcome ("This pass checks whether…") rather than as a fact that may not hold. Hedging with "may" isn't the fix.
+
 ## Git and verification
 
 - **Every push carries the record.** Commit any pending `record/` changes with the task's own files.
