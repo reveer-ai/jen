@@ -25,6 +25,7 @@ One npm package (ESM, Node ≥ 26) at the repo root. Node runs the TypeScript in
 `docs/` holds views of how jen works, each a page to open in a browser. Each names the files it describes in a `<meta name="describes">` tag, so `tend` can find a view whose sources changed after it was last edited:
 
 - `architecture.html`: jen's components and how a message flows through them.
+- `interactions.html`: real runs of the behavior check replayed step by step, agent by agent. Its runs are in `interactions.data.js`, written by `npm run test:live` with `JEN_LIVE_RECORD=1` set.
 
 Commands:
 
