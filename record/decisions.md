@@ -39,7 +39,7 @@ Made in [JEN-12](https://linear.app/reveer/issue/JEN-12), aligning on its propos
 
 ## 2026-11-04
 
-Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), after the maintainer asked that every real interaction between parent and child hold up. Details are in `openspec/changes/add-agent-delegation/design.md`, decisions 3, 4 and 8:
+Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), after the maintainer asked that every real interaction between parent and child hold up. Details are in `openspec/changes/archive/2026-11-05-add-agent-delegation/design.md`, decisions 3, 4 and 8:
 
 - **Three ways to reach a busy agent.** A plain message waits for the batch of tool calls in progress and reaches the model before its next call. An urgent message cancels the call in flight, skips the rest of the batch and reaches the model at once. Stop and delete halt the agent's whole subtree. *Superseded in part 2026-11-06:* a child no longer sends its parent anything, urgent or not. It answers by ending its turn (see 2026-11-06). Anyone who may message an agent may send it an urgent message, a child to its parent included. *Why:* stopping an agent to correct it froze its whole subtree, and after a restart its sub-agents stayed stopped. A plain message that cut every batch short made routine news cost a re-plan. A cancel leaves the conversation as crash recovery does, so it adds no new state.
 - **The runtime sends messages as `runtime`, only for facts it witnessed.** It reports a sub-agent whose restarts ran out to its parent, and tells an agent that's started again which of its sub-agents are still stopped. They're ordinary messages through the inbox, with no new route, event or item type. *Why:* in both cases a parent would otherwise wait forever, and only the runtime saw what happened.
@@ -47,7 +47,7 @@ Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), after the maintainer a
 
 ## 2026-11-03
 
-Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), aligning on how agents delegate. The proposal and design are in `openspec/changes/add-agent-delegation/`:
+Made in [JEN-11](https://linear.app/reveer/issue/JEN-11), aligning on how agents delegate. The proposal and design are in `openspec/changes/archive/2026-11-05-add-agent-delegation/`:
 
 - **Delegation is modelled on people working together, without people's limits.** A parent can interrupt a child, a child can ask its parent a question, and both carry on afterwards. An agent can answer and keep working in the same breath. *Why:* set by the maintainer. One mechanism should support any scenario rather than one feature per scenario.
 - **The user is the root agent's parent and nothing more.** The owner's ID is `owner`, and everyone is addressed by ID. *Why:* interrupting or asking works the same in every direction, the user included.

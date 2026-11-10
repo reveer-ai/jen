@@ -29,7 +29,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 |---|---|---|---|
 | 2026-11-09 | [JEN-15](https://linear.app/reveer/issue/JEN-15) | [#11](https://github.com/reveer-ai/jen/pull/11) | Skills to review, deliver and tend changes; `context/` renamed `record/` and kept by intent; conventions moved in from private memory. |
 | 2026-11-09 | [JEN-12](https://linear.app/reveer/issue/JEN-12) | [#10](https://github.com/reveer-ai/jen/pull/10) | Agents answer by ending their turn and wait with a `wait` tool; the behavior check holds them to it on Luna. |
-| 2026-11-05 | [JEN-11](https://linear.app/reveer/issue/JEN-11) | [#9](https://github.com/reveer-ai/jen/pull/9) | Delegation: saved steps, the inbox, urgent messages, recovery and the runtime's notices. Completed the Agent delegation milestone. |
+| 2026-11-05 | [JEN-11](https://linear.app/reveer/issue/JEN-11) | [#9](https://github.com/reveer-ai/jen/pull/9) | Delegation: saved steps, the inbox, urgent messages, recovery and the runtime's notices. |
 | 2026-11-03 | [JEN-10](https://linear.app/reveer/issue/JEN-10) | [#8](https://github.com/reveer-ai/jen/pull/8) | The agent runtime: its own image, the tree in Docker labels, grants, bounds and the relay. |
 | 2026-11-02 | [JEN-2](https://linear.app/reveer/issue/JEN-2) | [#7](https://github.com/reveer-ai/jen/pull/7) | Recorded how delegation is shaped and scoped the Agent delegation milestone. |
 | 2026-10-28 | [JEN-9](https://linear.app/reveer/issue/JEN-9) | [#6](https://github.com/reveer-ai/jen/pull/6) | A long-running agent serving jen's protocol over HTTP and SSE. Completed the Agent container milestone. |
