@@ -40,7 +40,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. [JEN-13](https://linear.app/reveer/issue/JEN-13) moved to the backlog on 2026-11-10.
+Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write.
 
 ## Open questions, held for their tasks
 
