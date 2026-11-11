@@ -40,7 +40,7 @@ Each agent with the `workspace` grant has two more Docker objects, named and lab
 
 The runtime creates it from `JEN_WORKSPACE_IMAGE` (default `jen-workspace`), with fixed settings that no caller can change:
 
-- **Mounts:** the workspace volume at `/home/node`, and a tmpfs at `/tmp`. Nothing else. There's no state volume and no engine socket.
+- **Mounts:** the workspace volume at `/home/node`, and a tmpfs at `/tmp` mounted `exec,nosuid,nodev`. Docker mounts a tmpfs `noexec` by default, which would break the many tools that build and run helpers in `/tmp`. Nothing else is mounted. There's no state volume and no engine socket.
 - **Environment:** only what the image sets, such as `PATH` and `HOME`. None of jen's settings.
 - **Network:** `none`. It has loopback only.
 - **User:** `node` (uid 1000), with home `/home/node`.
@@ -73,7 +73,15 @@ A crash of the agent's process leaves the workspace running. Docker restarts the
 
 ### Running a command
 
-A new route, `POST /workspace/commands`, with the body `{"command": "<shell>", "timeout": <seconds>}`, acts on the caller's own workspace. The caller is whoever the token belongs to, so no agent ID is involved. The owner has no workspace and gets `404`, as does an agent without the grant. A timeout over 600 seconds, or below 1, gets `400`. The route doesn't go through the tree queue, because a command can run for 10 minutes. Once the command ends, it answers `200` with:
+A new route, `POST /workspace/commands`, with the body `{"command": "<shell>", "timeout": <seconds>}`, acts on the caller's own workspace. The caller is whoever the token belongs to, so no agent ID is involved. The route's refusals:
+- an agent without the grant gets `403`, as a caller without `spawn` does when it spawns
+- the owner, who has no workspace, gets `404`
+- a timeout over 600 seconds, or below 1, gets `400`
+- a body over 64 KB gets `413`
+
+The body bound is the route's own, not the runtime's 16 KB `MAX_BODY`. Until JEN-19's file tools land, an agent writes files with heredocs, which outgrow 16 KB. The bound also stays under Linux's 128 KB limit on one argument, which `sh -c` would otherwise hit.
+
+The route doesn't go through the tree queue, because a command can run for 10 minutes. If the workspace container stops while the command runs, the exec's stream ends without the wrapper's final report, and the route answers `409`, saying the workspace stopped during the command. That happens when the agent is stopped or deleted, or when the workspace's first process dies and is restarted. Once the command ends, it answers `200` with:
 
 ```json
 { "exitCode": 0, "output": "...", "timedOut": false, "cut": { "bytes": 123456, "file": "/home/node/.jen/output/<id>.log" } }
@@ -108,6 +116,9 @@ The tool's description says:
 - the 2-minute default and the 10-minute maximum
 - that a command which keeps running, such as a server, goes in the background with its output redirected
 - that output is capped at about 8 KB, so large output belongs in a file to search with `grep` or `tail`, and that output which is cut anyway is saved whole
+- that a command is at most 64 KB, so a large file is written in parts
+
+The tool refuses a command over 64 KB before any request is made, with an error saying to write the content in parts.
 
 The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant.
 
@@ -141,7 +152,9 @@ The `Dockerfile` gains a `workspace` target on the same `node:26-slim` base as t
   - a cut is saved whole
 
   It runs in `npm run test:live`, and CI runs it on every push. GitHub's runners have Docker on a plain Linux kernel, so it's the one check that shows the boundary holding outside Docker Desktop.
-- **The behavior check** keeps its six tasks with their current grants, and gains a seventh. The root has `workspace` and is asked to run a given command exactly once and report one line from its output. The command prints a log far over the cap, with the line in the middle, so the line is in neither the start nor the end the result keeps. The task fails if the reply lacks the line or the command ran more than once. It shows whether a Luna-class model finds what was cut in the saved file rather than running the command again, which is what makes the cap safe for commands that can't be repeated.
+- **The behavior check** keeps its six tasks with their current grants, and gains a seventh. The root has `workspace` and is asked to run a given command exactly once and report one line from its output. The command prints a log far over the cap, with the line in the middle, so the line is in neither the start nor the end the result keeps. The command counts its own runs by appending to a file in the workspace, so a run piped into `grep` or rewritten in any other form still counts. The check reads that file afterwards. The task fails if the reply lacks the line or the count is above one.
+
+It shows whether a Luna-class model gets what it needs from big output without running the command again, which is what makes the cap safe for commands that can't be repeated. A model that filters the output on its first run passes without the saved file coming into it, and that's a fine way to pass.
 
 ## Risks / Trade-offs
 
