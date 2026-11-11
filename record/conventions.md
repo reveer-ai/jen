@@ -27,6 +27,7 @@ How work is done on this project. These apply to anyone working on it.
 ## Design
 
 - **One complete mechanism.** Choose the simplest mechanism that fully solves the problem, and commit to it. Don't stack mechanisms that each cover part of the case. Judge each candidate by what it fails to catch. A safety bound is a fixed constant, not a setting an agent could turn off.
+- **Design a feature as it should be, not around what jen lacks.** If the right design depends on something jen doesn't have yet, that becomes its own task, and the design builds on it. Something a later feature might want is different: don't build it, but don't rule it out.
 - **No machinery for a case that doesn't exist.** If nothing a mechanism would serve exists yet, a line in the docs covers it until something does. The same goes for guarding something transient: remove it when it's done rather than adding configuration around it.
 - **A prompted convention can beat costly enforcement.** When enforcing a rule would take new infrastructure, identities or configuration to keep in sync, state it as a convention instead. Unenforced is acceptable; undetectable isn't, so say how a breach would show.
 
