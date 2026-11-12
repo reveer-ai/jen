@@ -80,7 +80,7 @@ An agent whose grant has `workspace` SHALL be offered `read_file`, `write_file` 
 - **THEN** it offers `run_command`, `read_file`, `write_file` and `edit_file`
 
 ### Requirement: read_file returns numbered lines within a cap
-`read_file` SHALL take `path` and an optional `offset` (the first line, from 1) and `limit` (a number of lines), and SHALL return each line prefixed with its number and a tab. It SHALL return at most 2000 lines and 32 KiB per call, cutting a single longer line and saying so. When it returns less than the whole file it SHALL say which lines these are, how many the file has, and the offset to read on from.
+`read_file` SHALL take `path` and an optional `offset` (the first line, from 1) and `limit` (a number of lines), and SHALL return each line prefixed with its number and a tab. It SHALL return at most 2000 lines and 32 KiB per call, and cut each line past 2000 characters, marking it cut. When it returns less than the whole file it SHALL say which lines these are, how many the file has, and the offset to read on from.
 
 #### Scenario: A small file
 - **WHEN** the model reads a three-line file
@@ -94,15 +94,16 @@ An agent whose grant has `workspace` SHALL be offered `read_file`, `write_file` 
 - **WHEN** the model reads with `offset` 10 and `limit` 5
 - **THEN** it gets lines 10 to 14, numbered 10 to 14
 
-### Requirement: read_file answers a missing file
-`read_file` on a path where there is no file SHALL return a result saying so, not an error.
-
-#### Scenario: Checking before creating
-- **WHEN** the model reads `notes/release.md` and there is no such file
-- **THEN** the result says there's no file at that path, and doesn't start with `Error:`
+#### Scenario: A minified file
+- **WHEN** the model reads a file whose one line is 50,000 characters
+- **THEN** it gets that line's first 2000 characters, marked cut
 
 ### Requirement: read_file doesn't print what isn't text
-`read_file` SHALL fail, giving the file's size, on a file holding a NUL byte or bytes that aren't valid UTF-8, saying to inspect it with `run_command`. On a file over 16 MiB it SHALL fail saying to search it with `run_command`.
+`read_file` SHALL fail, giving the file's size, on a file holding a NUL byte or bytes that aren't valid UTF-8, saying to inspect it with `run_command`. On a file over 16 MiB it SHALL fail saying to search it with `run_command`. On a path where there is no file it SHALL fail saying so.
+
+#### Scenario: A missing file
+- **WHEN** the model reads `notes/release.md` and there is no such file
+- **THEN** the result starts with `Error:` and says there's no file at that path
 
 #### Scenario: A binary file
 - **WHEN** the model reads a PNG
@@ -116,7 +117,7 @@ An agent whose grant has `workspace` SHALL be offered `read_file`, `write_file` 
 - **THEN** the file holds exactly that content
 
 ### Requirement: edit_file replaces an exact string
-`edit_file` SHALL take `path`, `old_string`, `new_string` and an optional `replace_all`, and replace `old_string` with `new_string` literally, with no pattern in either, then write the file back. It SHALL fail without writing when `old_string` is empty, equals `new_string`, isn't found, or is found more than once without `replace_all`, and on a file that is missing or isn't text. It SHALL return the path and how many matches it replaced.
+`edit_file` SHALL take `path`, `old_string`, `new_string` and an optional `replace_all`, and replace `old_string` with `new_string` literally, with no pattern in either, then write the file back. It SHALL fail without writing when `old_string` is empty, equals `new_string`, isn't found, or is found more than once without `replace_all`, and on a file that is missing or isn't text.
 
 #### Scenario: One match
 - **WHEN** the model replaces a string found once
@@ -141,6 +142,17 @@ An agent whose grant has `workspace` SHALL be offered `read_file`, `write_file` 
 #### Scenario: No old string
 - **WHEN** `old_string` is empty
 - **THEN** the result starts with `Error:` and says to use `write_file`
+
+### Requirement: edit_file shows what it changed
+For one match, `edit_file` SHALL return the path and the edited lines with up to 4 lines either side, numbered as `read_file` numbers them, at most 40 lines. With `replace_all` it SHALL return the path and how many matches it replaced.
+
+#### Scenario: The edited lines
+- **WHEN** the model replaces a one-line string found once, on line 50 of a 100-line file
+- **THEN** the result names the path and shows lines 46 to 54, numbered
+
+#### Scenario: Every match counted
+- **WHEN** the model replaces with `replace_all` a string found 3 times
+- **THEN** the result names the path and says 3 matches were replaced
 
 ## MODIFIED Requirements
 

@@ -20,6 +20,7 @@ See proposal.md for why files need tools of their own, and why the tools are gen
 - Deleting, moving or copying files, or changing their mode. `rm`, `mv`, `cp` and `chmod` do that.
 - Anyone but the agent itself reaching its files, as with commands.
 - Guarding against a file changing between an edit's read and its write (see Risks).
+- A read-before-edit guard, Claude Code's refusal to edit or overwrite a file the model hasn't read since it last changed. It's Claude Code's own convention, not a shared one, and the maintainer left it out.
 
 ## Decisions
 
@@ -105,10 +106,10 @@ The three tools live in `src/agent/workspace.ts` beside `run_command`, and `work
 
 **`read_file`** takes `path`, and optional `offset` (the first line, from 1) and `limit` (how many lines).
 - It returns the lines, each prefixed with its number and a tab, as `cat -n` does. Models read and cite line numbers, and a range is asked for by number.
-- At most 2000 lines and 32 KiB come back per call. When that isn't the whole file, it ends with a note: which lines these are, how many the file has, and the `offset` to read on from. A single line over 32 KiB comes back cut, saying so.
+- At most 2000 lines and 32 KiB come back per call. When that isn't the whole file, it ends with a note: which lines these are, how many the file has, and the `offset` to read on from. Each line past 2000 characters comes back cut there, marked as cut, as Claude Code's `Read` does, so a minified file doesn't spend the whole cap on a line or two.
 - A file that holds a NUL byte or isn't valid UTF-8 isn't printed. The error gives its size and says to inspect it with `run_command`, such as with `file` or `xxd`.
 - A file over the route's bound gets an error saying to search it with `rg` or `sed -n` through `run_command`.
-- A missing file is an answer, not an error: the result says there's no file at the path. Checking whether a file exists before creating it is ordinary, the way `run_command` returns a non-zero exit as a result. The behavior check fails a run on any failed tool call, so an error here would fail careful runs and say nothing about edits.
+- A missing file is an error saying there's no file at the path, as in every established file tool. Checking whether a file exists before creating it is ordinary, so the behavior check doesn't count this error as a fault (see Checks).
 
 *Why 32 KiB when a command's output is capped at 8 KiB:* a read is asked for on purpose, a range at a time, and a model reads the part of a file it will edit. Command output can be huge by accident. Every read stays in the conversation, so the cap still bounds what one call costs.
 
@@ -121,7 +122,7 @@ The three tools live in `src/agent/workspace.ts` beside `run_command`, and `work
 - when `old_string` isn't found, saying it must match exactly, whitespace and indentation included, and without `read_file`'s line numbers
 - when `old_string` matches more than once and `replace_all` isn't set, saying how many times it matches and to include more of the surrounding text or set `replace_all`
 
-The replacement is literal: it splits on `old_string` and joins with `new_string`, so a `$&` or `$1` in the new text isn't read as a pattern, as `String.prototype.replace` would read it. The result names the path and how many matches were replaced.
+The replacement is literal: it splits on `old_string` and joins with `new_string`, so a `$&` or `$1` in the new text isn't read as a pattern, as `String.prototype.replace` would read it. For a single match, the result names the path, then the edited lines with up to 4 lines either side, numbered as `read_file` numbers them, at most 40 lines and with each line cut at 2000 characters. That's what Claude Code's `Edit` returns: the model can check its edit without reading the file again. With `replace_all`, the result names the path and how many matches were replaced.
 
 **The descriptions are behavior.** As built, the behavior check settles their wording (see Checks). The drafts say what each tool does, the limits above, and that `edit_file`'s match is exact. `run_command`'s description stops saying "write a large file in parts" and says instead to write files with `write_file`. Its error for a command over 64 KiB says the same. The command route's 64 KiB bound stays: nothing is gained by shrinking it, and a model may still write a short heredoc.
 
@@ -147,7 +148,7 @@ The replacement is literal: it splits on `old_string` and joins with `new_string
   - create `notes/release.md` holding given text with `$HOME`, backticks, both quotes, a trailing backslash and a line that is just `EOF`
   - reply when it's done
 
-  The check reads both files from the workspace with `docker exec`. It fails unless `settings.conf` matches the expected bytes exactly and `release.md` matches the given text, with or without a final newline. The check's existing rule that any failed tool call fails the run applies too, so an `edit_file` that doesn't match counts against the task. That is the evidence the proposal names for revisiting native tools. The task judges the files, not which tools wrote them. As built, the design records which tools Luna chose.
+  The check reads both files from the workspace with `docker exec`. It fails unless `settings.conf` matches the expected bytes exactly and `release.md` matches the given text, with or without a final newline. The check's existing rule that any failed tool call fails the run applies too, so an `edit_file` that doesn't match counts against the task. The rule gains one exception, for every task: a `read_file` of a file that doesn't exist isn't a fault, since checking whether a file exists isn't misbehavior. The tool keeps the error every established file tool gives rather than bending to the check. That is the evidence the proposal names for revisiting native tools. The task judges the files, not which tools wrote them. As built, the design records which tools Luna chose.
 
 ## Risks / Trade-offs
 

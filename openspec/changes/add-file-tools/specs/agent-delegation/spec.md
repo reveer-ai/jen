@@ -43,7 +43,7 @@ With Docker running and model credentials configured, a behavior live check SHAL
 - **THEN** all 24 runs settle, and each gets its task's expected number of owner replies with none of the faults
 
 ### Requirement: The behavior live check fails on any fault
-A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, or model error event. A command task's run SHALL also fail if its reply lacks the line, or its workspace file shows the command ran more than once. A file task's run SHALL also fail unless the changed file matches the expected bytes exactly and the created file matches the given text, with or without a final newline. Replies SHALL be read as in the delegation live check. A failure SHALL print the run's transcript.
+A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call other than a `read_file` of a file that doesn't exist, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, or model error event. A command task's run SHALL also fail if its reply lacks the line, or its workspace file shows the command ran more than once. A file task's run SHALL also fail unless the changed file matches the expected bytes exactly and the created file matches the given text, with or without a final newline. Replies SHALL be read as in the delegation live check. A failure SHALL print the run's transcript.
 
 #### Scenario: A faulty run
 - **WHEN** a run's root calls `list_agents`
@@ -56,6 +56,10 @@ A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if t
 #### Scenario: An edit that changes more
 - **WHEN** the file task's root changes any byte of the generated file other than the asked-for line
 - **THEN** the check fails and prints that run's transcript
+
+#### Scenario: Checking before creating
+- **WHEN** a root calls `read_file` on a file that doesn't exist yet, then creates it
+- **THEN** the not-found error isn't a fault
 
 #### Scenario: An edit that doesn't match
 - **WHEN** the file task's root calls `edit_file` with an `old_string` the file doesn't hold
