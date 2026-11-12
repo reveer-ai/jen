@@ -47,12 +47,12 @@
 ## 8. The behavior check's command task
 
 - [x] 8.1 Add the seventh task to `src/runtime/behavior.live.test.ts`: a root with `{"workspace": true}` asked to run a given command exactly once and report one line. The command appends to a counter file in the workspace, then prints a log far over 8 KiB with the line in its middle, outside the first 2 KiB and last 6 KiB. After the run settles, read the counter from the root's workspace container with `docker exec` and fail the run if the reply lacks the line or the count is above one. Make sure the check's runtime has `JEN_WORKSPACE_IMAGE`. Update its header comment and `record/environment.md` (seven tasks). Verify `npm run check` passes and the task's assertions fail against a deliberately wrong line.
-- [ ] 8.2 Run the behavior check on `openai/gpt-6-luna` and settle `run_command`'s description against it until all 21 runs pass. Verify with the passing run's output; if the command task fails, change only the description and rerun.
+- [x] 8.2 Run the behavior check on `openai/gpt-6-luna` and settle `run_command`'s description against it until all 21 runs pass. Verify with the passing run's output; if the command task fails, change only the description and rerun.
 - [x] 8.3 Refresh `docs/interactions.data.js` with `JEN_LIVE_RECORD=1` from a passing run so the replay includes the command task. Verify by opening `docs/interactions.html` and stepping through the command task.
 
 ## 9. Integration
 
-- [ ] 9.1 Run `npm run check`, `npm test` and the whole `npm run test:live` with the three images built, and verify each passes, noting any known flake from `record/environment.md` that recurs.
+- [x] 9.1 Run `npm run check`, `npm test` and the whole `npm run test:live` with the three images built, and verify each passes, noting any known flake from `record/environment.md` that recurs.
 - [x] 9.2 Update [JEN-21](https://linear.app/reveer/issue/JEN-21) in Linear to say commands are offline from this change on, so it's left with keeping the model key in the runtime and cutting off the agent's own container. Verify by reading the issue back.
 
 ## Workflow follow-up

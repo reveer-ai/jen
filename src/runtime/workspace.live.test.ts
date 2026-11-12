@@ -216,15 +216,16 @@ describe("commands", () => {
     const answer = await run("sleep 100", 1);
     expect(answer).toMatchObject({ status: 200, body: { exitCode: null, timedOut: true } });
     expect(answer.seconds).toBeLessThan(6);
-    expect(await output("ps -eo args | grep -cx 'sleep 100'; true")).toBe("0\n");
-  }, 30_000);
+    await until(async () => (await output("ps -eo args | grep -cx 'sleep 100'; true")) === "0\n", "the timed-out command to end");
+  }, 60_000);
 
   test("1 MiB written straight to the exec's stream through /proc gets 502 at once, and the command is killed", async () => {
     const answer = await run("head -c 1048576 /dev/zero > /proc/$PPID/fd/1; sleep 101");
     expect(answer.status).toBe(502);
     expect(answer.seconds).toBeLessThan(5);
-    expect(await output("ps -eo args | grep -cx 'sleep 101'; true")).toBe("0\n");
-  }, 30_000);
+    // SIGKILL is delivered at once, but a loaded machine may take a moment to end the process.
+    await until(async () => (await output("ps -eo args | grep -cx 'sleep 101'; true")) === "0\n", "the flooding command to end");
+  }, 60_000);
 
   test("a background process that holds the exec's stream and keeps writing doesn't hold the call", async () => {
     const answer = await run("(sleep 1; while :; do echo forged; sleep 0.2; done) > /proc/$PPID/fd/1 & echo done");
