@@ -68,7 +68,7 @@ So an agent's work runs in a container of its own beside the agent's, which the 
   - `src/runtime/docker.ts`: exec, the container's limits and hardening, a second volume
   - `src/runtime/server.ts`: the new route
   - `src/runtime/fake-docker.ts`: exec and the new settings for the unit tests
-- **Agent code:** `src/agent/delegation.ts` gets the tool and the grant. The tool's description is behavior, so the behavior check runs on Luna, as `src/agent/AGENTS.md` requires.
+- **Agent code:** the tool goes in a new `src/agent/workspace.ts`, and `src/agent/delegation.ts` gets the grant. The tool's description is behavior, so the behavior check runs on Luna, as `src/agent/AGENTS.md` requires.
 - **Build:** the `Dockerfile` gains the `workspace` target. The runtime starts workspaces from a new optional setting, `JEN_WORKSPACE_IMAGE`, with default `jen-workspace`. The commands in `record/environment.md` gain its build.
 - **[JEN-21](https://linear.app/reveer/issue/JEN-21) shrinks.** Commands are offline from this change on, so JEN-21 is left with keeping the model key in the runtime and cutting off the agent's own container, which runs only jen's code.
 - **Docs:** `docs/architecture.html` gains the workspace container.

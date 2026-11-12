@@ -136,7 +136,7 @@ The tool's description says:
 
 The tool refuses a command over 64 KB before any request is made, with an error saying to write the content in parts.
 
-The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant.
+The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant. `src/agent/AGENTS.md`'s rule that tool descriptions are behavior is extended to cover `workspace.ts`.
 
 ### The grant
 
@@ -171,8 +171,8 @@ The `Dockerfile` gains a `workspace` target on the same `node:26-slim` base as t
   - a background process that holds the exec's stream through `/proc` and keeps writing doesn't hold the call past its report
   - a command that stops the wrapper doesn't hold the call past its timeout plus 5 seconds
 
-  It runs in `npm run test:live`, and CI runs it on every push. GitHub's runners have Docker on a plain Linux kernel, so it's the one check that shows the boundary holding outside Docker Desktop.
-- **The behavior check** keeps its six tasks with their current grants, and gains a seventh. The root has `workspace` and is asked to run a given command exactly once and report one line from its output. The command prints a log far over the cap, with the line in the middle, so the line is in neither the start nor the end the result keeps. The command counts its own runs by appending to a file in the workspace, so a run piped into `grep` or rewritten in any other form still counts. The check reads that file afterwards. The task fails if the reply lacks the line or the count is above one.
+  It needs no model credentials, so unlike the other live checks it doesn't skip without them, and it fails rather than skips without Docker. It runs in `npm run test:live`, and CI gains a job that builds the three images and runs it alone on every push, since CI has no secrets for the rest. GitHub's runners have Docker on a plain Linux kernel, so it's the one check that shows the boundary holding outside Docker Desktop.
+- **The behavior check** keeps its six tasks with their current grants, and gains a seventh. The root's grant is `{"workspace": true}`, without `spawn`, so the task measures `run_command` and not delegation. It is asked to run a given command exactly once and report one line from its output. The command prints a log far over the cap, with the line in the middle, so the line is in neither the start nor the end the result keeps. The command counts its own runs by appending to a file in the workspace, so a run piped into `grep` or rewritten in any other form still counts. The check reads that file afterwards. The task fails if the reply lacks the line or the count is above one.
 
 It shows whether a Luna-class model gets what it needs from big output without running the command again, which is what makes the cap safe for commands that can't be repeated. A model that filters the output on its first run passes without the saved file coming into it, and that's a fine way to pass.
 
