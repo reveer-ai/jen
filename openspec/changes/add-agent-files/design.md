@@ -50,7 +50,7 @@ The script reads exactly the declared number of bytes with `head -c`, so it neve
 The write script:
 1. resolves the path, following symlinks, so a write through a link lands on its target, as `>` would
 2. creates the target's folders, like `mkdir -p`
-3. refuses a path that is a folder
+3. refuses a path that is a folder, and an existing file it can't write (`Permission denied`), as `>` would. A rename needs only the folder to be writable, so without this check a write would replace a file made read-only.
 4. reads the declared number of bytes from stdin into a new temporary file beside the target, named `.<name>.jen-<random>`
 5. checks the temporary file holds exactly that many bytes, and otherwise deletes it and reports the write cut
 6. gives it the target's mode when the target exists, so editing a script keeps it executable
@@ -71,7 +71,7 @@ Each script prints a status line before anything else:
 
 An error's message is the failing tool's own, such as `Permission denied`, `Read-only file system` or `Is a directory`, so the model hears the real reason.
 
-The read script opens the file once and reports the size of what it opened. It sends no bytes for a file over the bound.
+The read script takes a snapshot. It copies at most the bound plus one byte of the file into a temporary file in `/tmp`, measures the copy, reports `large` or `ok <size>`, sends the copy, and deletes it. It doesn't report the file's `stat` size, because a pseudo-file reports 0: measured in `jen-workspace`, `/proc/self/status` stats as 0 bytes and reads as 1,115. The snapshot also gives a file that grows or shrinks while it's read one consistent answer.
 
 As with commands, any process in the workspace can write to the exec's stream through `/proc/<pid>/fd/1`, so it can forge a status line or a file's content. That only misleads the agent about its own workspace. The runtime trusts nothing from the stream that it enforces:
 - It reads at most the file bound plus 64 KiB of frames and status.
@@ -108,6 +108,7 @@ The three tools live in `src/agent/workspace.ts` beside `run_command`, and `work
 - At most 2000 lines and 32 KiB come back per call. When that isn't the whole file, it ends with a note: which lines these are, how many the file has, and the `offset` to read on from. A single line over 32 KiB comes back cut, saying so.
 - A file that holds a NUL byte or isn't valid UTF-8 isn't printed. The error gives its size and says to inspect it with `run_command`, such as with `file` or `xxd`.
 - A file over the route's bound gets an error saying to search it with `rg` or `sed -n` through `run_command`.
+- A missing file is an answer, not an error: the result says there's no file at the path. Checking whether a file exists before creating it is ordinary, the way `run_command` returns a non-zero exit as a result. The behavior check fails a run on any failed tool call, so an error here would fail careful runs and say nothing about edits.
 
 *Why 32 KiB when a command's output is capped at 8 KiB:* a read is asked for on purpose, a range at a time, and a model reads the part of a file it will edit. Command output can be huge by accident. Every read stays in the conversation, so the cap still bounds what one call costs.
 
@@ -135,7 +136,8 @@ The replacement is literal: it splits on `old_string` and joins with `new_string
   - `workspace.test.ts`: each tool's ranges, caps, notes and errors, the literal replacement, and the four tools offered with `workspace`.
 - **The boundary check** (`src/runtime/workspace.live.test.ts`) gains file probes, run with the agent's token against a real workspace. It fails unless:
   - all 256 byte values written to a file in a new folder come back unchanged, and `stat` through a command shows the file owned by `agent`
-  - an existing executable keeps its mode across a write
+  - an existing executable keeps its mode across a write, and a write to a file with mode `444` is refused and leaves it unchanged
+  - a read of `/proc/self/status` returns its content, not an empty file
   - a write to `/etc/jen-probe` and to `/usr/local/bin/jen-probe` is refused, and a read of `/state/agent.db` gets `404`
   - a write through a symlink in the home directory that points at `/etc/passwd` is refused, and `/etc/passwd` is unchanged
   - a read of a 17 MiB file gets `413`
@@ -152,6 +154,7 @@ The replacement is literal: it splits on `old_string` and joins with `new_string
 - **[A file changes between an edit's read and its write]** A background process writing the same file loses its change. → Rare: it needs the agent's own background process writing the file it's editing. An exact-match edit also fails rather than guessing when the text moved. A conditional write would add a version check to every call for a case nothing hits yet.
 - **[A rename replaces the file's inode]** A hard link to the old file keeps the old content, and a program holding the old file open keeps reading it. → Editors that save atomically behave the same, and watchers handle it.
 - **[A runtime crash mid-write leaves a temporary file]** → It's named `.<name>.jen-<random>`, beside its target, so it's plain what it is. Nothing else is left half-done.
+- **[A read's snapshot uses `/tmp`]** A read copies up to 16 MiB into the workspace's 512 MiB `/tmp`, within its memory limit, for as long as the read takes. A `/tmp` the agent has filled makes the read fail with `No space left on device`. → The error says why, and the agent's own files caused it.
 - **[The runtime holds up to 16 MiB per call]** Ten agents reading at once can make it hold 160 MiB. → Bounded by `JEN_MAX_AGENTS` and the fixed cap.
 - **[Line endings]** A file with CRLF line endings won't match an `old_string` written with LF. → Rare in a Linux workspace, and the error says the match must be exact. Normalizing line endings would make writes no longer byte-exact.
 

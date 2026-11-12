@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: An agent reads and writes files in its own workspace through the runtime
-`GET /workspace/files?path=<path>` SHALL answer `200` with the file's exact bytes, and `PUT /workspace/files?path=<path>` with the bytes as its body SHALL write them as the file and answer `204`, in the caller's own workspace and no other. Each SHALL act as `agent` in the workspace container, with a relative path relative to `/home/agent` and a symlink followed, so it reaches exactly what a command can.
+`GET /workspace/files?path=<path>` SHALL answer `200` with the file's exact bytes, and `PUT /workspace/files?path=<path>` with the bytes as its body SHALL write them as the file and answer `204`, in the caller's own workspace and no other. Each SHALL act as `agent` in the workspace container, with a relative path relative to `/home/agent` and a symlink followed, so it reaches exactly what a command can, and a write SHALL be refused where a shell redirect would be.
 
 #### Scenario: Bytes round-trip
 - **WHEN** an agent with a workspace writes all 256 byte values to `data/bytes.bin` and reads it back
@@ -14,6 +14,14 @@
 #### Scenario: Outside what a command can write
 - **WHEN** an agent writes `/etc/jen-probe`, or through a symlink in its home that points at `/etc/passwd`
 - **THEN** it gets `400` with the workspace's reason, and nothing outside its home, `/tmp` and `/dev/shm` changes
+
+#### Scenario: A read-only file
+- **WHEN** an agent writes over a file with mode `444`
+- **THEN** it gets `400` saying permission is denied, and the file is unchanged
+
+#### Scenario: A pseudo-file
+- **WHEN** an agent reads `/proc/self/status`, whose size reads as 0
+- **THEN** it gets the file's content
 
 #### Scenario: jen isn't there
 - **WHEN** an agent reads `/state/agent.db`
@@ -85,6 +93,13 @@ An agent whose grant has `workspace` SHALL be offered `read_file`, `write_file` 
 #### Scenario: A range
 - **WHEN** the model reads with `offset` 10 and `limit` 5
 - **THEN** it gets lines 10 to 14, numbered 10 to 14
+
+### Requirement: read_file answers a missing file
+`read_file` on a path where there is no file SHALL return a result saying so, not an error.
+
+#### Scenario: Checking before creating
+- **WHEN** the model reads `notes/release.md` and there is no such file
+- **THEN** the result says there's no file at that path, and doesn't start with `Error:`
 
 ### Requirement: read_file doesn't print what isn't text
 `read_file` SHALL fail, giving the file's size, on a file holding a NUL byte or bytes that aren't valid UTF-8, saying to inspect it with `run_command`. On a file over 16 MiB it SHALL fail saying to search it with `run_command`.
