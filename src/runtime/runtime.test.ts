@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { DockerError } from "./docker.ts";
-import { FakeDocker } from "./fake-docker.ts";
-import { postMessage, Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
+import { FakeDocker, type FakeExec } from "./fake-docker.ts";
+import { postMessage, Runtime, RuntimeError, waitForConnection, type CommandResult, type RuntimeOptions } from "./runtime.ts";
 
 const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
 
@@ -18,7 +18,7 @@ async function setup(options: Partial<RuntimeOptions> = {}) {
     const c = [...docker.containers.values()].find((c) => url === `http://${c.name}:8080` && c.env.includes(`JEN_TOKEN=${token}`))!;
     sent.push({ to: c.labels["jen.agent"]!, text, wake: envOf(c.env, "JEN_WAKE") });
   };
-  const runtime = new Runtime({ docker, name: "jen", image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {}, send, ...options });
+  const runtime = new Runtime({ docker, name: "jen", image: "jen", workspaceImage: "jen-workspace", model, maxDepth: 3, maxAgents: 10, ready: async () => {}, send, ...options });
   await runtime.startup(self.id);
   // An agent as a caller, with its current token.
   const as = (id: string) => ({ id, credential: sha256(tokenOf(docker, id)) });
@@ -44,13 +44,13 @@ describe("spawn", () => {
   test("the owner spawns a running root agent with fixed settings", async () => {
     const { docker, runtime } = await setup();
     const agent = await runtime.spawn(null, { spawn: true });
-    expect(agent).toEqual({ id: expect.stringMatching(/^[0-9a-f]{12}$/), parent: null, grant: { spawn: true }, state: "running" });
+    expect(agent).toEqual({ id: expect.stringMatching(/^[0-9a-f]{12}$/), parent: null, grant: { spawn: true, workspace: false }, state: "running" });
 
     expect(docker.volumes.get(`jen-agent-${agent.id}`)!.labels).toEqual({
       "jen.runtime": "jen",
       "jen.agent": agent.id,
       "jen.parent": "",
-      "jen.grant": '{"spawn":true}',
+      "jen.grant": '{"spawn":true,"workspace":false}',
     });
     const c = container(docker, agent.id)!;
     const token = tokenOf(docker, agent.id);
@@ -66,12 +66,12 @@ describe("spawn", () => {
         "JEN_RUNTIME_URL=http://runtime:8080",
         `JEN_AGENT_ID=${agent.id}`,
         "JEN_PARENT=owner",
-        'JEN_GRANT={"spawn":true}',
+        'JEN_GRANT={"spawn":true,"workspace":false}',
       ],
       labels: { "jen.runtime": "jen", "jen.agent": agent.id, "jen.credential": sha256(token) },
       volume: { name: `jen-agent-${agent.id}`, path: "/state" },
       network: "jen",
-      maxRetries: 3,
+      restart: { maxRetries: 3 },
     });
   });
 
@@ -97,6 +97,22 @@ describe("spawn", () => {
     const before = [docker.volumes.size, docker.containers.size];
     await refused(runtime.spawn(as(root.id), { spawn: false }), 403);
     expect([docker.volumes.size, docker.containers.size]).toEqual(before);
+  });
+
+  test("a caller without workspace can't pass it on, and nothing is created", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true });
+    const before = [docker.volumes.size, docker.containers.size];
+    const error = await refused(runtime.spawn(as(root.id), { workspace: true }), 403);
+    expect(error.message).toBe("the grant exceeds the caller's: workspace");
+    expect([docker.volumes.size, docker.containers.size]).toEqual(before);
+  });
+
+  test("a caller with workspace passes it on, and a missing capability is false", async () => {
+    const { runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    expect(root.grant).toEqual({ spawn: true, workspace: true });
+    expect((await runtime.spawn(as(root.id), { workspace: true })).grant).toEqual({ spawn: false, workspace: true });
   });
 
   test("a spawn deeper than the maximum depth is refused", async () => {
@@ -151,7 +167,7 @@ describe("spawn", () => {
     vi.spyOn(docker, "removeVolume").mockRejectedValueOnce(new DockerError(500, "cannot remove"));
     const error = await refused(runtime.spawn(null, { spawn: false }), 500);
     expect(error.agent).toMatch(/^[0-9a-f]{12}$/);
-    expect(await runtime.list(null)).toEqual([{ id: error.agent, parent: null, grant: { spawn: false }, state: "stopped" }]);
+    expect(await runtime.list(null)).toEqual([{ id: error.agent, parent: null, grant: { spawn: false, workspace: false }, state: "stopped" }]);
   });
 
   test("a caller deleted while its spawn waited is refused", async () => {
@@ -376,7 +392,7 @@ describe("runtimes with different names", () => {
     const docker = new FakeDocker();
     const make = async (name: string) => {
       const self = docker.add({ name: `${name}-runtime` });
-      const runtime = new Runtime({ docker, name, image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {} });
+      const runtime = new Runtime({ docker, name, image: "jen", workspaceImage: "jen-workspace", model, maxDepth: 3, maxAgents: 10, ready: async () => {} });
       await runtime.startup(self.id);
       return runtime;
     };
@@ -395,7 +411,7 @@ describe("startup", () => {
   function engine() {
     const docker = new FakeDocker();
     const self = docker.add({ name: "eager_turing" });
-    const runtime = new Runtime({ docker, name: "jen", image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {} });
+    const runtime = new Runtime({ docker, name: "jen", image: "jen", workspaceImage: "jen-workspace", model, maxDepth: 3, maxAgents: 10, ready: async () => {} });
     return { docker, self, runtime };
   }
 
@@ -419,7 +435,7 @@ describe("startup", () => {
     await runtime.startup(self.id);
     const connect = vi.spyOn(docker, "connectNetwork");
     const rename = vi.spyOn(docker, "renameContainer");
-    await new Runtime({ docker, name: "jen", image: "jen", model, maxDepth: 3, maxAgents: 10, ready: async () => {} }).startup(self.id);
+    await new Runtime({ docker, name: "jen", image: "jen", workspaceImage: "jen-workspace", model, maxDepth: 3, maxAgents: 10, ready: async () => {} }).startup(self.id);
     expect(connect).not.toHaveBeenCalled();
     expect(rename).not.toHaveBeenCalled();
   });
@@ -484,6 +500,13 @@ describe("startup", () => {
       ["cccccccccccc", "stopped"],
       ["dddddddddddd", "stopped"],
     ]);
+  });
+
+  test("an agent stored before workspaces recovers without one", async () => {
+    const { docker, self, runtime } = engine();
+    agent(docker, "aaaaaaaaaaaa", null, "running");
+    await runtime.startup(self.id);
+    expect((await runtime.get(null, "aaaaaaaaaaaa")).grant).toEqual({ spawn: true, workspace: false });
   });
 
   test("removes a container whose agent has no volume", async () => {
@@ -577,7 +600,7 @@ describe("each agent is told who it is", () => {
     const env = container(docker, child.id)!.env;
     expect(envOf(env, "JEN_AGENT_ID")).toBe(child.id);
     expect(envOf(env, "JEN_PARENT")).toBe(root.id);
-    expect(envOf(env, "JEN_GRANT")).toBe('{"spawn":false}');
+    expect(envOf(env, "JEN_GRANT")).toBe('{"spawn":false,"workspace":false}');
     expect(envOf(env, "JEN_WAKE")).toBeUndefined();
   });
 
@@ -826,5 +849,494 @@ describe("a notice from the runtime can't hold the queue", () => {
     expect((await runtime.stop(null, root.id)).state).toBe("stopped");
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  });
+});
+
+describe("the workspace follows what's done to its agent", () => {
+  const ws = (id: string) => `jen-workspace-${id}`;
+  const agentName = (id: string) => `jen-agent-${id}`;
+  // Records each engine call that creates, starts or removes something, in order.
+  function record(docker: FakeDocker) {
+    const calls: string[] = [];
+    for (const method of ["createVolume", "createContainer", "startContainer", "removeContainer", "removeVolume"] as const) {
+      const original = (docker[method] as (...args: any[]) => Promise<unknown>).bind(docker);
+      vi.spyOn(docker, method).mockImplementation((async (...args: any[]) => {
+        calls.push(`${method} ${args[0]}`);
+        return original(...args);
+      }) as any);
+    }
+    return calls;
+  }
+
+  test("spawning creates the record, then the workspace volume, starts the workspace, then the agent", async () => {
+    const { docker, runtime } = await setup();
+    const calls = record(docker);
+    const agent = await runtime.spawn(null, { workspace: true });
+    const id = agent.id;
+    expect(calls).toEqual([
+      `createVolume ${agentName(id)}`,
+      `createVolume ${ws(id)}`,
+      `createContainer ${ws(id)}`,
+      `startContainer ${ws(id)}`,
+      `createContainer ${agentName(id)}`,
+      `startContainer ${agentName(id)}`,
+    ]);
+    expect(docker.volumes.get(ws(id))!.labels).toEqual({ "jen.runtime": "jen", "jen.workspace": id });
+    const c = docker.find(ws(id))!;
+    expect(c.state).toBe("running");
+    expect(c.labels).toEqual({ "jen.runtime": "jen", "jen.workspace": id });
+    expect(c.spec).toEqual({
+      image: "jen-workspace",
+      env: [],
+      labels: { "jen.runtime": "jen", "jen.workspace": id },
+      volume: { name: ws(id), path: "/home/agent" },
+      network: "none",
+      restart: "unless-stopped",
+      sandbox: { user: "agent", tmp: { path: "/tmp", bytes: 512 * 2 ** 20 }, shmBytes: 64 * 2 ** 20, memoryBytes: 2 * 2 ** 30, nanoCpus: 2e9, pids: 512 },
+    });
+    expect(envOf(container(docker, id)!.env, "JEN_GRANT")).toBe('{"spawn":false,"workspace":true}');
+  });
+
+  test("an agent without workspace touches no workspace object", async () => {
+    const { docker, runtime, as } = await setup();
+    const calls = record(docker);
+    const root = await runtime.spawn(null, { spawn: true });
+    await runtime.spawn(as(root.id), { spawn: false });
+    await runtime.stop(null, root.id);
+    await runtime.start(null, root.id);
+    await runtime.delete(null, root.id);
+    expect(calls.some((c) => c.includes("workspace"))).toBe(false);
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  test("starting starts the workspace first, and stopping removes the agent, then its workspace, deepest first", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const child = await runtime.spawn(as(root.id), { workspace: true });
+    const calls = record(docker);
+    await runtime.stop(null, root.id);
+    expect(calls.splice(0)).toEqual([
+      `removeContainer ${agentName(child.id)}`,
+      `removeContainer ${ws(child.id)}`,
+      `removeContainer ${agentName(root.id)}`,
+      `removeContainer ${ws(root.id)}`,
+    ]);
+    expect(docker.volumes.has(ws(root.id)) && docker.volumes.has(ws(child.id))).toBe(true);
+    await runtime.start(null, root.id);
+    expect(calls.splice(0)).toEqual([
+      `removeContainer ${agentName(root.id)}`,
+      `removeContainer ${ws(root.id)}`,
+      `createContainer ${ws(root.id)}`,
+      `startContainer ${ws(root.id)}`,
+      `createContainer ${agentName(root.id)}`,
+      `startContainer ${agentName(root.id)}`,
+    ]);
+    expect(docker.find(ws(root.id))!.spec!.volume.name).toBe(ws(root.id));
+    expect(docker.find(ws(child.id))).toBeUndefined();
+  });
+
+  test("deleting removes both containers, then the workspace volume, then the record", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { workspace: true });
+    const calls = record(docker);
+    await runtime.delete(null, root.id);
+    expect(calls).toEqual([`removeContainer ${agentName(root.id)}`, `removeContainer ${ws(root.id)}`, `removeVolume ${ws(root.id)}`, `removeVolume ${agentName(root.id)}`]);
+    expect(docker.volumes.size).toBe(0);
+    expect(docker.containers.size).toBe(1);
+  });
+
+  test("an interrupted delete still finds the agent by its record, and repeating it finishes", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { workspace: true });
+    vi.spyOn(docker, "removeVolume").mockRejectedValueOnce(new DockerError(500, "interrupted"));
+    await expect(runtime.delete(null, root.id)).rejects.toThrow("interrupted");
+    expect((await runtime.list(null)).map((a) => a.id)).toEqual([root.id]);
+    await runtime.delete(null, root.id);
+    expect(docker.volumes.size).toBe(0);
+  });
+
+  test.each([
+    ["creating the workspace volume", "createVolume"],
+    ["creating the workspace container", "createContainer"],
+    ["starting the workspace container", "startContainer"],
+  ] as const)("a spawn that fails %s leaves no container, volume or list entry", async (_step, method) => {
+    const { docker, runtime } = await setup();
+    const original = (docker[method] as (...args: any[]) => Promise<unknown>).bind(docker);
+    vi.spyOn(docker, method).mockImplementation((async (...args: any[]) => {
+      if (String(args[0]).includes("workspace")) throw new DockerError(500, "cannot");
+      return original(...args);
+    }) as any);
+    await refused(runtime.spawn(null, { workspace: true }), 500);
+    expect(await runtime.list(null)).toEqual([]);
+    expect(docker.volumes.size).toBe(0);
+    expect(docker.containers.size).toBe(1);
+  });
+
+  test("a spawn whose workspace start is lost, or whose agent fails after the workspace started, leaves nothing", async () => {
+    for (const fail of ["workspace", "agent"]) {
+      const { docker, runtime } = await setup();
+      const start = docker.startContainer.bind(docker);
+      vi.spyOn(docker, "startContainer").mockImplementation(async (name) => {
+        await start(name);
+        if (name.includes(fail)) throw new Error("socket hang up");
+      });
+      await refused(runtime.spawn(null, { workspace: true }), 500);
+      expect(await runtime.list(null)).toEqual([]);
+      expect(docker.volumes.size).toBe(0);
+      expect(docker.containers.size).toBe(1);
+    }
+  });
+
+  test("a start whose workspace fails leaves the agent stopped, with no workspace running", async () => {
+    const { docker, runtime } = await setup();
+    const root = await runtime.spawn(null, { workspace: true });
+    await runtime.stop(null, root.id);
+    vi.spyOn(docker, "startContainer").mockRejectedValueOnce(new DockerError(500, "cannot start"));
+    await refused(runtime.start(null, root.id), 500);
+    expect(docker.find(ws(root.id))).toBeUndefined();
+    expect(docker.find(agentName(root.id))).toBeUndefined();
+    expect(docker.volumes.has(ws(root.id))).toBe(true);
+    expect((await runtime.get(null, root.id)).state).toBe("stopped");
+  });
+
+  test("an exhausted root and an exhausted child each lose their workspace container and keep its volume", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const child = await runtime.spawn(as(root.id), { workspace: true });
+    docker.exit(agentName(root.id), { restart: false });
+    await vi.waitFor(() => expect(docker.find(ws(root.id))).toBeUndefined());
+    expect(sent).toEqual([]);
+    // The root is started again for the report, with a workspace.
+    docker.exit(agentName(child.id), { restart: false });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    expect(docker.find(ws(child.id))).toBeUndefined();
+    expect(docker.find(ws(root.id))!.state).toBe("running");
+    expect(docker.volumes.has(ws(root.id)) && docker.volumes.has(ws(child.id))).toBe(true);
+  });
+
+  test("a crash the engine restarts leaves the agent's workspace running", async () => {
+    const { docker, runtime, as } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const child = await runtime.spawn(as(root.id), { workspace: true });
+    const before = [root.id, child.id].map((id) => docker.find(ws(id))!.id);
+    docker.exit(agentName(root.id), { restart: true });
+    docker.exit(agentName(child.id), { restart: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect([root.id, child.id].map((id) => docker.find(ws(id))?.id)).toEqual(before);
+    expect([root.id, child.id].map((id) => docker.find(ws(id))!.state)).toEqual(["running", "running"]);
+  });
+
+  test("a workspace container's exit sends nothing and changes no state", async () => {
+    const { docker, runtime, as, sent } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const child = await runtime.spawn(as(root.id), { workspace: true });
+    docker.exit(ws(child.id), { restart: false });
+    docker.exit(ws(child.id), { restart: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toEqual([]);
+    expect((await runtime.get(null, child.id)).state).toBe("running");
+    expect((await runtime.get(null, root.id)).state).toBe("running");
+  });
+
+  test("startup removes workspaces left behind, and keeps a running agent's", async () => {
+    const docker = new FakeDocker();
+    const self = docker.add({ name: "eager_turing" });
+    const runtime = new Runtime({ docker, name: "jen", image: "jen", workspaceImage: "jen-workspace", model, maxDepth: 3, maxAgents: 10, ready: async () => {} });
+    const labels = (id: string) => ({ "jen.runtime": "jen", "jen.workspace": id });
+    const agentVolume = (id: string) =>
+      docker.volumes.set(agentName(id), { name: agentName(id), labels: { "jen.runtime": "jen", "jen.agent": id, "jen.parent": "", "jen.grant": '{"spawn":false,"workspace":true}' } });
+    const workspace = (id: string, state = "running") => {
+      docker.volumes.set(ws(id), { name: ws(id), labels: labels(id) });
+      return docker.add({ name: ws(id), state, labels: labels(id), volume: ws(id) });
+    };
+    // Running, with its workspace.
+    agentVolume("aaaaaaaaaaaa");
+    docker.add({ name: agentName("aaaaaaaaaaaa"), labels: { "jen.runtime": "jen", "jen.agent": "aaaaaaaaaaaa", "jen.credential": "x" }, volume: agentName("aaaaaaaaaaaa") });
+    const kept = workspace("aaaaaaaaaaaa");
+    // Stopped, with its workspace container left running.
+    agentVolume("bbbbbbbbbbbb");
+    const stopped = workspace("bbbbbbbbbbbb");
+    // Gone, with its workspace volume and container left.
+    const orphan = workspace("cccccccccccc", "exited");
+    await runtime.startup(self.id);
+    expect(docker.containers.has(kept.id)).toBe(true);
+    expect(docker.volumes.has(ws("aaaaaaaaaaaa"))).toBe(true);
+    expect(docker.containers.has(stopped.id)).toBe(false);
+    expect(docker.volumes.has(ws("bbbbbbbbbbbb"))).toBe(true);
+    expect(docker.containers.has(orphan.id)).toBe(false);
+    expect(docker.volumes.has(ws("cccccccccccc"))).toBe(false);
+    expect((await runtime.list(null)).map((a) => [a.id, a.state])).toEqual([
+      ["aaaaaaaaaaaa", "running"],
+      ["bbbbbbbbbbbb", "stopped"],
+    ]);
+  });
+});
+
+describe("running a command", () => {
+  // A runtime with a root agent that has a workspace. Each command exec is
+  // driven by run, and each kill is recorded by what it kills.
+  async function workspace() {
+    const s = await setup();
+    const agent = await s.runtime.spawn(null, { workspace: true });
+    const kills: string[][] = [];
+    const script = { run: (exec: FakeExec) => exec.end() };
+    s.docker.onExec = (exec) => {
+      if (exec.spec.cmd[0] === "kill") {
+        kills.push(exec.spec.cmd.slice(3));
+        return exec.end();
+      }
+      script.run(exec);
+    };
+    const commands = () => s.docker.execs.filter((e) => e.spec.cmd[0] === "bash");
+    return { ...s, agent, caller: s.as(agent.id), kills, script, commands };
+  }
+  const never = new AbortController().signal;
+  // The wrapper's first line, as the wrapper with PID 7 prints it for a
+  // command in process group 15.
+  const head = (exec: FakeExec) => exec.write("7 15\n");
+  const report = (exec: FakeExec, exitCode: number, output: string | Buffer, size = Buffer.byteLength(output)) => {
+    exec.write(`${exitCode} ${size}\n`);
+    exec.write(output);
+  };
+
+  test("the command is the wrapper's argument, never spliced into it, and runs as agent in its home", async () => {
+    const { runtime, caller, script, commands } = await workspace();
+    script.run = (exec) => (head(exec), report(exec, 0, ""));
+    const command = `echo "$HOME" '; rm -rf ~' \\ $(id)`;
+    await runtime.runCommand(caller, command, 120, never);
+    const [exec] = commands();
+    expect(exec!.container).toMatch(/^jen-workspace-[0-9a-f]{12}$/);
+    expect(exec!.spec).toEqual({ user: "agent", workdir: "/home/agent", cmd: ["bash", "-c", expect.any(String), "jen", command, expect.stringMatching(/^\/home\/agent\/\.jen\/output\/[0-9a-f]{16}\.log$/)] });
+    expect(exec!.spec.cmd[2]).not.toContain(command);
+    expect(exec!.spec.cmd[2]).toContain('exec bash -c "$1"');
+  });
+
+  test("answers with the exit code and output once the report parses, then closes the stream", async () => {
+    const { runtime, caller, script, kills, commands } = await workspace();
+    // The stream stays open, as when a background process holds it.
+    script.run = (exec) => (head(exec), report(exec, 3, "hi\nerr\n"), exec.write("more from the background"));
+    expect(await runtime.runCommand(caller, "echo hi; echo err >&2; exit 3", 120, never)).toEqual({ exitCode: 3, output: "hi\nerr\n", timedOut: false });
+    expect(commands()[0]!.stopped).toBe("aborted");
+    expect(kills).toEqual([]);
+  });
+
+  test("a report that arrives in pieces is read whole", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => {
+      for (const piece of ["7", " 1", "5\n0 ", "1", "1\nhello", " world"]) setTimeout(() => exec.write(piece), 1);
+    };
+    expect(await runtime.runCommand(caller, "echo hello world", 120, never)).toEqual({ exitCode: 0, output: "hello world", timedOut: false });
+  });
+
+  test("long output comes back as its start and end, with the size and the file that holds it", async () => {
+    const { runtime, caller, script, commands } = await workspace();
+    script.run = (exec) => (head(exec), report(exec, 0, "a".repeat(2048) + "b".repeat(6144), 100_000));
+    const result = await runtime.runCommand(caller, "seq 100000", 120, never);
+    expect(result).toEqual({ exitCode: 0, output: "a".repeat(2048) + "b".repeat(6144), timedOut: false, cut: { bytes: 100_000, file: commands()[0]!.spec.cmd[5] } });
+  });
+
+  test("a character split by the cut decodes as a replacement character", async () => {
+    const { runtime, caller, script } = await workspace();
+    const start = Buffer.concat([Buffer.alloc(2047, "a"), Buffer.from("é").subarray(0, 1)]);
+    script.run = (exec) => (head(exec), report(exec, 0, Buffer.concat([start, Buffer.alloc(6144, "b")]), 9000));
+    expect((await runtime.runCommand(caller, "x", 120, never)).output).toBe("a".repeat(2047) + "\ufffd" + "b".repeat(6144));
+  });
+
+  test("a report forged after the first line is answered as given, and kills nothing", async () => {
+    const { runtime, caller, script, kills } = await workspace();
+    script.run = (exec) => (head(exec), report(exec, 0, "all good"));
+    expect(await runtime.runCommand(caller, "printf '0 8\\nall good' > /proc/$PPID/fd/1; sleep 100", 120, never)).toEqual({ exitCode: 0, output: "all good", timedOut: false });
+    expect(kills).toEqual([]);
+  });
+
+  test("a malformed report gets 502 and kills the command's group", async () => {
+    const { runtime, caller, script, kills } = await workspace();
+    script.run = (exec) => (head(exec), exec.write("garbage\n"));
+    const error = await refused(runtime.runCommand(caller, "x", 120, never), 502);
+    expect(error.message).toContain("wrote around its output file");
+    expect(kills).toEqual([["-15"]]);
+  });
+
+  test("a flood written around the output file closes the stream, kills the group, and gets 502 at once", async () => {
+    for (const flood of ["1 " + "9".repeat(20_000), "x".repeat(1 << 20)]) {
+      const { runtime, caller, script, kills, commands } = await workspace();
+      script.run = (exec) => (head(exec), exec.write(flood));
+      await refused(runtime.runCommand(caller, "x", 120, never), 502);
+      expect(commands()[0]!.stopped).toBeDefined();
+      expect(kills).toEqual([["-15"]]);
+    }
+  });
+
+  test("the runtime reads no more than its bound, whatever the stream holds", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    const exec = vi.spyOn(docker, "exec");
+    script.run = (e) => head(e);
+    const abort = new AbortController();
+    const running = runtime.runCommand(caller, "x", 120, abort.signal).catch(() => {});
+    await vi.waitFor(() => expect(exec).toHaveBeenCalled());
+    expect(exec.mock.calls[0]![2].bound).toBe(16 * 1024);
+    abort.abort();
+    await running;
+  });
+
+  test("a stream that ends without a report gets 502 while the workspace runs, and 409 once it's gone", async () => {
+    const { docker, runtime, caller, script, agent, kills } = await workspace();
+    script.run = (exec) => (head(exec), exec.end());
+    await refused(runtime.runCommand(caller, "x", 120, never), 502);
+    expect(kills).toEqual([["-15"]]);
+    script.run = (exec) => head(exec);
+    const running = runtime.runCommand(caller, "sleep 100", 120, never);
+    await vi.waitFor(() => expect(docker.execs.filter((e) => e.spec.cmd[0] === "bash")).toHaveLength(2));
+    await runtime.stop(null, agent.id);
+    const error = await refused(running, 409);
+    expect(error.message).toBe("the workspace stopped during the command");
+  });
+
+  test("a workspace that restarts during the command gets 409", async () => {
+    const { docker, runtime, caller, script, agent } = await workspace();
+    script.run = (exec) => head(exec);
+    const running = runtime.runCommand(caller, "sleep 100", 120, never);
+    await vi.waitFor(() => expect(docker.execs.some((e) => e.spec.cmd[0] === "bash")).toBe(true));
+    docker.exit(`jen-workspace-${agent.id}`, { restart: true });
+    docker.restarted(`jen-workspace-${agent.id}`);
+    await refused(running, 409);
+  });
+
+  test("a stopped agent's workspace isn't reachable, and a running agent's missing workspace gets 409", async () => {
+    const { docker, runtime, caller, agent } = await workspace();
+    await docker.removeContainer(`jen-workspace-${agent.id}`);
+    await refused(runtime.runCommand(caller, "x", 120, never), 409);
+    await runtime.stop(null, agent.id);
+    await refused(runtime.runCommand(caller, "x", 120, never), 401);
+  });
+
+  test("the owner gets 404, an agent without workspace 403, and a timeout out of range 400, and nothing runs", async () => {
+    const { docker, runtime, caller } = await workspace();
+    const plain = await runtime.spawn(null, { spawn: true });
+    const as = (id: string) => ({ id, credential: sha256(tokenOf(docker, id)) });
+    await refused(runtime.runCommand(null, "x", 120, never), 404);
+    await refused(runtime.runCommand(as(plain.id), "x", 120, never), 403);
+    await refused(runtime.runCommand(caller, "x", 601, never), 400);
+    await refused(runtime.runCommand(caller, "x", 0, never), 400);
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("a command doesn't hold the tree queue", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => head(exec);
+    const abort = new AbortController();
+    const running = runtime.runCommand(caller, "sleep 100", 120, abort.signal).catch((e) => e);
+    expect((await runtime.spawn(null, { spawn: false })).state).toBe("running");
+    abort.abort();
+    await running;
+  });
+
+  test("a caller that hangs up kills the command's group", async () => {
+    const { runtime, caller, script, kills } = await workspace();
+    script.run = (exec) => head(exec);
+    const abort = new AbortController();
+    const running = runtime.runCommand(caller, "sleep 100", 120, abort.signal);
+    await vi.waitFor(() => expect(kills).toEqual([]));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    abort.abort();
+    await refused(running, 499);
+    expect(kills).toEqual([["-15"]]);
+  });
+
+  test("a caller that hangs up before the first line kills the group once the line comes", async () => {
+    const { runtime, caller, script, kills } = await workspace();
+    let started!: FakeExec;
+    script.run = (exec) => (started = exec);
+    const abort = new AbortController();
+    const running = runtime.runCommand(caller, "sleep 100", 120, abort.signal);
+    await vi.waitFor(() => expect(started).toBeDefined());
+    abort.abort();
+    head(started);
+    await refused(running, 499);
+    expect(kills).toEqual([["-15"]]);
+  });
+
+  describe("the deadline", () => {
+    afterEach(() => vi.useRealTimers());
+
+    test("at the timeout the group is killed, and the report that follows is answered as timed out", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script, kills } = await workspace();
+      let command!: FakeExec;
+      script.run = (exec) => ((command = exec), head(exec));
+      let result: CommandResult | undefined;
+      void runtime.runCommand(caller, "sleep 100", 2, never).then((r) => (result = r));
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(kills).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(kills).toEqual([["-15"]]);
+      report(command, 137, "partial");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(result).toEqual({ exitCode: null, output: "partial", timedOut: true });
+    });
+
+    test("a first line that comes after the timeout gets its group killed, during the grace or after the answer", async () => {
+      for (const late of [1_000, 6_000]) {
+        vi.useFakeTimers();
+        const { runtime, caller, script, kills } = await workspace();
+        let command!: FakeExec;
+        script.run = (exec) => (command = exec);
+        let result: CommandResult | undefined;
+        void runtime.runCommand(caller, "sleep 100", 1, never).then((r) => (result = r));
+        await vi.advanceTimersByTimeAsync(late);
+        head(command);
+        await vi.advanceTimersByTimeAsync(6_000 - late);
+        expect(result).toEqual({ exitCode: null, output: "", timedOut: true });
+        expect(kills[0]).toEqual(late < 6_000 ? ["-15"] : ["-15", "7"]);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(command.stopped).toBe("aborted");
+        vi.useRealTimers();
+      }
+    });
+
+    test("a first line that comes after a hang-up's grace still gets its group killed", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script, kills } = await workspace();
+      let command!: FakeExec;
+      script.run = (exec) => (command = exec);
+      const abort = new AbortController();
+      const running = runtime.runCommand(caller, "sleep 100", 120, abort.signal).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(10);
+      abort.abort();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((await running).status).toBe(499);
+      head(command);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(kills).toEqual([["-15", "7"]]);
+    });
+
+    test("a first line that never comes stops being awaited after a second grace", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script } = await workspace();
+      let command!: FakeExec;
+      script.run = (exec) => (command = exec);
+      void runtime.runCommand(caller, "sleep 100", 1, never);
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(command.stopped).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(command.stopped).toBe("aborted");
+    });
+
+    test("a stream that never ends with a wrapper that never reports is answered by its timeout plus 5 seconds", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script, kills, commands } = await workspace();
+      script.run = (exec) => head(exec);
+      let result: CommandResult | undefined;
+      void runtime.runCommand(caller, "kill -STOP $PPID; sleep 100", 1, never).then((r) => (result = r));
+      await vi.advanceTimersByTimeAsync(5_999);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(result).toEqual({ exitCode: null, output: "", timedOut: true });
+      expect(kills).toEqual([["-15"], ["7"]]);
+      expect(commands()[0]!.stopped).toBe("aborted");
+    });
   });
 });

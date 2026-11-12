@@ -33,6 +33,8 @@ export interface Container {
 }
 
 export interface ContainerDetails extends Container {
+  // When its process last started, which changes when the engine restarts it.
+  startedAt: string;
   env: string[];
   // The networks the container is attached to, by name.
   networks: string[];
@@ -44,10 +46,47 @@ export interface ContainerSpec {
   labels: Record<string, string>;
   // Mounted at its path inside the container.
   volume: { name: string; path: string };
+  // A network's name, or "none" for loopback alone.
   network: string;
-  // The on-failure restart policy's maximum retry count.
-  maxRetries: number;
+  // Restart on failure at most maxRetries times, or "unless-stopped" to
+  // restart whenever the process exits, until the container is removed.
+  restart: { maxRetries: number } | "unless-stopped";
+  // When set, the container runs unprivileged and bounded.
+  sandbox?: Sandbox;
 }
+
+// A container that runs as user with every capability dropped,
+// no-new-privileges, an IPC namespace of its own, Docker's init as its first
+// process, and a root filesystem it can't write. It can write only to its
+// volume, a tmpfs at tmp.path that programs may be run from, and /dev/shm.
+export interface Sandbox {
+  user: string;
+  tmp: { path: string; bytes: number };
+  shmBytes: number;
+  memoryBytes: number;
+  nanoCpus: number;
+  pids: number;
+}
+
+// A command to run in a running container, with stdin closed.
+export interface ExecSpec {
+  user: string;
+  workdir: string;
+  cmd: string[];
+}
+
+// How to read an exec's output. bound counts every byte of the stream,
+// frame headers included, and onOutput gets what the command wrote to stdout
+// as it arrives. Its stderr isn't read.
+export interface ExecRead {
+  bound: number;
+  signal: AbortSignal;
+  onOutput(chunk: Buffer): void;
+}
+
+// Why reading an exec stopped: its stream ended or broke, more than the
+// bound arrived, or the signal aborted. The stream is closed in every case.
+export type ExecEnd = "ended" | "bound" | "aborted";
 
 // Every method acts on one engine. Labels filter with "key=value", or "key"
 // for any value, and a list must match every filter.
@@ -73,6 +112,11 @@ export interface Docker {
   // Undefined when the network doesn't exist.
   inspectNetwork(name: string): Promise<{ name: string } | undefined>;
   connectNetwork(network: string, container: string, aliases: string[]): Promise<void>;
+
+  // Runs a command in a running container and reads its output until the
+  // stream ends, the bound is passed or the signal aborts. Throws a
+  // DockerError: 409 when the container isn't running, 404 when it's gone.
+  exec(container: string, spec: ExecSpec, read: ExecRead): Promise<ExecEnd>;
 
   // Calls onExit with the ID of each container matching labels whose process
   // exits, until the returned function is called. A broken watch reconnects.
@@ -137,10 +181,12 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
         Image: spec.image,
         Env: spec.env,
         Labels: spec.labels,
+        ...(spec.sandbox ? { User: spec.sandbox.user } : {}),
         HostConfig: {
           Mounts: [{ Type: "volume", Source: spec.volume.name, Target: spec.volume.path }],
           NetworkMode: spec.network,
-          RestartPolicy: { Name: "on-failure", MaximumRetryCount: spec.maxRetries },
+          RestartPolicy: spec.restart === "unless-stopped" ? { Name: "unless-stopped" } : { Name: "on-failure", MaximumRetryCount: spec.restart.maxRetries },
+          ...(spec.sandbox ? sandboxed(spec.sandbox) : {}),
         },
       });
       return body.Id;
@@ -164,6 +210,7 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
         id: c.Id,
         name: (c.Name ?? "").replace(/^\//, ""),
         state: c.State?.Status ?? "",
+        startedAt: c.State?.StartedAt ?? "",
         labels: c.Config?.Labels ?? {},
         env: c.Config?.Env ?? [],
         networks: Object.keys(c.NetworkSettings?.Networks ?? {}),
@@ -185,6 +232,72 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
     },
     async connectNetwork(network, container, aliases) {
       await call("POST", `/networks/${id(network)}/connect`, { Container: container, EndpointConfig: { Aliases: aliases } });
+    },
+
+    async exec(container, spec, read) {
+      const created = await call("POST", `/containers/${id(container)}/exec`, {
+        AttachStdin: false,
+        AttachStdout: true,
+        AttachStderr: false,
+        Tty: false,
+        User: spec.user,
+        WorkingDir: spec.workdir,
+        Cmd: spec.cmd,
+      });
+      const payload = JSON.stringify({ Detach: false, Tty: false });
+      return new Promise<ExecEnd>((resolve, reject) => {
+        let finished = false;
+        // A hijacked stream belongs to one exec, so it gets a connection of its own.
+        const req = http.request({
+          socketPath,
+          agent: false,
+          method: "POST",
+          path: `/${VERSION}/exec/${id(created.Id)}/start`,
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+        });
+        const finish = (end: ExecEnd) => {
+          if (finished) return;
+          finished = true;
+          read.signal.removeEventListener("abort", aborted);
+          req.destroy();
+          resolve(end);
+        };
+        const aborted = () => finish("aborted");
+        if (read.signal.aborted) return finish("aborted");
+        read.signal.addEventListener("abort", aborted, { once: true });
+        req.on("response", (res) => {
+          if ((res.statusCode ?? 0) >= 400) {
+            const chunks: Buffer[] = [];
+            res.on("data", (chunk: Buffer) => chunks.push(chunk));
+            res.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              finished = true;
+              read.signal.removeEventListener("abort", aborted);
+              reject(new DockerError(res.statusCode ?? 0, parse(text)?.message ?? `the engine answered ${res.statusCode}`));
+            });
+            return;
+          }
+          const frames = frameDecoder(read.onOutput);
+          let size = 0;
+          res.on("data", (chunk: Buffer) => {
+            if (finished) return;
+            const room = read.bound - size;
+            size += chunk.length;
+            frames(chunk.length > room ? chunk.subarray(0, room) : chunk);
+            if (size > read.bound) finish("bound");
+          });
+          res.on("end", () => finish("ended"));
+          res.on("error", () => finish("ended"));
+          res.on("close", () => finish("ended"));
+        });
+        req.on("error", (error) => {
+          if (finished) return;
+          finished = true;
+          read.signal.removeEventListener("abort", aborted);
+          reject(error);
+        });
+        req.end(payload);
+      });
     },
 
     watchExits(labels, onExit) {
@@ -226,6 +339,39 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
         req?.destroy();
       };
     },
+  };
+}
+
+// The engine's settings for a sandbox. Docker mounts a tmpfs noexec unless
+// told otherwise, which would break tools that build and run helpers in /tmp.
+function sandboxed(sandbox: Sandbox) {
+  return {
+    Tmpfs: { [sandbox.tmp.path]: `rw,exec,nosuid,nodev,size=${sandbox.tmp.bytes}` },
+    ShmSize: sandbox.shmBytes,
+    IpcMode: "private",
+    CapDrop: ["ALL"],
+    SecurityOpt: ["no-new-privileges"],
+    ReadonlyRootfs: true,
+    Init: true,
+    PidsLimit: sandbox.pids,
+    Memory: sandbox.memoryBytes,
+    NanoCpus: sandbox.nanoCpus,
+  };
+}
+
+// Splits an exec's multiplexed stream into its frames, each an 8-byte header
+// (the stream, then the payload's length) and a payload, and passes stdout's
+// payloads to onOutput. A frame may arrive across chunks.
+function frameDecoder(onOutput: (chunk: Buffer) => void): (chunk: Buffer) => void {
+  let pending: Buffer = Buffer.alloc(0);
+  return (chunk) => {
+    pending = pending.length === 0 ? chunk : Buffer.concat([pending, chunk]);
+    while (pending.length >= 8) {
+      const length = pending.readUInt32BE(4);
+      if (pending.length < 8 + length) return;
+      if (pending[0] === 1) onOutput(pending.subarray(8, 8 + length));
+      pending = pending.subarray(8 + length);
+    }
   };
 }
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="describes" content="src/agent src/runtime Dockerfile">
-<meta name="checked" content="2026-11-09">
+<meta name="checked" content="2026-11-12">
 <title>jen Agent Components</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -55,12 +55,12 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 <main>
   <header>
     <h1>jen Agent Components</h1>
-    <p class="lede">The runtime and the agents it runs, as of JEN-12 (<code>add-replies-and-wait</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime.</p>
+    <p class="lede">The runtime and the agents it runs, as of JEN-20 (<code>add-agent-workspace</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime. An agent with the <code>workspace</code> grant also has a workspace: a container of its own with no network, where the runtime runs the agent's commands by exec.</p>
   </header>
 
   <figure>
     <div class="scroll">
-      <svg viewBox="0 0 1280 900" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter to the model provider. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same.">
+      <svg viewBox="0 0 1280 1060" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter to the model provider. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools and run_command call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same. For an agent with the workspace grant, the engine also runs a workspace container with no network and a home volume of its own, where the runtime runs the agent's commands by exec.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -68,7 +68,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         </defs>
 
         <!-- Docker host -->
-        <rect class="ghost" x="170" y="20" width="940" height="860" rx="12"/>
+        <rect class="ghost" x="170" y="20" width="940" height="1020" rx="12"/>
         <text class="hl" x="190" y="46">Docker host</text>
         <text class="zs" x="290" y="46">one engine · network jen</text>
 
@@ -101,7 +101,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <rect class="box" x="215" y="435" width="240" height="85" rx="6"/>
         <text class="t" x="335" y="465">Engine client</text>
         <text class="f" x="335" y="483">docker.ts</text>
-        <text class="d" x="335" y="502">Engine API over the socket</text>
+        <text class="d" x="335" y="502">Engine API · exec for commands</text>
 
         <!-- API <-> tree -->
         <line class="edge" x1="290" y1="225" x2="290" y2="283" marker-end="url(#arrow)"/>
@@ -217,9 +217,9 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
         <!-- tools -->
         <rect class="box" x="555" y="520" width="200" height="90" rx="6"/>
-        <text class="t" x="655" y="552">Delegation tools</text>
-        <text class="f" x="655" y="570">delegation.ts</text>
-        <text class="d" x="655" y="589">message_sub_agent · spawn_agent …</text>
+        <text class="t" x="655" y="552">Tools, by grant</text>
+        <text class="f" x="655" y="570">delegation.ts · workspace.ts</text>
+        <text class="d" x="655" y="589">spawn_agent … · run_command</text>
 
         <path class="edge" d="M845,435 H800 V555 H757" marker-end="url(#arrow)"/>
         <text class="lbl" x="792" y="500" text-anchor="end">runs</text>
@@ -267,9 +267,28 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <line class="edge" x1="555" y1="565" x2="500" y2="565"/>
         <circle cx="500" cy="565" r="3" fill="currentColor"/>
         <text class="lbl" x="494" y="380" text-anchor="middle" transform="rotate(-90 494 380)">runtime API · own token</text>
+
+        <!-- ============ WORKSPACE ============ -->
+        <rect class="zone" x="530" y="860" width="560" height="150" rx="10"/>
+        <text class="zl" x="550" y="888">workspace</text>
+        <text class="zs" x="550" y="906">jen-workspace · network none · no state, socket or JEN_*</text>
+
+        <rect class="box" x="555" y="922" width="240" height="72" rx="6"/>
+        <text class="t" x="675" y="946">Commands</text>
+        <text class="f" x="675" y="964">bash as agent · own process group</text>
+        <text class="d" x="675" y="982">output to a file · cut past 8 KB</text>
+
+        <rect class="box" x="825" y="922" width="240" height="72" rx="6"/>
+        <text class="t" x="945" y="946">Home volume</text>
+        <text class="f" x="945" y="964">jen-workspace-&lt;id&gt; · /home/agent</text>
+        <text class="d" x="945" y="982">kept on stop · gone on delete</text>
+
+        <!-- the engine runs it, and the runtime's commands reach it only by exec -->
+        <path class="edge" d="M215,672 H198 V940 H528" marker-end="url(#arrow)"/>
+        <text class="lbl" x="360" y="933" text-anchor="middle">runs · exec, for the runtime</text>
       </svg>
     </div>
-    <figcaption>Blue outlines are containers; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type.</figcaption>
+    <figcaption>Blue outlines are containers; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type. A workspace has no network, so the only way into it is the runtime's exec: an agent's <code>run_command</code> asks the runtime, which runs the command in the caller's own workspace and no other.</figcaption>
   </figure>
 
   <div class="cols">
@@ -281,7 +300,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <li>The agent's server inserts the message into the inbox and answers <code>202</code>. Acknowledged means saved. It wakes the loop, or aborts the step in flight if the message is urgent.</li>
         <li>The loop settles any outstanding tool calls, delivers the inbox into the conversation in one transaction, and calls the model with its instructions.</li>
         <li>The response is saved at once, and every saved item streams out on <code>GET /events</code> through the runtime's relay.</li>
-        <li>Its tool calls are settled next step: <code>message_sub_agent</code>, <code>spawn_agent</code> and the rest call the runtime. A <code>wait</code> runs last, and the loop answers it from the inbox once a message arrives or no sub-agent owes a reply; until then the loop stops with the call open.</li>
+        <li>Its tool calls are settled next step: <code>message_sub_agent</code>, <code>spawn_agent</code> and the rest call the runtime, and <code>run_command</code> posts to <code>/workspace/commands</code>, which runs the command in the agent's workspace. A <code>wait</code> runs last, and the loop answers it from the inbox once a message arrives or no sub-agent owes a reply; until then the loop stops with the call open.</li>
         <li>A response with no tool calls ends the turn, and its text is the reply. A sub-agent's goes into its outbox in the same transaction and is posted to its parent through the runtime. A root's is the assistant message on its stream, where the owner reads it.</li>
         <li>With no calls left and an empty inbox, the loop ends. A sub-agent's reply wakes it again.</li>
       </ol>
@@ -293,7 +312,8 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <li><strong>Woken by a message:</strong> the runtime starts the agent with <code>JEN_WAKE</code>, which holds the loop until its first message is saved, so recovery never calls the model without it.</li>
         <li><strong>Model failing:</strong> retried after 1, 5 and 25 s, each failure an <code>error</code> event. Then the agent puts a notice in its outbox for its parent (a root shows it on its stream) and waits; any message retries.</li>
         <li><strong>Runtime notices:</strong> the runtime sends as <code>runtime</code> only what it alone saw: a child whose restarts ran out, or sub-agents still stopped when an agent starts.</li>
-        <li><strong>Stop and delete:</strong> both act on the whole subtree. Stop keeps the volume; delete removes it.</li>
+        <li><strong>Stop and delete:</strong> both act on the whole subtree. Stop removes the agent's container and then its workspace's, ending every process in it, and keeps both volumes; delete removes them too.</li>
+        <li><strong>Workspace:</strong> a crash of the agent's process leaves its workspace running. A workspace whose first process dies comes back with its files. When an agent's restarts run out, its workspace container is removed.</li>
       </ul>
     </section>
   </div>

@@ -4,7 +4,7 @@
 import { openStore } from "./store.ts";
 import { OpenAIResponsesModel } from "./model/openai-responses.ts";
 import { Agent } from "./loop.ts";
-import { delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, type Identity } from "./delegation.ts";
+import { instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, type Identity } from "./delegation.ts";
 import { createServer } from "./server.ts";
 
 // Node is PID 1 in the container, which gets no default signal handling.
@@ -32,7 +32,7 @@ const agent = new Agent({
     apiKey: process.env.JEN_API_KEY!,
     baseURL: process.env.JEN_BASE_URL || undefined,
   }),
-  tools: delegationTools(identity, runtime, store),
+  tools: toolsFor(identity, runtime, store),
   instructions: instructions(identity),
   wake: identity.wake,
   parent: identity.parent,

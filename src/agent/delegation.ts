@@ -7,9 +7,11 @@ import http from "node:http";
 import type { Json } from "./model/port.ts";
 import type { Tool } from "./loop.ts";
 import type { Store } from "./store.ts";
+import { workspaceTools } from "./workspace.ts";
 
 export interface Grant {
   spawn: boolean;
+  workspace: boolean;
 }
 
 export interface Identity {
@@ -33,15 +35,15 @@ export function readIdentity(env: NodeJS.ProcessEnv): Identity {
   } catch {
     // Reported below, as any other text that isn't a grant.
   }
-  if (!isGrant(grant)) throw new Error('JEN_GRANT must be a grant, such as {"spawn":false}');
+  if (!isGrant(grant)) throw new Error('JEN_GRANT must be a grant, such as {"spawn":false,"workspace":true}');
   if (env.JEN_WAKE === "") throw new Error("JEN_WAKE is set but empty");
-  return { id: env.JEN_AGENT_ID!, parent: env.JEN_PARENT!, grant: { spawn: grant.spawn }, wake: env.JEN_WAKE };
+  return { id: env.JEN_AGENT_ID!, parent: env.JEN_PARENT!, grant: { spawn: grant.spawn === true, workspace: grant.workspace === true }, wake: env.JEN_WAKE };
 }
 
-function isGrant(value: unknown): value is Grant {
+// Known capabilities with boolean values. One that's missing is false.
+function isGrant(value: unknown): value is Partial<Grant> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "spawn" && typeof (value as Grant).spawn === "boolean";
+  return Object.entries(value).every(([key, granted]) => (key === "spawn" || key === "workspace") && typeof granted === "boolean");
 }
 
 export const DELIVERED = "delivered. The reply will come to you. Call wait when you have nothing else to do.";
@@ -100,9 +102,15 @@ export class RuntimeClient {
   }
 }
 
-// The tools the agent's grant allows: with spawn, message_sub_agent and the
-// tools that manage sub-agents, and without it none, since it has no one to
-// send to. debts is the record of which sub-agents owe a reply. No result
+// Every tool the agent's grant allows: the delegation tools with spawn, and
+// run_command with workspace.
+export function toolsFor(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
+  return [...delegationTools(identity, runtime, debts), ...workspaceTools(identity, runtime)];
+}
+
+// The delegation tools: with spawn, message_sub_agent and the tools that
+// manage sub-agents, and without it none, since it has no one to send to.
+// debts is the record of which sub-agents owe a reply. No result
 // shows the model an ID it can't message, such as a sub-agent's parent, which
 // is the agent itself.
 export function delegationTools(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
@@ -170,7 +178,7 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
         "Start a new sub-agent of your own, and get its ID. With spawn true in its grant it may start sub-agents of its own; it can't have more than you. It starts with an empty conversation, so send it its task.",
       inputSchema: {
         type: "object",
-        properties: { grant: { type: "object", properties: { spawn: { type: "boolean" } }, required: ["spawn"] } },
+        properties: { grant: { type: "object", properties: { spawn: { type: "boolean" }, workspace: { type: "boolean" } }, required: ["spawn"] } },
         required: ["grant"],
       },
       run: async (input, signal) => answer(withoutParent(await runtime.request("POST", "/agents", { grant: field(input, "grant") ?? null }, signal))),

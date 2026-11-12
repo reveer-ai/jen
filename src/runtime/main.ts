@@ -20,6 +20,7 @@ const runtime = new Runtime({
   docker: createDocker(),
   name: process.env.JEN_RUNTIME_NAME || "jen",
   image: process.env.JEN_AGENT_IMAGE || "jen-agent",
+  workspaceImage: process.env.JEN_WORKSPACE_IMAGE || "jen-workspace",
   model: { model: process.env.JEN_MODEL!, apiKey: process.env.JEN_API_KEY!, baseURL: process.env.JEN_BASE_URL || undefined },
   maxDepth: count("JEN_MAX_DEPTH", 3),
   maxAgents: count("JEN_MAX_AGENTS", 10),
