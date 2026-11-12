@@ -1015,6 +1015,19 @@ describe("the workspace follows what's done to its agent", () => {
     expect(docker.volumes.has(ws(root.id)) && docker.volumes.has(ws(child.id))).toBe(true);
   });
 
+  test("a crash the engine restarts leaves the agent's workspace running", async () => {
+    const { docker, runtime, as } = await setup();
+    runtime.watch();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const child = await runtime.spawn(as(root.id), { workspace: true });
+    const before = [root.id, child.id].map((id) => docker.find(ws(id))!.id);
+    docker.exit(agentName(root.id), { restart: true });
+    docker.exit(agentName(child.id), { restart: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect([root.id, child.id].map((id) => docker.find(ws(id))?.id)).toEqual(before);
+    expect([root.id, child.id].map((id) => docker.find(ws(id))!.state)).toEqual(["running", "running"]);
+  });
+
   test("a workspace container's exit sends nothing and changes no state", async () => {
     const { docker, runtime, as, sent } = await setup();
     runtime.watch();
@@ -1263,6 +1276,53 @@ describe("running a command", () => {
       report(command, 137, "partial");
       await vi.advanceTimersByTimeAsync(0);
       expect(result).toEqual({ exitCode: null, output: "partial", timedOut: true });
+    });
+
+    test("a first line that comes after the timeout gets its group killed, during the grace or after the answer", async () => {
+      for (const late of [1_000, 6_000]) {
+        vi.useFakeTimers();
+        const { runtime, caller, script, kills } = await workspace();
+        let command!: FakeExec;
+        script.run = (exec) => (command = exec);
+        let result: CommandResult | undefined;
+        void runtime.runCommand(caller, "sleep 100", 1, never).then((r) => (result = r));
+        await vi.advanceTimersByTimeAsync(late);
+        head(command);
+        await vi.advanceTimersByTimeAsync(6_000 - late);
+        expect(result).toEqual({ exitCode: null, output: "", timedOut: true });
+        expect(kills[0]).toEqual(late < 6_000 ? ["-15"] : ["-15", "7"]);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(command.stopped).toBe("aborted");
+        vi.useRealTimers();
+      }
+    });
+
+    test("a first line that comes after a hang-up's grace still gets its group killed", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script, kills } = await workspace();
+      let command!: FakeExec;
+      script.run = (exec) => (command = exec);
+      const abort = new AbortController();
+      const running = runtime.runCommand(caller, "sleep 100", 120, abort.signal).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(10);
+      abort.abort();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect((await running).status).toBe(499);
+      head(command);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(kills).toEqual([["-15", "7"]]);
+    });
+
+    test("a first line that never comes stops being awaited after a second grace", async () => {
+      vi.useFakeTimers();
+      const { runtime, caller, script } = await workspace();
+      let command!: FakeExec;
+      script.run = (exec) => (command = exec);
+      void runtime.runCommand(caller, "sleep 100", 1, never);
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(command.stopped).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(command.stopped).toBe("aborted");
     });
 
     test("a stream that never ends with a wrapper that never reports is answered by its timeout plus 5 seconds", async () => {

@@ -393,27 +393,34 @@ export class Runtime {
       const timers: NodeJS.Timeout[] = [];
 
       // Settles once: closes the stream, then, after killing before if given,
-      // answers with outcome.
+      // answers with outcome. A call answered before the first line came, by
+      // its timeout or a hang-up, would leave its command running, so the
+      // stream stays open a while longer for the line, and its group is
+      // killed if it comes.
       const settle = (outcome: CommandResult | RuntimeError, before?: number[]) => {
         if (settled) return;
         settled = true;
         for (const timer of timers) clearTimeout(timer);
         signal.removeEventListener("abort", hangUp);
-        stream.abort();
+        if (head || !(timedOut || hungUp)) stream.abort();
+        else setTimeout(() => stream.abort(), GRACE_MS);
         void (before ? kill(before) : Promise.resolve()).then(() => (outcome instanceof RuntimeError ? reject(outcome) : resolve(outcome)));
       };
       const wroteAround = () => new RuntimeError(502, "the command wrote around its output file, so its output couldn't be read");
       const group = () => (head ? [-head.group] : undefined);
 
       const onOutput = (chunk: Buffer) => {
-        if (settled) return;
+        if (settled && head) return;
         received = Buffer.concat([received, chunk]);
         if (!head) {
           const parsed = parseHead(received);
           if (parsed === "partial") return;
-          if (parsed === "malformed") return settle(wroteAround());
+          if (parsed === "malformed") return settled ? stream.abort() : settle(wroteAround());
           head = parsed;
+          // The call was already answered without it, so only the kill is left.
+          if (settled) return void kill([-head.group, head.wrapper]).then(() => stream.abort());
           if (hungUp) return settle(new RuntimeError(499, "the caller hung up"), group());
+          if (timedOut) void kill([-head.group]);
         }
         const report = parseReport(received.subarray(head.length), file);
         if (report === "partial") return;
@@ -435,14 +442,14 @@ export class Runtime {
       timers.push(
         setTimeout(() => {
           timedOut = true;
-          const killed = head;
-          if (killed) void kill([-killed.group]);
+          if (head) void kill([-head.group]);
           // A report that doesn't come in time means the wrapper itself was
           // stopped, so it's killed too, and nothing it said is used.
           timers.push(
             setTimeout(() => {
+              const wrapper = head?.wrapper;
               settle({ exitCode: null, output: "", timedOut: true });
-              if (killed) void kill([killed.wrapper]);
+              if (wrapper !== undefined) void kill([wrapper]);
             }, GRACE_MS),
           );
         }, timeout * 1000),

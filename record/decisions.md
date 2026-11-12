@@ -2,10 +2,6 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
-## 2026-11-12
-
-- **The behavior check's delegation tasks may fail a run or two on `openai/gpt-6-luna`, and that doesn't hold back a change.** *Why:* set by the maintainer in [JEN-20](https://linear.app/reveer/issue/JEN-20). Three runs of the check on `main` failed 0, 2 and 1 of their 18 runs, with the same faults this branch showed, so the check's all-pass bar fails without any change. A change is held to its own task passing and to delegation failing no worse than `main`'s. The faults seen are listed in [environment.md](environment.md).
-
 ## 2026-11-11
 
 Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), aligning on its proposal. The proposal is in `openspec/changes/add-agent-workspace/`:
@@ -17,6 +13,10 @@ Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), aligning on its propos
 - **Tools ship in the workspace image, and the agent's image stays only jen's code.** *Supersedes in part* 2026-11-03's "an agent's image grows with the tools that make it that agent."
 - **A command's timeout is the agent's to set, up to a fixed 10 minutes, with background processes left to the shell and output capped.** The default is 2 minutes. When output is cut, the whole of it is saved to a file in the workspace. *Why:* set by the maintainer. A plain message waits for the tool call in progress, so a long command holds the agent's turn. Models already background work with `&`. Output stays in the conversation and is sent again with every later model call, and a command can't always be run twice to see what was cut.
 - **A command can write to the workspace's home, `/tmp` and Docker's `/dev/shm`, and nowhere else.** `/dev/shm` is a private 64 MiB `noexec` tmpfs that counts toward the workspace's memory and goes with its container. *Why:* set by the maintainer in the design review. Python's `multiprocessing` keeps its locks there, and without it a `Pool` fails, measured. *Rejected:* `IpcMode: none`, which mounts no `/dev/shm`.
+
+Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), verifying its implementation:
+
+- **The behavior check's delegation tasks may fail a run or two on `openai/gpt-6-luna`, and that doesn't hold back a change.** *Why:* set by the maintainer. Three runs of the check on `main` failed 0, 2 and 1 of their 18 runs, with the same faults this branch showed, so the check's all-pass bar fails without any change. A change is held to its own task passing and to delegation failing no worse than `main`'s. The faults seen are listed in [environment.md](environment.md).
 
 ## 2026-11-10
 
