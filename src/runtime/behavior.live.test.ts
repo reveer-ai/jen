@@ -1,5 +1,5 @@
 // Holds agents to how they should behave on owner tasks, against a runtime of
-// its own: six tasks, three runs each, in parallel, each with its own root.
+// its own: seven tasks, three runs each, in parallel, each with its own root.
 // A run settles after 30 seconds with no new event on any of its agents'
 // streams. A failing run prints its transcript. Uses the same JEN_LIVE_*
 // variables as the other live checks. Skipped when the key or model is
@@ -8,7 +8,7 @@
 // docs/interactions.data.js, which docs/interactions.html replays.
 
 import { spawnSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -31,7 +31,21 @@ interface Task {
   replies: number;
   // Sent to the root once it first replies.
   answer?: string;
+  // The root's grant, which is {"spawn": true} unless set.
+  grant?: { spawn?: boolean; workspace?: boolean };
+  // Faults only this task can see, found before the root is deleted, from
+  // its replies to the owner and the name of its workspace container.
+  check?: (run: { replies: string[]; workspace: string }) => string[];
 }
+
+// The command task's line: a hash the model can't work out without running
+// the command. The command counts its own runs before it prints anything, so
+// a run piped into grep, or rewritten any other way, still counts.
+const seed = randomBytes(4).toString("hex");
+const key = `KEY: ${createHash("sha256").update(seed).digest("hex").slice(0, 16)}`;
+const command =
+  'echo run >> ~/runs.txt; for i in $(seq 1 4000); do echo "worker[$i]: step complete, status ok"; ' +
+  `if [ "$i" -eq 2000 ]; then echo "KEY: $(printf %s ${seed} | sha256sum | cut -c1-16)"; fi; done`;
 
 const tasks: Task[] = [
   { name: "delegation", steps: ["Spawn a sub-agent to write a haiku about herons, then send me its haiku."], replies: 1 },
@@ -51,20 +65,44 @@ const tasks: Task[] = [
     ],
     replies: 1,
   },
+  {
+    // About 140 KB of log with the line in its middle, in neither the start
+    // nor the end a cut output keeps.
+    name: "command",
+    steps: [`Run this command in your workspace exactly once, and tell me the line of its output that starts with "KEY:".\n\n${command}`],
+    replies: 1,
+    grant: { workspace: true },
+    check: ({ replies, workspace }) => {
+      const faults: string[] = [];
+      if (!replies.some((text) => text.includes(key))) faults.push(`the reply lacks "${key}"`);
+      const runs = spawnSync("docker", ["exec", workspace, "cat", "/home/agent/runs.txt"], { encoding: "utf8", timeout: 30_000 }).stdout.split("\n").filter(Boolean).length;
+      if (runs > 1) faults.push(`the command ran ${runs} times`);
+      return faults;
+    },
+  },
 ];
 
 type Event = { t: number; agent: string; kind: "item" | "error"; item: Item | { message: string } };
 
 test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 1_200_000 }, async () => {
-  for (const target of ["agent", "runtime"]) {
+  for (const target of ["agent", "runtime", "workspace"]) {
     docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "../..")], { timeout: 240_000 });
   }
   const name = `jen-live-${randomBytes(4).toString("hex")}`;
   const ownerToken = randomBytes(32).toString("hex");
   const owner = { Authorization: `Bearer ${ownerToken}` };
-  // Eighteen roots and their sub-agents need more than the default bound.
-  const env = { ...process.env, JEN_RUNTIME_NAME: name, JEN_OWNER_TOKEN: ownerToken, JEN_MODEL: model, JEN_API_KEY: apiKey, JEN_BASE_URL: baseURL, JEN_MAX_AGENTS: "60" };
-  const names = ["JEN_RUNTIME_NAME", "JEN_OWNER_TOKEN", "JEN_MODEL", "JEN_API_KEY", "JEN_MAX_AGENTS", ...(baseURL ? ["JEN_BASE_URL"] : [])];
+  // Twenty-one roots and their sub-agents need more than the default bound.
+  const env = {
+    ...process.env,
+    JEN_RUNTIME_NAME: name,
+    JEN_OWNER_TOKEN: ownerToken,
+    JEN_MODEL: model,
+    JEN_API_KEY: apiKey,
+    JEN_BASE_URL: baseURL,
+    JEN_MAX_AGENTS: "70",
+    JEN_WORKSPACE_IMAGE: "jen-workspace",
+  };
+  const names = ["JEN_RUNTIME_NAME", "JEN_OWNER_TOKEN", "JEN_MODEL", "JEN_API_KEY", "JEN_MAX_AGENTS", "JEN_WORKSPACE_IMAGE", ...(baseURL ? ["JEN_BASE_URL"] : [])];
   try {
     docker(["run", "-d", "--name", `${name}-runtime`, "-p", "127.0.0.1::8080", "-v", "/var/run/docker.sock:/var/run/docker.sock", ...names.flatMap((n) => ["-e", n]), "jen-runtime"], { env });
     const port = docker(["port", `${name}-runtime`, "8080/tcp"]).trim().split("\n")[0]!.split(":").at(-1);
@@ -79,7 +117,7 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
       return text === "" ? undefined : JSON.parse(text);
     };
 
-    const runs = tasks.flatMap((task) => Array.from({ length: RUNS }, (_, i) => runTask(api, base, owner, task, `${task.name}-${i + 1}`)));
+    const runs = tasks.flatMap((task) => Array.from({ length: RUNS }, (_, i) => runTask(api, base, owner, name, task, `${task.name}-${i + 1}`)));
     const results = await Promise.all(runs);
     if (process.env.JEN_LIVE_RECORD) record(results);
     const failed = results.filter((run) => run.faults.length > 0);
@@ -97,9 +135,9 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
 
 // Runs one task with a root of its own, watching every agent in its tree, and
 // returns the run's faults and its transcript.
-async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, base: string, owner: Record<string, string>, task: Task, label: string) {
+async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, base: string, owner: Record<string, string>, name: string, task: Task, label: string) {
   const start = Date.now();
-  const root: string = (await api("/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: true } }) })).id;
+  const root: string = (await api("/agents", { method: "POST", body: JSON.stringify({ grant: task.grant ?? { spawn: true } }) })).id;
   const events: Event[] = [];
   const parents = new Map<string, string | null>();
   const watching = new Map<string, AbortController>();
@@ -172,9 +210,10 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   }
   const ids = await tree();
   for (const abort of watching.values()) abort.abort();
+  const owned = repliesOf(events, root);
+  if (task.check) faults.push(...task.check({ replies: owned, workspace: `${name}-workspace-${root}` }));
   await api(`/agents/${root}`, { method: "DELETE" });
 
-  const owned = repliesOf(events, root);
   if (owned.length !== task.replies) faults.push(`the owner got ${owned.length} replies, not ${task.replies}`);
   const items = events.flatMap((e) => (e.kind === "item" ? [{ agent: e.agent, item: e.item as Item }] : []));
   const calls = items.flatMap(({ agent, item }) => (item.type === "tool_call" ? [{ agent, item }] : []));

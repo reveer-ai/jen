@@ -41,12 +41,13 @@ export class FakeDocker implements Docker {
   exit(nameOrId: string, { restart }: { restart: boolean }) {
     const c = this.#get(nameOrId);
     c.state = restart ? "restarting" : "exited";
+    for (const exec of this.execs) if (exec.container === c.name) exec.end();
     for (const watch of this.#watches) if (matches(c.labels, watch.labels)) watch.onExit(c.id);
   }
 
   // Adds a container directly, such as the runtime's own, and returns it.
   add(container: Partial<FakeContainer> & { name: string }): FakeContainer {
-    const added: FakeContainer = { id: randomBytes(32).toString("hex"), state: "running", labels: {}, env: [], networks: [], ...container };
+    const added: FakeContainer = { id: randomBytes(32).toString("hex"), state: "running", startedAt: started(), labels: {}, env: [], networks: [], ...container };
     this.containers.set(added.id, added);
     return added;
   }
@@ -76,7 +77,14 @@ export class FakeDocker implements Docker {
     return created.id;
   }
   async startContainer(nameOrId: string) {
-    this.#get(nameOrId).state = "running";
+    const c = this.#get(nameOrId);
+    c.state = "running";
+    c.startedAt = started();
+  }
+
+  // Brings a container its engine was restarting back, as a new start.
+  restarted(nameOrId: string) {
+    void this.startContainer(nameOrId);
   }
   async listContainers(labels: string[]): Promise<Container[]> {
     return [...this.containers.values()]
@@ -85,7 +93,7 @@ export class FakeDocker implements Docker {
   }
   async inspectContainer(nameOrId: string): Promise<ContainerDetails | undefined> {
     const c = this.find(nameOrId);
-    return c && { id: c.id, name: c.name, state: c.state, labels: { ...c.labels }, env: [...c.env], networks: [...c.networks] };
+    return c && { id: c.id, name: c.name, state: c.state, startedAt: c.startedAt, labels: { ...c.labels }, env: [...c.env], networks: [...c.networks] };
   }
   async renameContainer(nameOrId: string, name: string) {
     const c = this.#get(nameOrId);
@@ -164,6 +172,10 @@ export class FakeDocker implements Docker {
     return c;
   }
 }
+
+// A start time no other start shares, as the engine's are in nanoseconds.
+let starts = 0;
+const started = () => `2026-01-01T00:00:00.${String(++starts).padStart(9, "0")}Z`;
 
 function matches(labels: Record<string, string>, filters: string[]): boolean {
   return filters.every((filter) => {

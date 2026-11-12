@@ -119,6 +119,9 @@ const READ_BOUND = 16 * 1024;
 // How long a command's report may take once its timeout has passed, and how
 // long any kill may take.
 const GRACE_MS = 5_000;
+// How long a stream that ended without a report is given to show whether its
+// workspace stopped: the stream can end before the engine says so.
+const STOPPED_MS = 1_000;
 // Runs each command, sent with every exec, so nothing in the workspace can
 // change how commands run. Its arguments are the command, never spliced into
 // the script, and the file its output goes to. It prints, in order:
@@ -361,6 +364,18 @@ export class Runtime {
     const container = this.#workspace(node.id);
     const file = `${HOME}/.jen/output/${randomBytes(8).toString("hex")}.log`;
     const { docker } = this.#o;
+    // The workspace as the command found it, to tell later whether it stopped,
+    // was replaced or restarted while the command ran.
+    const before = await docker.inspectContainer(container);
+    if (!before || before.state !== "running") throw new RuntimeError(409, "the workspace isn't running");
+    const stopped = async () => {
+      for (const deadline = Date.now() + STOPPED_MS; ; ) {
+        const now = await docker.inspectContainer(container).catch(() => undefined);
+        if (!now || now.id !== before.id || now.state !== "running" || now.startedAt !== before.startedAt) return true;
+        if (Date.now() >= deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
     // Kills the given processes, or process groups by their negated ID, and
     // ignores a failure: the workspace may be gone, and so are they.
     const kill = (targets: number[]) =>
@@ -440,8 +455,7 @@ export class Runtime {
             if (settled) return;
             if (end === "bound") return settle(wroteAround(), group());
             if (timedOut) return settle({ exitCode: null, output: "", timedOut: true });
-            const workspace = await docker.inspectContainer(container).catch(() => undefined);
-            if (!workspace || workspace.state !== "running") settle(new RuntimeError(409, "the workspace stopped during the command"));
+            if (await stopped()) settle(new RuntimeError(409, "the workspace stopped during the command"));
             else settle(new RuntimeError(502, "the command's output ended before its report"), group());
           },
           (error) => {

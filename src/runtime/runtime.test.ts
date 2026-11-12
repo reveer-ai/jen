@@ -1182,6 +1182,16 @@ describe("running a command", () => {
     expect(error.message).toBe("the workspace stopped during the command");
   });
 
+  test("a workspace that restarts during the command gets 409", async () => {
+    const { docker, runtime, caller, script, agent } = await workspace();
+    script.run = (exec) => head(exec);
+    const running = runtime.runCommand(caller, "sleep 100", 120, never);
+    await vi.waitFor(() => expect(docker.execs.some((e) => e.spec.cmd[0] === "bash")).toBe(true));
+    docker.exit(`jen-workspace-${agent.id}`, { restart: true });
+    docker.restarted(`jen-workspace-${agent.id}`);
+    await refused(running, 409);
+  });
+
   test("a stopped agent's workspace isn't reachable, and a running agent's missing workspace gets 409", async () => {
     const { docker, runtime, caller, agent } = await workspace();
     await docker.removeContainer(`jen-workspace-${agent.id}`);

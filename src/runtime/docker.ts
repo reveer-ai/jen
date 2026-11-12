@@ -33,6 +33,8 @@ export interface Container {
 }
 
 export interface ContainerDetails extends Container {
+  // When its process last started, which changes when the engine restarts it.
+  startedAt: string;
   env: string[];
   // The networks the container is attached to, by name.
   networks: string[];
@@ -208,6 +210,7 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
         id: c.Id,
         name: (c.Name ?? "").replace(/^\//, ""),
         state: c.State?.Status ?? "",
+        startedAt: c.State?.StartedAt ?? "",
         labels: c.Config?.Labels ?? {},
         env: c.Config?.Env ?? [],
         networks: Object.keys(c.NetworkSettings?.Networks ?? {}),

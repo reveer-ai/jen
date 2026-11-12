@@ -66,7 +66,7 @@ beforeAll(async () => {
   const agent = await res.json();
   expect([res.status, agent.grant]).toEqual([201, { spawn: false, workspace: true }]);
   agentId = agent.id;
-  expect(docker(["inspect", "-f", "{{.State.Status}}", workspace()]).trim()).toBe("running");
+  expect(docker(["container", "inspect", "-f", "{{.State.Status}}", workspace()]).trim()).toBe("running");
 }, 900_000);
 
 afterAll(() => {
@@ -129,7 +129,7 @@ describe("a workspace can't reach jen", () => {
 
 describe("a workspace has no network", () => {
   test("it can't reach the runtime, its agent or the internet", async () => {
-    const ip = (container: string) => docker(["inspect", "-f", `{{(index .NetworkSettings.Networks "${name}").IPAddress}}`, container]).trim();
+    const ip = (container: string) => docker(["container", "inspect", "-f", `{{(index .NetworkSettings.Networks "${name}").IPAddress}}`, container]).trim();
     const targets = [
       `http://${ip(`${name}-runtime`)}:8080`,
       `http://${ip(agentContainer())}:8080`,
@@ -254,19 +254,23 @@ describe("the workspace follows its agent", () => {
   test("stopping the agent mid-command gets 409", async () => {
     const running = run("sleep 103");
     await until(async () => docker(["exec", workspace(), "ps", "-eo", "args"]).includes("sleep 103"), "the command to start");
-    expect((await call(`/agents/${agentId}/stop`, { method: "POST" })).status).toBe(200);
-    const answer = await running;
-    expect(answer.status).toBe(409);
-    expect(answer.body.error).toBe("the workspace stopped during the command");
-    expect((await call(`/agents/${agentId}/start`, { method: "POST" })).status).toBe(200);
+    try {
+      expect((await call(`/agents/${agentId}/stop`, { method: "POST" })).status).toBe(200);
+      const answer = await running;
+      expect(answer.status).toBe(409);
+      expect(answer.body.error).toBe("the workspace stopped during the command");
+    } finally {
+      // The later probes need the agent running, whatever this one found.
+      expect((await call(`/agents/${agentId}/start`, { method: "POST" })).status).toBe(200);
+    }
   }, 120_000);
 
   test("a workspace whose first process is killed comes back with its files, and the agent keeps running", async () => {
-    const restarts = () => Number(docker(["inspect", "-f", "{{.RestartCount}}", workspace()]).trim());
+    const restarts = () => Number(docker(["container", "inspect", "-f", "{{.RestartCount}}", workspace()]).trim());
     const before = restarts();
     // The container may stop before the exec reports, so its status is ignored.
     spawnSync("docker", ["exec", "-u", "agent", workspace(), "pkill", "-KILL", "-xf", "sleep infinity"], { timeout: 30_000 });
-    await until(() => restarts() > before && docker(["inspect", "-f", "{{.State.Status}}", workspace()]).trim() === "running", "the workspace to restart");
+    await until(() => restarts() > before && docker(["container", "inspect", "-f", "{{.State.Status}}", workspace()]).trim() === "running", "the workspace to restart");
     expect(await output("cat ~/kept.txt")).toBe("kept\n");
     expect((await (await call(`/agents/${agentId}`)).json()).state).toBe("running");
   }, 120_000);
@@ -279,7 +283,7 @@ describe("the workspace follows its agent", () => {
 });
 
 function tokenOf(container: string): string {
-  return docker(["inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", container])
+  return docker(["container", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", container])
     .split("\n")
     .find((e) => e.startsWith("JEN_TOKEN="))!
     .slice("JEN_TOKEN=".length);

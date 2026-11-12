@@ -152,7 +152,7 @@ test("inspects a container", async () => {
     body: {
       Id: "c1",
       Name: "/jen-runtime",
-      State: { Status: "running" },
+      State: { Status: "running", StartedAt: "2026-11-11T20:00:00.000000000Z" },
       Config: { Env: ["A=1"], Labels: { x: "y" } },
       NetworkSettings: { Networks: { bridge: {}, jen: {} } },
     },
@@ -161,6 +161,7 @@ test("inspects a container", async () => {
     id: "c1",
     name: "jen-runtime",
     state: "running",
+    startedAt: "2026-11-11T20:00:00.000000000Z",
     labels: { x: "y" },
     env: ["A=1"],
     networks: ["bridge", "jen"],
