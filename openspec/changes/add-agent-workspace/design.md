@@ -117,6 +117,12 @@ The wrapper and the command run as the same user in the same container, so the w
 - **An answer as soon as the report is complete.** The runtime doesn't wait for the stream to end. It answers once the report parses, then closes the stream, so a background process holding the stream holds nothing. Docker itself closed such a stream about 2 seconds after the wrapper exited, measured, but the runtime doesn't rely on that.
 - **Only the first line is trusted.** The wrapper prints its process ID and the command's process group before the command starts, so that line is its own. Everything after can be the command's. A forged report can only mislead the agent about its own command: its exit code, its output, the file it names. The runtime enforces nothing from it. A report that ends early, while the command runs on, makes the command count as background. A stream that ends without a report that parses gets `409` if the workspace stopped, and otherwise `502`.
 
+As built, these settle what the design left open:
+- **The report** is a line with the exit code and the output's size in bytes, then the output: whole within 8 KiB, or else its first 2 KiB and last 6 KiB. So the runtime knows when it has all of it. What follows the first line and can't be the start of a report is answered `502` at once, and the group is killed, as past the byte bound. The first line is printed by the command's own shell just before it starts the command, which is what puts the line ahead of anything the command writes.
+- **A workspace that stopped** is told by its container, not one look at it. On Linux an exec's stream can end before the engine marks the container stopped, measured, so a single check answered `502` to a stop mid-command. The runtime notes the workspace container's ID and start time before the exec, and gives a stream that ends without a report up to a second to show the container gone, replaced or restarted.
+- **A first line that comes late** is still acted on. A call answered by its timeout or a hang-up before the line came would leave its command running, so the runtime keeps the stream open up to 5 seconds more, and kills the group if the line comes. The answer comes no later.
+- **The process limit doesn't stop a kill.** The engine starts an exec outside the workspace and moves it in, which the limit doesn't refuse. Measured: a command holding all 512 processes was still killed at its timeout.
+
 *Alternative:* running the wrapper as a second user, whose stream a command couldn't open. Switching user inside the container needs `CAP_SETUID`, and the workspace has no capabilities.
 
 *Alternatives to the file:*
@@ -136,7 +142,7 @@ The tool's description says:
 
 The tool refuses a command whose request body would pass the route's 64 KB bound before any request is made, with an error saying to write the content in parts. It measures the body as sent, the UTF-8 JSON with its escaping and timeout, not the command alone: 64,000 bytes of short lines become a body of about 72,000.
 
-The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant. `src/agent/AGENTS.md`'s rule that tool descriptions are behavior is extended to cover `workspace.ts`.
+The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. As built, `spawn_agent`'s input schema also names `workspace`, so a parent can pass the grant on. Its description is unchanged: a reworded one was tried and dropped after one failing run, since a run can't tell a wording's effect from the model's variance. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant. `src/agent/AGENTS.md`'s rule that tool descriptions are behavior is extended to cover `workspace.ts`.
 
 ### The grant
 
@@ -175,6 +181,8 @@ The `Dockerfile` gains a `workspace` target on the same `node:26-slim` base as t
 - **The behavior check** keeps its six tasks with their current grants, and gains a seventh. The root's grant is `{"workspace": true}`, without `spawn`, so the task measures `run_command` and not delegation. It is asked to run a given command exactly once and report one line from its output. The command prints a log far over the cap, with the line in the middle, so the line is in neither the start nor the end the result keeps. The command counts its own runs by appending to a file in the workspace, so a run piped into `grep` or rewritten in any other form still counts. The check reads that file afterwards. The task fails if the reply lacks the line or the count is above one.
 
 It shows whether a Luna-class model gets what it needs from big output without running the command again, which is what makes the cap safe for commands that can't be repeated. A model that filters the output on its first run passes without the saved file coming into it, and that's a fine way to pass.
+
+As built, Luna passed the command task in 12 of 12 runs, each running the command once and then searching the saved file with `grep`. The check's all-pass bar wasn't met in one go: its delegation tasks failed about one run per pass, as they do on `main`, and the maintainer accepted that (see `record/decisions.md`, 2026-11-11).
 
 ## Risks / Trade-offs
 
