@@ -2,6 +2,12 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-12
+
+Made in [JEN-19](https://linear.app/reveer/issue/JEN-19), aligning on its proposal. The proposal and design are in `openspec/changes/add-agent-files/`:
+
+- **Agents get generic file tools, the same for every model: a ranged read, a whole-file write and an exact string replace.** They're plain function tools on a runtime route that moves a file's bytes as the agent, in its workspace. *Why:* set by the maintainer. jen is model-agnostic, so whatever model is selected, through its adapter, must work well. Exact string replace is the edit shape most widely used across model families. An adapter belongs to an API, not a model family: the Responses adapter reaches any model through OpenRouter. *Rejected:* providers' own tools, such as OpenAI's built-in `apply_patch` and Anthropic's text editor tool, wrapped by each adapter. Each is trained into its own vendor's models only, so the adapter would choose tools by model name and still need generic ones for every other model. Revisit only if the behavior check shows a model editing badly with the generic tools.
+
 ## 2026-11-11
 
 Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), aligning on its proposal. The proposal and design are in `openspec/changes/archive/2026-11-12-add-agent-workspace/`:
