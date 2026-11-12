@@ -40,10 +40,10 @@ Each agent with the `workspace` grant has two more Docker objects, named and lab
 
 The runtime creates it from `JEN_WORKSPACE_IMAGE` (default `jen-workspace`), with fixed settings that no caller can change:
 
-- **Mounts:** the workspace volume at `/home/node`, and a tmpfs at `/tmp` mounted `exec,nosuid,nodev`. Docker mounts a tmpfs `noexec` by default, which would break the many tools that build and run helpers in `/tmp`. Nothing else is mounted. There's no state volume and no engine socket.
+- **Mounts:** the workspace volume at `/home/agent`, and a tmpfs at `/tmp` mounted `exec,nosuid,nodev`. Docker mounts a tmpfs `noexec` by default, which would break the many tools that build and run helpers in `/tmp`. Nothing else is mounted. There's no state volume and no engine socket.
 - **Environment:** only what the image sets, such as `PATH` and `HOME`. None of jen's settings.
 - **Network:** `none`. It has loopback only.
-- **User:** `node` (uid 1000), with home `/home/node`.
+- **User:** `agent` (uid 1000), with home `/home/agent`.
 - **Privileges:** all capabilities dropped, `no-new-privileges`, Docker's default seccomp profile, and a root filesystem that can't be written. The image's files can't be changed, so the workspace's home and `/tmp` are the only places a command can write.
 - **Limits:** fixed constants:
   - 2 CPUs
@@ -54,7 +54,7 @@ The runtime creates it from `JEN_WORKSPACE_IMAGE` (default `jen-workspace`), wit
   These are caps, not reservations, so a laptop with less memory than every agent's cap added together still works. The agent's own container keeps the runtime's network and gets no new limits here.
 - **Its first process:** `sleep infinity` under Docker's init (`Init: true`). The init reaps the orphans that background processes leave, so they don't pile up as zombies. The restart policy is `unless-stopped`, so a workspace whose first process dies comes back on its own. Its files are kept, and its background processes are gone.
 
-*Why `/home/node` is the workspace, rather than `/workspace`:* tools keep their config and caches under `HOME`, for example `~/.gitconfig`, `~/.npm` and `~/.cache`. Mounting the volume as the home directory keeps all of that across restarts, and `~` means the same to a model as it does in any terminal.
+*Why the workspace is the home directory:* tools keep their config and caches under `HOME`, for example `~/.gitconfig`, `~/.npm` and `~/.cache`. Mounting the volume as the home directory keeps all of that across restarts, and `~` means the same to a model as it does in any terminal. `HOME` could be any directory. `/home/agent` follows the convention a model expects, and its name matches the user it belongs to. The base image's user, `node`, is renamed, because its name turns up in every path a command prints and reads as if the workspace were a Node project.
 
 ### The workspace follows what's done to its agent
 
@@ -84,12 +84,12 @@ The body bound is the route's own, not the runtime's 16 KB `MAX_BODY`. Until JEN
 The route doesn't go through the tree queue, because a command can run for 10 minutes. If the workspace container stops while the command runs, the exec's stream ends without the wrapper's final report, and the route answers `409`, saying the workspace stopped during the command. That happens when the agent is stopped or deleted, or when the workspace's first process dies and is restarted. Once the command ends, it answers `200` with:
 
 ```json
-{ "exitCode": 0, "output": "...", "timedOut": false, "cut": { "bytes": 123456, "file": "/home/node/.jen/output/<id>.log" } }
+{ "exitCode": 0, "output": "...", "timedOut": false, "cut": { "bytes": 123456, "file": "/home/agent/.jen/output/<id>.log" } }
 ```
 
 `exitCode` is `null` when the command was killed. `cut` is present only when the output was cut.
 
-The runtime runs each command through the engine's exec, as `node` in `/home/node`, with stdin closed. The command is wrapped in a short script, part of the runtime's own code, that:
+The runtime runs each command through the engine's exec, as `agent` in `/home/agent`, with stdin closed. The command is wrapped in a short script, part of the runtime's own code, that:
 1. reports the process group the command runs in, before the command starts
 2. runs the command with `sh -c` in that group, writing its stdout and stderr together to a file, `~/.jen/output/<id>.log`
 3. once the shell exits, reports the exit code and the file's size, then prints the file whole if it's within the cap, or else its first 2 KB and last 6 KB
@@ -128,7 +128,7 @@ The description is behavior, so its wording is settled by the behavior check (se
 
 ### The image
 
-The `Dockerfile` gains a `workspace` target on the same `node:26-slim` base as the agent. It adds the tools in the proposal with `apt-get`, and holds no file from `src/`. Its user is `node`, its working directory `/home/node`, and its command `sleep infinity`. The runtime sends the wrapper script with each exec, so the image carries none of jen's code and nothing in the workspace can change how commands are run.
+The `Dockerfile` gains a `workspace` target on the same `node:26-slim` base as the agent. It adds the tools in the proposal with `apt-get`, and holds no file from `src/`. It renames the base image's `node` user and group to `agent` (uid 1000 is kept) with home `/home/agent`, which the volume copies on first mount. Its user is `agent`, its working directory `/home/agent`, and its command `sleep infinity`. The runtime sends the wrapper script with each exec, so the image carries none of jen's code and nothing in the workspace can change how commands are run.
 
 ### Checks
 
