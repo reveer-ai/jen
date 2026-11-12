@@ -79,7 +79,7 @@ A new route, `POST /workspace/commands`, with the body `{"command": "<shell>", "
 - a timeout over 600 seconds, or below 1, gets `400`
 - a body over 64 KB gets `413`
 
-The body bound is the route's own, not the runtime's 16 KB `MAX_BODY`. Until JEN-19's file tools land, an agent writes files with heredocs, which outgrow 16 KB. The bound also stays under Linux's 128 KB limit on one argument, which `sh -c` would otherwise hit.
+The body bound is the route's own, not the runtime's 16 KB `MAX_BODY`. Until JEN-19's file tools land, an agent writes files with heredocs, which outgrow 16 KB. The bound also stays under Linux's 128 KB limit on one argument, which `bash -c` would otherwise hit.
 
 The route doesn't go through the tree queue, because a command can run for 10 minutes. If the workspace container stops while the command runs, the exec's stream ends without the wrapper's final report, and the route answers `409`, saying the workspace stopped during the command. That happens when the agent is stopped or deleted, or when the workspace's first process dies and is restarted. Once the command ends, it answers `200` with:
 
@@ -91,7 +91,7 @@ The route doesn't go through the tree queue, because a command can run for 10 mi
 
 The runtime runs each command through the engine's exec, as `agent` in `/home/agent`, with stdin closed. The command is wrapped in a short script, part of the runtime's own code, that:
 1. reports the process group the command runs in, before the command starts
-2. runs the command with `sh -c` in that group, writing its stdout and stderr together to a file, `~/.jen/output/<id>.log`
+2. runs the command with `bash -c` in that group, writing its stdout and stderr together to a file, `~/.jen/output/<id>.log`
 3. once the shell exits, reports the exit code and the file's size, then prints the file whole if it's within the cap, or else its first 2 KB and last 6 KB
 4. deletes the file when nothing was cut
 
@@ -101,6 +101,7 @@ Why each piece:
 - **Its own process group.** The engine's API can't kill an exec. So when the timeout passes, or the caller hangs up, the runtime runs a second exec that kills the command's process group. That covers the shell and everything it started that is still in the group, background jobs included. A finished command's group isn't touched, so what it started in the background lives until the workspace container is removed. A process that leaves its group deliberately, with `setsid` or a daemon's fork, counts as background either way.
 - **The caller hanging up kills the command.** Cancelling by an urgent message aborts the agent's request, and so does a crash of the agent's process. Either way the command dies with its call, so a crash leaves no command running unseen. The loop records the call as `CANCELLED` or `INTERRUPTED`, as it does today.
 - **The runtime enforces the maximum.** The runtime holds the boundary, so the 10-minute maximum is its constant, not the tool's. The tool refuses an over-long timeout too, so the model hears about it before any request is made.
+- **The command runs in bash.** Models write bash: `[[ ]]`, `source`, arrays, `set -o pipefail`. The base image's `sh` is dash, which rejects all of those, and bash is already in the image.
 - **The cut is bytes, kept as the start and the end.** Errors come at the end, which is why the end gets 6 KB of the 8 KB. A character split by the cut is decoded as a replacement character.
 
 *Alternatives:*
@@ -112,7 +113,7 @@ Why each piece:
 An agent whose grant has `workspace` is offered `run_command`, which takes `command` and an optional `timeout` in seconds. It calls the route with the agent's own token and the call's `AbortSignal`. Its result for the model gives the exit code, or says the command was killed by its timeout, then the output. When output was cut, the result ends with how many bytes were cut and the file holding all of it.
 
 The tool's description says:
-- that each command starts in the home directory, which persists, with no network and no way to install anything
+- that each command runs in bash and starts in the home directory, which persists, with no network and no way to install anything
 - the 2-minute default and the 10-minute maximum
 - that a command which keeps running, such as a server, goes in the background with its output redirected
 - that output is capped at about 8 KB, so large output belongs in a file to search with `grep` or `tail`, and that output which is cut anyway is saved whole

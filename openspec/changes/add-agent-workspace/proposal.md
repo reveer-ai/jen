@@ -26,7 +26,7 @@ So an agent's work runs in a container of its own beside the agent's, which the 
   - **Deleting** removes it and its volume.
   - **A crash of the agent's process** leaves it running. When the agent's restarts run out, the runtime stops the agent, and the workspace container goes with it.
 - **The runtime runs an agent's commands.** A new route lets an agent, with its own token, run a command in its own workspace and no other. The runtime runs it with the engine's exec. The agent has no other way into its workspace.
-- **A `run_command` tool.** It runs a shell command in the workspace and returns its exit code and output.
+- **A `run_command` tool.** It runs a bash command in the workspace and returns its exit code and output.
   - **Timeout:** the agent can set one per command. The default is 2 minutes, and a fixed maximum of 10 minutes can't be exceeded. A timeout, or an urgent message that cancels the call, kills what is still running from the call.
   - **Background processes:** the tool returns when the command's shell exits. Anything the command started in the background keeps running until the workspace container is removed, so `npm run dev > dev.log &` works as it would in a terminal.
   - **Output:** capped at about 8 KB, keeping the start and the end. When output is cut, the whole of it is saved to a file in the workspace, and the result names the file. The tool's description tells the model about the cap and the timeout, so it can redirect large output itself.
