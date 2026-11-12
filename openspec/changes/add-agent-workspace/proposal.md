@@ -18,7 +18,7 @@ So an agent's work runs in a container of its own beside the agent's, which the 
   - none of jen's settings in its environment
   - no network beyond its own loopback, so it isn't on the runtime's network
   - fixed limits of its own on processes, memory and CPU
-  - no capabilities, `no-new-privileges`, and a root filesystem that can't be written outside the workspace and `/tmp`
+  - no capabilities, `no-new-privileges`, and a root filesystem that can't be written outside the workspace, `/tmp` and `/dev/shm`, Docker's small shared-memory mount
 - **The workspace follows what's done to its agent, not what happens to its process.**
   - **Spawning** creates and starts the workspace container before the agent's.
   - **Stopping** removes it, so its processes end and its files are kept.
