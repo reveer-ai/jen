@@ -5,12 +5,13 @@
 // runtime checks the token again when it acts, so one that stops being
 // current while its request waits is refused then. Requests to an agent's
 // protocol are relayed to it with its own token, which never leaves the
-// runtime, and a message with its sender in Jen-From.
+// runtime, and a message with its sender in Jen-From. POST /workspace/commands
+// runs a command in the caller's own workspace, and in no other.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pipeline } from "node:stream";
-import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
+import { MAX_TIMEOUT, RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
 
 export interface RuntimeServerOptions {
   runtime: Runtime;
@@ -24,6 +25,12 @@ const FORWARDED = ["content-type", "content-length", "accept", "last-event-id"];
 // The most a spawn body may hold. A grant is a few dozen bytes; the bound keeps
 // any caller from making the shared runtime buffer an arbitrary upload.
 export const MAX_BODY = 16 * 1024;
+// The most a command's body may hold. An agent writes files with heredocs, so
+// it's larger than MAX_BODY, and it stays under Linux's 128 KiB limit on one
+// argument, which the command becomes.
+export const MAX_COMMAND_BODY = 64 * 1024;
+// A command's timeout when the body names none, in seconds.
+const DEFAULT_TIMEOUT = 120;
 
 export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOptions): http.Server {
   const owner = digest(`Bearer ${ownerToken}`);
@@ -36,16 +43,41 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   }
 
   async function spawn(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
-    const body = await readBody(req);
-    if (body === undefined) return tooLarge(res);
+    const body = await readBody(req, MAX_BODY);
+    if (body === undefined) return tooLarge(res, MAX_BODY);
     let grant: unknown;
     try {
       grant = JSON.parse(body)?.grant;
     } catch {
       return json(res, 400, { error: "the body is not JSON" });
     }
-    if (!isGrant(grant)) return json(res, 400, { error: 'grant must be {"spawn": <boolean>}' });
+    if (!isGrant(grant)) return json(res, 400, { error: 'grant must be an object of "spawn" and "workspace", each a boolean, such as {"spawn": true}' });
     json(res, 201, await runtime.spawn(caller, grant));
+  }
+
+  // Runs a command in the caller's own workspace. A caller that hangs up
+  // before the answer kills it: that's the response closing unfinished, not
+  // the request closing, which happens as soon as the body has been read.
+  async function command(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
+    const hangUp = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) hangUp.abort();
+    });
+    const body = await readBody(req, MAX_COMMAND_BODY);
+    if (body === undefined) return tooLarge(res, MAX_COMMAND_BODY);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return json(res, 400, { error: "the body is not JSON" });
+    }
+    const { command, timeout = DEFAULT_TIMEOUT } = (typeof parsed === "object" && parsed !== null ? parsed : {}) as { command?: unknown; timeout?: unknown };
+    if (typeof command !== "string") return json(res, 400, { error: "command must be a string" });
+    if (typeof timeout !== "number" || !(timeout >= 1 && timeout <= MAX_TIMEOUT)) return json(res, 400, { error: `timeout must be a number of seconds from 1 to ${MAX_TIMEOUT}` });
+    // A caller that hung up while its body arrived gets nothing run.
+    if (hangUp.signal.aborted) return;
+    const { exitCode, output, timedOut, cut } = await runtime.runCommand(caller, command, timeout, hangUp.signal);
+    json(res, 200, cut === undefined ? { exitCode, output, timedOut } : { exitCode, output, timedOut, cut });
   }
 
   // Relays a message or an event stream. A message carries its true sender,
@@ -91,6 +123,7 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     const path = (req.url ?? "/").split("?")[0];
     const [empty, agents, id, action, ...rest] = path.split("/");
     const method = req.method;
+    if (path === "/workspace/commands" && method === "POST") return command(req, res, caller);
     if (empty === "" && agents === "agents" && rest.length === 0) {
       if (id === undefined) {
         if (method === "POST") return spawn(req, res, caller);
@@ -124,12 +157,12 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   });
 }
 
-// Exactly {"spawn": <boolean>}. Unknown capabilities are refused, so nothing
-// unchecked is stored as a grant.
-function isGrant(value: unknown): value is Grant {
+// An object of known capabilities with boolean values, any of them missing,
+// which the runtime reads as false. Unknown capabilities are refused, so
+// nothing unchecked is stored as a grant.
+function isGrant(value: unknown): value is Partial<Grant> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "spawn" && typeof (value as Grant).spawn === "boolean";
+  return Object.entries(value).every(([key, granted]) => (key === "spawn" || key === "workspace") && typeof granted === "boolean");
 }
 
 // Hashing both sides gives them equal lengths for timingSafeEqual.
@@ -137,10 +170,10 @@ function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
 
-// The body, or undefined once it would pass MAX_BODY: a declared length is
+// The body, or undefined once it would pass bound: a declared length is
 // refused unread, and a chunked one stops being read where it crosses.
-function readBody(req: http.IncomingMessage): Promise<string | undefined> {
-  if (Number(req.headers["content-length"] ?? 0) > MAX_BODY) return Promise.resolve(undefined);
+function readBody(req: http.IncomingMessage, bound: number): Promise<string | undefined> {
+  if (Number(req.headers["content-length"] ?? 0) > bound) return Promise.resolve(undefined);
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -150,7 +183,7 @@ function readBody(req: http.IncomingMessage): Promise<string | undefined> {
     };
     const data = (chunk: Buffer) => {
       size += chunk.length;
-      if (size <= MAX_BODY) return void chunks.push(chunk);
+      if (size <= bound) return void chunks.push(chunk);
       req.pause();
       done(undefined);
     };
@@ -160,9 +193,9 @@ function readBody(req: http.IncomingMessage): Promise<string | undefined> {
 }
 
 // Closing the connection leaves the rest of the upload unread.
-function tooLarge(res: http.ServerResponse) {
+function tooLarge(res: http.ServerResponse, bound: number) {
   res.setHeader("Connection", "close");
-  json(res, 413, { error: `the body is larger than ${MAX_BODY} bytes` });
+  json(res, 413, { error: `the body is larger than ${bound} bytes` });
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown) {

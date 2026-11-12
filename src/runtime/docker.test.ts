@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDocker, DockerError, type Docker } from "./docker.ts";
 
 type Seen = { method: string; url: string; body: any };
@@ -70,7 +70,7 @@ test("creates a container with its fixed settings and returns its ID", async () 
     labels: { "jen.agent": "a1" },
     volume: { name: "jen-agent-a1", path: "/state" },
     network: "jen",
-    maxRetries: 3,
+    restart: { maxRetries: 3 },
   });
   expect(id).toBe("c1");
   expect(seen[0]).toEqual({
@@ -85,6 +85,40 @@ test("creates a container with its fixed settings and returns its ID", async () 
         NetworkMode: "jen",
         RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 },
       },
+    },
+  });
+});
+
+test("creates a sandboxed container with every setting it's given", async () => {
+  replies.push({ status: 201, body: { Id: "c2" } });
+  await docker.createContainer("jen-workspace-a1", {
+    image: "jen-workspace",
+    env: [],
+    labels: { "jen.workspace": "a1" },
+    volume: { name: "jen-workspace-a1", path: "/home/agent" },
+    network: "none",
+    restart: "unless-stopped",
+    sandbox: { user: "agent", tmp: { path: "/tmp", bytes: 512 * 2 ** 20 }, shmBytes: 64 * 2 ** 20, memoryBytes: 2 * 2 ** 30, nanoCpus: 2e9, pids: 512 },
+  });
+  expect(seen[0]!.body).toEqual({
+    Image: "jen-workspace",
+    Env: [],
+    Labels: { "jen.workspace": "a1" },
+    User: "agent",
+    HostConfig: {
+      Mounts: [{ Type: "volume", Source: "jen-workspace-a1", Target: "/home/agent" }],
+      NetworkMode: "none",
+      RestartPolicy: { Name: "unless-stopped" },
+      Tmpfs: { "/tmp": "rw,exec,nosuid,nodev,size=536870912" },
+      ShmSize: 67108864,
+      IpcMode: "private",
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges"],
+      ReadonlyRootfs: true,
+      Init: true,
+      PidsLimit: 512,
+      Memory: 2147483648,
+      NanoCpus: 2000000000,
     },
   });
 });
@@ -206,4 +240,86 @@ test("watches containers' exits by label, across chunks, and reconnects when the
   stop();
   engine.closeAllConnections();
   await new Promise((resolve) => engine.close(resolve));
+});
+
+describe("exec", () => {
+  // An engine whose exec start answers with the frames start writes, on a
+  // stream it keeps open until start ends it.
+  async function engine(start: (res: http.ServerResponse) => void) {
+    const socket = join(dir, "exec.sock");
+    const requests: Seen[] = [];
+    const closed: string[] = [];
+    const server = http.createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      requests.push({ method: req.method!, url: req.url!, body: JSON.parse(Buffer.concat(chunks).toString("utf8") || "null") });
+      if (req.url!.endsWith("/exec")) return void res.writeHead(201, { "Content-Type": "application/json" }).end(JSON.stringify({ Id: "e1" }));
+      res.socket!.on("close", () => closed.push(req.url!));
+      res.writeHead(200, { "Content-Type": "application/vnd.docker.multiplexed-stream" });
+      res.flushHeaders();
+      start(res);
+    });
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    return { docker: createDocker(socket), requests, closed, close: () => (server.closeAllConnections(), new Promise((resolve) => server.close(resolve))) };
+  }
+  const frame = (stream: number, text: string) => {
+    const payload = Buffer.from(text);
+    const header = Buffer.alloc(8);
+    header[0] = stream;
+    header.writeUInt32BE(payload.length, 4);
+    return Buffer.concat([header, payload]);
+  };
+  const spec = { user: "agent", workdir: "/home/agent", cmd: ["bash", "-c", "echo hi"] };
+
+  test("creates the exec with stdin closed, and decodes stdout's frames across chunks", async () => {
+    const { docker, requests, close } = await engine((res) => {
+      const bytes = Buffer.concat([frame(1, "hello "), frame(2, "ignored"), frame(1, "world")]);
+      res.write(bytes.subarray(0, 3));
+      res.write(bytes.subarray(3, 20));
+      res.end(bytes.subarray(20));
+    });
+    const out: Buffer[] = [];
+    const end = await docker.exec("c1", spec, { bound: 1024, signal: new AbortController().signal, onOutput: (chunk) => out.push(Buffer.from(chunk)) });
+    expect(end).toBe("ended");
+    expect(Buffer.concat(out).toString()).toBe("hello world");
+    expect(requests).toEqual([
+      {
+        method: "POST",
+        url: "/v1.47/containers/c1/exec",
+        body: { AttachStdin: false, AttachStdout: true, AttachStderr: false, Tty: false, User: "agent", WorkingDir: "/home/agent", Cmd: ["bash", "-c", "echo hi"] },
+      },
+      { method: "POST", url: "/v1.47/exec/e1/start", body: { Detach: false, Tty: false } },
+    ]);
+    await close();
+  });
+
+  test("stops reading past the bound and closes the stream", async () => {
+    const { docker, closed, close } = await engine((res) => {
+      res.write(frame(1, "a".repeat(100)));
+      res.write(frame(1, "b".repeat(100)));
+    });
+    const out: Buffer[] = [];
+    const end = await docker.exec("c1", spec, { bound: 150, signal: new AbortController().signal, onOutput: (chunk) => out.push(Buffer.from(chunk)) });
+    expect(end).toBe("bound");
+    expect(Buffer.concat(out).toString()).toBe("a".repeat(100));
+    await vi.waitFor(() => expect(closed).toEqual(["/v1.47/exec/e1/start"]));
+    await close();
+  });
+
+  test("an abort closes a stream that never ends", async () => {
+    const { docker, closed, close } = await engine((res) => res.write(frame(1, "first")));
+    const abort = new AbortController();
+    const out: string[] = [];
+    const reading = docker.exec("c1", spec, { bound: 1024, signal: abort.signal, onOutput: (chunk) => out.push(chunk.toString()) });
+    await vi.waitFor(() => expect(out).toEqual(["first"]));
+    abort.abort();
+    expect(await reading).toBe("aborted");
+    await vi.waitFor(() => expect(closed).toHaveLength(1));
+    await close();
+  });
+
+  test("an exec in a container that isn't running is a DockerError", async () => {
+    replies.push({ status: 409, body: { message: "container c1 is not running" } });
+    await expect(docker.exec("c1", spec, { bound: 1024, signal: new AbortController().signal, onOutput: () => {} })).rejects.toMatchObject({ status: 409 });
+  });
 });

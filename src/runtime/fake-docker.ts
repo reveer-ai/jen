@@ -1,9 +1,24 @@
 // An in-memory Docker engine for tests. It keeps the engine's rules the
 // runtime depends on: names are unique, a volume in use can't be removed,
-// removal of something absent succeeds, and a container's network must exist.
+// removal of something absent succeeds, a container's network must exist
+// unless it's "none", an exec runs only in a running container, and removing
+// a container ends its execs' streams.
 
 import { randomBytes } from "node:crypto";
-import { DockerError, type Container, type ContainerDetails, type ContainerSpec, type Docker, type Volume } from "./docker.ts";
+import { DockerError, type Container, type ContainerDetails, type ContainerSpec, type Docker, type ExecEnd, type ExecRead, type ExecSpec, type Volume } from "./docker.ts";
+
+// An exec as a test drives it, in place of the command it was asked to run.
+export interface FakeExec {
+  // The container's name.
+  container: string;
+  spec: ExecSpec;
+  // Writes to the exec's stdout. Nothing is read once reading has stopped.
+  write(data: string | Buffer): void;
+  // Ends the stream, as the exec's process does when it exits.
+  end(): void;
+  // Why reading stopped, once it has.
+  stopped?: ExecEnd;
+}
 
 export interface FakeContainer extends ContainerDetails {
   // The spec it was created with. Undefined for one a test added by hand.
@@ -16,6 +31,10 @@ export class FakeDocker implements Docker {
   readonly containers = new Map<string, FakeContainer>();
   readonly networks = new Map<string, { name: string; labels: Record<string, string>; aliases: Map<string, string[]> }>();
   readonly #watches = new Set<{ labels: string[]; onExit: (id: string) => void }>();
+  // Every exec, in the order they started.
+  readonly execs: FakeExec[] = [];
+  // Drives each exec as it starts. By default an exec writes nothing and ends.
+  onExec: (exec: FakeExec) => void = (exec) => exec.end();
 
   // Ends a container's process, as a crash does. With restart, the engine
   // restarts it; without, it's left exited, as when its restarts run out.
@@ -38,7 +57,7 @@ export class FakeDocker implements Docker {
   }
 
   async createVolume(name: string, labels: Record<string, string>) {
-    if (!this.volumes.has(name)) this.volumes.set(name, { name, labels: { ...labels } });
+    this.#ensureVolume(name, labels);
   }
   async listVolumes(labels: string[]) {
     return [...this.volumes.values()].filter((v) => matches(v.labels, labels)).map((v) => structuredClone(v));
@@ -50,9 +69,9 @@ export class FakeDocker implements Docker {
 
   async createContainer(name: string, spec: ContainerSpec) {
     if (this.find(name)) throw new DockerError(409, `the container name "/${name}" is already in use`);
-    if (!this.networks.has(spec.network)) throw new DockerError(404, `network ${spec.network} not found`);
+    if (spec.network !== "none" && !this.networks.has(spec.network)) throw new DockerError(404, `network ${spec.network} not found`);
     // The engine creates a missing volume, with no labels.
-    await this.createVolume(spec.volume.name, {});
+    this.#ensureVolume(spec.volume.name, {});
     const created = this.add({ name, state: "created", labels: { ...spec.labels }, env: [...spec.env], networks: [spec.network], spec: structuredClone(spec), volume: spec.volume.name });
     return created.id;
   }
@@ -75,7 +94,42 @@ export class FakeDocker implements Docker {
   }
   async removeContainer(nameOrId: string) {
     const c = this.find(nameOrId);
-    if (c) this.containers.delete(c.id);
+    if (!c) return;
+    this.containers.delete(c.id);
+    for (const exec of this.execs) if (exec.container === c.name) exec.end();
+  }
+
+  exec(container: string, spec: ExecSpec, read: ExecRead): Promise<ExecEnd> {
+    const c = this.find(container);
+    if (!c) return Promise.reject(new DockerError(404, `No such container: ${container}`));
+    if (c.state !== "running") return Promise.reject(new DockerError(409, `container ${c.id} is not running`));
+    return new Promise((resolve) => {
+      let size = 0;
+      const stop = (end: ExecEnd) => {
+        if (exec.stopped) return;
+        exec.stopped = end;
+        read.signal.removeEventListener("abort", aborted);
+        resolve(end);
+      };
+      const aborted = () => stop("aborted");
+      const exec: FakeExec = {
+        container: c.name,
+        spec: structuredClone(spec),
+        write(data) {
+          if (exec.stopped) return;
+          const bytes = Buffer.from(data);
+          const room = read.bound - size;
+          size += bytes.length;
+          read.onOutput(bytes.length > room ? bytes.subarray(0, room) : bytes);
+          if (size > read.bound) stop("bound");
+        },
+        end: () => stop("ended"),
+      };
+      this.execs.push(exec);
+      if (read.signal.aborted) return stop("aborted");
+      read.signal.addEventListener("abort", aborted, { once: true });
+      this.onExec(exec);
+    });
   }
 
   async createNetwork(name: string, labels: Record<string, string>) {
@@ -98,6 +152,10 @@ export class FakeDocker implements Docker {
     const watch = { labels, onExit };
     this.#watches.add(watch);
     return () => void this.#watches.delete(watch);
+  }
+
+  #ensureVolume(name: string, labels: Record<string, string>) {
+    if (!this.volumes.has(name)) this.volumes.set(name, { name, labels: { ...labels } });
   }
 
   #get(nameOrId: string): FakeContainer {
