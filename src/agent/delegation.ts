@@ -175,7 +175,7 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
     {
       name: "spawn_agent",
       description:
-        "Start a new sub-agent of your own, and get its ID. With spawn true in its grant it may start sub-agents of its own, and with workspace true it may run commands in a workspace of its own; it can't have more than you. It starts with an empty conversation, so send it its task.",
+        "Start a new sub-agent of your own, and get its ID. With spawn true in its grant it may start sub-agents of its own; it can't have more than you. It starts with an empty conversation, so send it its task.",
       inputSchema: {
         type: "object",
         properties: { grant: { type: "object", properties: { spawn: { type: "boolean" }, workspace: { type: "boolean" } }, required: ["spawn"] } },
