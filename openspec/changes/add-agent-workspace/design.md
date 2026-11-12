@@ -103,7 +103,7 @@ Why each piece:
 
 - **The output goes to a file, not the exec's stream.** Something the command runs in the background inherits the file, not the stream, so an ordinary background process doesn't hold the call open. The whole output also lands where it can be kept when it's too long, with no second copy. This is how output flows, not a boundary: the next section covers a command that writes around the file.
 - **Its own process group.** The engine's API can't kill an exec. So when the timeout passes, or the caller hangs up, the runtime runs a second exec that kills the command's process group. That covers the shell and everything it started that is still in the group, background jobs included. A finished command's group isn't touched, so what it started in the background lives until the workspace container is removed. A process that leaves its group deliberately, with `setsid` or a daemon's fork, counts as background either way.
-- **The caller hanging up kills the command.** Cancelling by an urgent message aborts the agent's request, and so does a crash of the agent's process. Either way the command dies with its call, so a crash leaves no command running unseen. The loop records the call as `CANCELLED` or `INTERRUPTED`, as it does today.
+- **The caller hanging up kills the command.** Cancelling by an urgent message aborts the agent's request, and so does a crash of the agent's process. Either way the command dies with its call, so a crash leaves no command running unseen. The loop records the call as `CANCELLED` or `INTERRUPTED`, as it does today. The runtime sees a hang-up as the response closing before it was finished, as the relay does. The request's own `close` doesn't mean that: Node fires it once the body has been read, while the caller still waits for the answer.
 - **The runtime enforces the maximum.** The runtime holds the boundary, so the 10-minute maximum is its constant, not the tool's. The tool refuses an over-long timeout too, so the model hears about it before any request is made.
 - **The command runs in bash.** Models write bash: `[[ ]]`, `source`, arrays, `set -o pipefail`. The base image's `sh` is dash, which rejects all of those, and bash is already in the image.
 - **The cut is bytes, kept as the start and the end.** Errors come at the end, which is why the end gets 6 KB of the 8 KB. A character split by the cut is decoded as a replacement character.
@@ -132,9 +132,9 @@ The tool's description says:
 - the 2-minute default and the 10-minute maximum
 - that a command which keeps running, such as a server, goes in the background with its output redirected
 - that output is capped at about 8 KB, so large output belongs in a file to search with `grep` or `tail`, and that output which is cut anyway is saved whole
-- that a command is at most 64 KB, so a large file is written in parts
+- that a command is limited to 64 KB as sent, where escaping newlines and quotes counts, so a large file is written in parts
 
-The tool refuses a command over 64 KB before any request is made, with an error saying to write the content in parts.
+The tool refuses a command whose request body would pass the route's 64 KB bound before any request is made, with an error saying to write the content in parts. It measures the body as sent, the UTF-8 JSON with its escaping and timeout, not the command alone: 64,000 bytes of short lines become a body of about 72,000.
 
 The description is behavior, so its wording is settled by the behavior check (see below), not by unit tests. The tool lives in `src/agent/workspace.ts`. `delegation.ts` keeps its delegation tools and gains only the grant. `src/agent/AGENTS.md`'s rule that tool descriptions are behavior is extended to cover `workspace.ts`.
 

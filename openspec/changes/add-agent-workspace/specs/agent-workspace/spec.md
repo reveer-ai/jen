@@ -125,7 +125,15 @@ When a command's timeout passes, the runtime SHALL kill the command's process gr
 - **THEN** the call is answered within its timeout plus 5 seconds
 
 ### Requirement: A command ends with its caller
-When the caller hangs up before the command finishes, the runtime SHALL kill the command's process group.
+When the caller hangs up before the command finishes, the runtime SHALL kill the command's process group. A caller that stays connected until the answer SHALL NOT count as hanging up, however long the command takes.
+
+#### Scenario: A caller that waits
+- **WHEN** a caller posts `sleep 3; echo done` and stays connected
+- **THEN** it gets `200` with the output `done`, and nothing was killed
+
+#### Scenario: A caller that hangs up
+- **WHEN** a caller posts `sleep 100` and disconnects while it runs
+- **THEN** the command's processes are killed
 
 #### Scenario: Cancelled by an urgent message
 - **WHEN** a `run_command` call is running and the agent gets an urgent message that cancels it
@@ -184,14 +192,18 @@ An agent whose grant has `workspace` SHALL be offered `run_command`, taking `com
 - **THEN** the result starts with `Error:` and holds the runtime's status
 
 ### Requirement: run_command refuses what the runtime would
-`run_command` SHALL fail, without calling the runtime, on a timeout over 600 seconds or below 1, or a command over 64 KiB. The error for a long command SHALL say to write the content in parts.
+`run_command` SHALL fail, without calling the runtime, on a timeout over 600 seconds or below 1, or a command whose request body, as the UTF-8 JSON it would send with its timeout, would be over 64 KiB. The error for a long command SHALL say to write the content in parts. No command it sends SHALL get `413`.
 
 #### Scenario: A long heredoc
 - **WHEN** the model calls `run_command` with a command of 70 KiB
 - **THEN** nothing is sent to the runtime, and the result starts with `Error:` and says to write it in parts
 
+#### Scenario: Escaping counts
+- **WHEN** the model calls `run_command` with a timeout and a command of 64,000 bytes of short lines with quotes and backslashes, whose JSON body is over 64 KiB
+- **THEN** nothing is sent to the runtime, and the result says to write it in parts
+
 ### Requirement: run_command's description says how the workspace works
-`run_command`'s description SHALL say that each command runs in bash in the home directory, which persists, with no network and no way to install anything; that the timeout defaults to 2 minutes and is at most 10; that a command which keeps running goes in the background with its output redirected; that output is capped at about 8 KB, so large output belongs in a file, and output cut anyway is saved whole; and that a command is at most 64 KB.
+`run_command`'s description SHALL say that each command runs in bash in the home directory, which persists, with no network and no way to install anything; that the timeout defaults to 2 minutes and is at most 10; that a command which keeps running goes in the background with its output redirected; that output is capped at about 8 KB, so large output belongs in a file, and output cut anyway is saved whole; and that a command is limited to 64 KB as sent, escaping included.
 
 #### Scenario: The model is told the limits
 - **WHEN** an agent with `workspace` calls the model
