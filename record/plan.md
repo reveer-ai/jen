@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-12 | [JEN-20](https://linear.app/reveer/issue/JEN-20) | [#14](https://github.com/reveer-ai/jen/pull/14) | Agents with the `workspace` grant run commands in a sandboxed workspace container with no network, through `run_command`; the boundary check runs in CI. |
 | 2026-11-10 | [JEN-3](https://linear.app/reveer/issue/JEN-3) | [#13](https://github.com/reveer-ai/jen/pull/13) | Recorded how agents present themselves and scoped the UI engine milestone. |
 | 2026-11-09 | [JEN-15](https://linear.app/reveer/issue/JEN-15) | [#11](https://github.com/reveer-ai/jen/pull/11) | Skills to review, deliver and tend changes; `context/` renamed `record/` and kept by intent; conventions moved in from private memory. |
 | 2026-11-09 | [JEN-12](https://linear.app/reveer/issue/JEN-12) | [#10](https://github.com/reveer-ai/jen/pull/10) | Agents answer by ending their turn and wait with a `wait` tool; the behavior check holds them to it on Luna. |
@@ -41,7 +42,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-20](https://linear.app/reveer/issue/JEN-20) Let agents run commands, then [JEN-19](https://linear.app/reveer/issue/JEN-19) Let agents read and write files, then [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. JEN-18's proposal, `add-agent-ui`, is aligned and pushed on branch `jen-18-let-agents-present-themselves-through-ui-they-write`, with no pull request yet. Its design waits until JEN-19 lands.
+Up next in cycle 3: [JEN-19](https://linear.app/reveer/issue/JEN-19) Let agents read and write files, then [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. JEN-18's proposal, `add-agent-ui`, is aligned and pushed on branch `jen-18-let-agents-present-themselves-through-ui-they-write`, with no pull request yet. Its design waits until JEN-19 lands.
 
 ## Open questions, held for their tasks
 

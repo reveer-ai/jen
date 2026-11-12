@@ -4,7 +4,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-11
 
-Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), aligning on its proposal. The proposal is in `openspec/changes/add-agent-workspace/`:
+Made in [JEN-20](https://linear.app/reveer/issue/JEN-20), aligning on its proposal. The proposal and design are in `openspec/changes/archive/2026-11-12-add-agent-workspace/`:
 
 - **An agent's commands run in a workspace container beside its own, which the runtime creates and is the only way into.** The workspace container gets the workspace volume and nothing of the agent's: no state, no settings, no network, and limits of its own. *Why:* set by the maintainer. What a command can reach is fixed by what its container is given, on any kernel Docker runs on. *Rejected:* bubblewrap inside the agent's container, which needs Docker's seccomp profile and masked paths loosened. Landlock inside the agent's container, which is rules over a filesystem the command shares: before its version 3 (Linux 6.2) a command emptied `agent.db` with `truncate()`, and the command shares the agent's memory and CPU. Both were measured on Docker Desktop on 2026-11-11. Nesting a container inside the agent's has the same problem as bubblewrap.
 - **The workspace follows what's done to its agent, not what happens to its process.** Stopping the agent removes the workspace container and keeps its files. A crash of the agent's process leaves it running. *Why:* set by the maintainer. A crash is jen's failure, not the work's, and the runtime acts on a crash only once the restarts run out, when the agent counts as stopped and its workspace container is removed as a stop would.
