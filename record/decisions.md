@@ -4,9 +4,13 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-12
 
-Made in [JEN-19](https://linear.app/reveer/issue/JEN-19), aligning on its proposal. The proposal and design are in `openspec/changes/add-file-tools/`:
+Made in [JEN-19](https://linear.app/reveer/issue/JEN-19), aligning on its proposal. The proposal and design are in `openspec/changes/archive/2026-11-12-add-file-tools/`:
 
 - **Agents get generic file tools, the same for every model: a ranged read, a whole-file write and an exact string replace.** They're plain function tools on a runtime route that moves a file's bytes as the agent, in its workspace. *Why:* set by the maintainer. jen is model-agnostic, so whatever model is selected, through its adapter, must work well. Exact string replace is the edit shape most widely used across model families. An adapter belongs to an API, not a model family: the Responses adapter reaches any model through OpenRouter. *Rejected:* providers' own tools, such as OpenAI's built-in `apply_patch` and Anthropic's text editor tool, wrapped by each adapter. Each is trained into its own vendor's models only, so the adapter would choose tools by model name and still need generic ones for every other model. Revisit only if the behavior check shows a model editing badly with the generic tools.
+
+Made in [JEN-19](https://linear.app/reveer/issue/JEN-19), reviewing its design:
+
+- **A tool behaves the way established tools of its kind do, and a check adapts to the tool, not the reverse.** The file tools follow the exact-replace convention that Claude Code, Gemini CLI and Anthropic's text editor tool share: a missing file is an error, each line is cut past 2000 characters, and an edit returns its numbered lines. The behavior check stops counting a `read_file` of a missing file as a fault. *Why:* set by the maintainer. The point of generic tools is that a model meets what it expects, and a tool reshaped to pass jen's own check stops being that. *Rejected:* answering a missing file as a result so the check's rule could stay whole, and Claude Code's read-before-edit guard, which is its own convention, not a shared one.
 
 ## 2026-11-11
 
