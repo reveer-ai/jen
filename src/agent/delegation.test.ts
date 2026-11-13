@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, toolsFor, type Identity } from "./delegation.ts";
+import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, type Identity } from "./delegation.ts";
 import { Agent, INTERRUPTED } from "./loop.ts";
 import type { Item, Json } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
@@ -230,10 +230,11 @@ describe("delegation tools follow the grant", () => {
   });
 
   const delegation = ["message_sub_agent", "spawn_agent", "list_agents", "stop_agent", "start_agent", "delete_agent"];
+  const workspace = ["run_command", "read_file", "write_file", "edit_file"];
   test.each([
     [{ spawn: true, workspace: false }, delegation],
-    [{ spawn: false, workspace: true }, ["run_command"]],
-    [{ spawn: true, workspace: true }, [...delegation, "run_command"]],
+    [{ spawn: false, workspace: true }, workspace],
+    [{ spawn: true, workspace: true }, [...delegation, ...workspace]],
     [{ spawn: false, workspace: false }, []],
   ])("an agent with %j is offered its grant's tools", (grant, names) => {
     expect(toolsFor({ ...root, grant }, client, debts).map((t) => t.name)).toEqual(names);
@@ -252,6 +253,57 @@ describe("delegation tools follow the grant", () => {
     expect(JSON.parse(await toolOf(root, "start_agent").run(id, signal))).toEqual({ id: "d1d1d1d1d1d1", grant: { spawn: false }, state: "running" });
     expect(await toolOf(root, "delete_agent").run(id, signal)).toBe("done");
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual(["POST /agents/d1d1d1d1d1d1/stop", "POST /agents/d1d1d1d1d1d1/start", "DELETE /agents/d1d1d1d1d1d1"]);
+  });
+});
+
+describe("RuntimeClient moves a file's raw bytes", () => {
+  // A runtime that keeps the last body put, and answers a get with it, or
+  // with refusal when one is set.
+  let files: http.Server;
+  let seen: { method: string; url: string; auth?: string; type?: string }[];
+  let kept: Buffer;
+  let refusal: { status: number; error: string } | undefined;
+  let fileClient: RuntimeClient;
+  beforeEach(async () => {
+    seen = [];
+    kept = Buffer.alloc(0);
+    refusal = undefined;
+    files = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        seen.push({ method: req.method!, url: req.url!, auth: req.headers.authorization, type: req.headers["content-type"] });
+        if (refusal) return void res.writeHead(refusal.status, { "Content-Type": "application/json" }).end(JSON.stringify({ error: refusal.error }));
+        if (req.method === "PUT") return void ((kept = Buffer.concat(chunks)), res.writeHead(204).end());
+        res.writeHead(200, { "Content-Type": "application/octet-stream" }).end(kept);
+      });
+    });
+    await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
+    fileClient = new RuntimeClient(`http://127.0.0.1:${(files.address() as AddressInfo).port}`, "agent-token");
+  });
+  afterEach(async () => {
+    files.closeAllConnections();
+    await new Promise((resolve) => files.close(resolve));
+  });
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+
+  test("bytes pass both ways unchanged, with the path encoded in the query and the agent's own token", async () => {
+    await fileClient.writeFile("a b/ü?&#.bin", bytes);
+    expect(await fileClient.readFile("a b/ü?&#.bin")).toEqual(bytes);
+    const url = `/workspace/files?path=${encodeURIComponent("a b/ü?&#.bin")}`;
+    expect(seen).toEqual([
+      { method: "PUT", url, auth: "Bearer agent-token", type: "application/octet-stream" },
+      { method: "GET", url, auth: "Bearer agent-token", type: undefined },
+    ]);
+  });
+
+  test("a refusal throws a RuntimeRefusal with its status and message", async () => {
+    refusal = { status: 404, error: "no file at notes/release.md" };
+    const error = await fileClient.readFile("notes/release.md").catch((e) => e);
+    expect(error).toBeInstanceOf(RuntimeRefusal);
+    expect(error).toMatchObject({ status: 404, message: "the runtime answered 404: no file at notes/release.md" });
+    refusal = { status: 400, error: "Permission denied" };
+    await expect(fileClient.writeFile("ro.txt", bytes)).rejects.toMatchObject({ status: 400 });
   });
 });
 

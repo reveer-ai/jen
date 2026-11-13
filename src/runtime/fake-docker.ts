@@ -11,7 +11,10 @@ import { DockerError, type Container, type ContainerDetails, type ContainerSpec,
 export interface FakeExec {
   // The container's name.
   container: string;
+  // As it was asked for, without its input.
   spec: ExecSpec;
+  // What was written to its stdin, when it was given input.
+  input?: Buffer;
   // Writes to the exec's stdout. Nothing is read once reading has stopped.
   write(data: string | Buffer): void;
   // Ends the stream, as the exec's process does when it exits.
@@ -120,9 +123,11 @@ export class FakeDocker implements Docker {
         resolve(end);
       };
       const aborted = () => stop("aborted");
+      const { input, ...rest } = spec;
       const exec: FakeExec = {
         container: c.name,
-        spec: structuredClone(spec),
+        spec: structuredClone(rest),
+        ...(input === undefined ? {} : { input: Buffer.from(input) }),
         write(data) {
           if (exec.stopped) return;
           const bytes = Buffer.from(data);

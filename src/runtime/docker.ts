@@ -3,6 +3,7 @@
 // engine that changes its defaults can't change what a request means.
 
 import http from "node:http";
+import type net from "node:net";
 
 const VERSION = "v1.47";
 
@@ -68,11 +69,15 @@ export interface Sandbox {
   pids: number;
 }
 
-// A command to run in a running container, with stdin closed.
+// A command to run in a running container. Its stdin is attached only when
+// there's input, which is written to it once the exec starts. The stdin is
+// never closed, so a command given input must read exactly as much as it
+// needs, such as with head -c, and not wait for the input to end.
 export interface ExecSpec {
   user: string;
   workdir: string;
   cmd: string[];
+  input?: Buffer;
 }
 
 // How to read an exec's output. bound counts every byte of the stream,
@@ -236,7 +241,7 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
 
     async exec(container, spec, read) {
       const created = await call("POST", `/containers/${id(container)}/exec`, {
-        AttachStdin: false,
+        AttachStdin: spec.input !== undefined,
         AttachStdout: true,
         AttachStderr: false,
         Tty: false,
@@ -247,55 +252,68 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
       const payload = JSON.stringify({ Detach: false, Tty: false });
       return new Promise<ExecEnd>((resolve, reject) => {
         let finished = false;
-        // A hijacked stream belongs to one exec, so it gets a connection of its own.
+        let socket: net.Socket | undefined;
+        // A hijacked stream belongs to one exec, so it gets a connection of its
+        // own. The engine answers an upgrade with 101 and then the raw stream,
+        // which is the only way to write to the exec's stdin, so every exec
+        // starts this way.
         const req = http.request({
           socketPath,
           agent: false,
           method: "POST",
           path: `/${VERSION}/exec/${id(created.Id)}/start`,
-          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+          headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload), Connection: "Upgrade", Upgrade: "tcp" },
         });
         const finish = (end: ExecEnd) => {
           if (finished) return;
           finished = true;
           read.signal.removeEventListener("abort", aborted);
+          socket?.destroy();
           req.destroy();
           resolve(end);
+        };
+        const fail = (error: Error) => {
+          if (finished) return;
+          finished = true;
+          read.signal.removeEventListener("abort", aborted);
+          socket?.destroy();
+          req.destroy();
+          reject(error);
         };
         const aborted = () => finish("aborted");
         if (read.signal.aborted) return finish("aborted");
         read.signal.addEventListener("abort", aborted, { once: true });
+        // An error, such as 404 for an exec that's gone or 409 for a container
+        // that stopped, comes as an ordinary response.
         req.on("response", (res) => {
-          if ((res.statusCode ?? 0) >= 400) {
-            const chunks: Buffer[] = [];
-            res.on("data", (chunk: Buffer) => chunks.push(chunk));
-            res.on("end", () => {
-              const text = Buffer.concat(chunks).toString("utf8");
-              finished = true;
-              read.signal.removeEventListener("abort", aborted);
-              reject(new DockerError(res.statusCode ?? 0, parse(text)?.message ?? `the engine answered ${res.statusCode}`));
-            });
-            return;
-          }
+          const status = res.statusCode ?? 0;
+          // A stream that wasn't upgraded can't take input, and isn't read.
+          if (status < 400) return fail(new DockerError(status, `the engine answered ${status} without upgrading the exec's stream`));
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => fail(new DockerError(status, parse(Buffer.concat(chunks).toString("utf8"))?.message ?? `the engine answered ${status}`)));
+          res.on("error", fail);
+        });
+        req.on("upgrade", (_res, upgraded, head) => {
+          socket = upgraded;
+          if (finished) return void upgraded.destroy();
           const frames = frameDecoder(read.onOutput);
           let size = 0;
-          res.on("data", (chunk: Buffer) => {
+          const data = (chunk: Buffer) => {
             if (finished) return;
             const room = read.bound - size;
             size += chunk.length;
             frames(chunk.length > room ? chunk.subarray(0, room) : chunk);
             if (size > read.bound) finish("bound");
-          });
-          res.on("end", () => finish("ended"));
-          res.on("error", () => finish("ended"));
-          res.on("close", () => finish("ended"));
+          };
+          upgraded.on("data", data);
+          upgraded.on("end", () => finish("ended"));
+          upgraded.on("error", () => finish("ended"));
+          upgraded.on("close", () => finish("ended"));
+          if (head.length > 0) data(head);
+          if (spec.input !== undefined && !finished) upgraded.write(spec.input);
         });
-        req.on("error", (error) => {
-          if (finished) return;
-          finished = true;
-          read.signal.removeEventListener("abort", aborted);
-          reject(error);
-        });
+        req.on("error", fail);
         req.end(payload);
       });
     },
