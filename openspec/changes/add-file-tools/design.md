@@ -150,6 +150,10 @@ The replacement is literal: it splits on `old_string` and joins with `new_string
 
   The check reads both files from the workspace with `docker exec`. It fails unless `settings.conf` matches the expected bytes exactly and `release.md` matches the given text, with or without a final newline. The check's existing rule that any failed tool call fails the run applies too, so an `edit_file` that doesn't match counts against the task. The rule gains one exception, for every task: a `read_file` of a file that doesn't exist isn't a fault, since checking whether a file exists isn't misbehavior. The tool keeps the error every established file tool gives rather than bending to the check. That is the evidence the proposal names for revisiting native tools. The task judges the files, not which tools wrote them. As built, the design records which tools Luna chose.
 
+  As built, on 2026-11-12, one pass on `openai/gpt-6-luna` through OpenRouter:
+  - The `files` task passed 3 of 3 runs. Every run wrote `release.md` with `write_file`. One run edited `settings.conf` with `edit_file`; the other two edited it with commands through `run_command`, which left the same exact bytes. No file tool call failed, so the descriptions stand as drafted.
+  - One delegation run failed, `question-2`: the root messaged a sub-agent it hadn't spawned before asking its question. That's a failure already seen on `main`, and within its 0 to 2 failed runs a pass.
+
 ## Risks / Trade-offs
 
 - **[A file changes between an edit's read and its write]** A background process writing the same file loses its change. → Rare: it needs the agent's own background process writing the file it's editing. An exact-match edit also fails rather than guessing when the text moved. A conditional write would add a version check to every call for a case nothing hits yet.

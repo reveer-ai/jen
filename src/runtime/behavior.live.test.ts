@@ -161,6 +161,8 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
     const runs = tasks.flatMap((task) => Array.from({ length: RUNS }, (_, i) => runTask(api, base, owner, name, task, `${task.name}-${i + 1}`)));
     const results = await Promise.all(runs);
     if (process.env.JEN_LIVE_RECORD) record(results);
+    // Which tools each run's agents called, passing or not.
+    for (const run of results) console.log(`${run.label}: ${run.tools || "no tools"}`);
     const failed = results.filter((run) => run.faults.length > 0);
     for (const run of failed) console.log(`${run.label}: ${run.faults.join("; ")}\n${run.transcript}\n`);
     expect(failed.map((run) => `${run.label}: ${run.faults.join("; ")}`)).toEqual([]);
@@ -274,7 +276,10 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   if (filler.length > 0) faults.push(`filler replies: ${filler.map((text) => JSON.stringify(text)).join(", ")}`);
   const modelErrors = events.filter((e) => e.kind === "error").length;
   if (modelErrors > 0) faults.push(`${modelErrors} model error events`);
-  return { label, faults, transcript: transcript(events, ids), recording: recording(task, events, ids, parents) };
+  const counts = new Map<string, number>();
+  for (const { item } of calls) counts.set(item.name, (counts.get(item.name) ?? 0) + 1);
+  const tools = [...counts].map(([tool, n]) => `${tool} ×${n}`).join(", ");
+  return { label, faults, tools, transcript: transcript(events, ids), recording: recording(task, events, ids, parents) };
 }
 
 // The run as docs/interactions.html replays it, with every agent ID replaced
