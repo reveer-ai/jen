@@ -27,37 +27,25 @@ See proposal.md for what this change builds and why, and `record/decisions.md` (
 
 ### Where the UI lives, and who may publish it
 
-The UI is the folder `ui/` in the agent's workspace, `/home/agent/ui/`, entered at `ui/index.html`. The agent writes it with `write_file` and `edit_file`. Nothing reads the folder until the agent calls `publish_ui`.
+The UI is the file `ui/index.html` in the agent's workspace, `/home/agent/ui/index.html`. The agent writes it with `write_file` and `edit_file`, and may keep anything else it likes beside it. Nothing reads the file until the agent calls `publish_ui`.
 
 `publish_ui` is offered to an agent that is a root (its parent is `owner`) and has `workspace`. A root without `workspace` keeps the textbox, version 0, for good. A sub-agent isn't offered the tool, since nobody can open its UI.
 
 *Why tie it to `workspace`:* the UI is files, and files live in the workspace. Granting a UI without a workspace would need a second place to write files.
 
-### Publishing bundles the folder into one document
+### Publishing sends `ui/index.html` as it is
 
-The frame can't make network requests (below), so it can't load the files `index.html` references, such as its scripts, stylesheets and images, the way a browser normally would. `publish_ui` therefore reads `ui/index.html` and every file it references, and inlines each reference as a `data:` URL. The result is one HTML document, saved as the next version.
+The frame can't make network requests (below), so a UI can't load other files the way a page in a browser normally would. The agent may keep whatever it likes in its workspace, such as source files, notes or a build step, but what it publishes is one file, `ui/index.html`, which must stand alone once sent: scripts and styles written inline, images and fonts as `data:` URLs, and nothing fetched. `publish_ui` reads the file's bytes and saves them, unchanged, as the next version. It doesn't parse or rewrite the file.
 
-References followed, each resolved against the file that holds it:
-- In HTML: `src` on `script`, `img`, `source`, `audio`, `video`, `track` and `input`; `srcset` on `img` and `source`; `poster` on `video`; `href` on `link`; `href` on SVG `image` and `use`.
-- In CSS, from `.css` files, `<style>` elements and `style` attributes: every `url()` and `@import`. A stylesheet is rewritten before it's inlined, so its own references are inlined too.
+It refuses when `ui/index.html` is missing, isn't UTF-8, or is over 4 MiB, saving nothing and leaving the version unchanged. On success, the result names the new version and its size.
 
-Left as they are: `data:` and `blob:` URLs, references to a fragment alone (`#id`), and `<a href>`, which is navigation, not a fetch.
+A reference the file still makes to another file or a server fails in the frame, and the agent isn't told (see Risks). The tool's description states the rule, and the UI check on Sol shows whether models keep it. If they don't, a narrow check that refuses a published file's URLs can come later.
 
-A reference starting with `/` is read from `ui/`, which is the UI's root. A reference with a scheme or starting with `//` is refused, because the frame can't reach it. So is a path that leaves `ui/` or a file that doesn't exist. A query string is dropped and a fragment kept. A stylesheet that isn't UTF-8 is refused. Each file's type comes from its extension, from a fixed table.
-
-Scripts are inlined whole and not read, so an `import` of another file in `ui/` won't load in the frame, and neither will a `fetch` of one. The tool's description tells the agent to keep each module in one file and put data in a script.
-
-The bundle holds at most 4 MiB. Past that, the tool refuses and names the largest files.
-
-A publish is all or nothing. It collects every problem it finds and refuses with the whole list, so one call shows the agent everything to fix. Nothing is saved and the version doesn't change. On success, the result names the new version, its size and the files inlined.
-
-The HTML is parsed with `parse5`, a dependency of the agent's image. It's the WHATWG-conformant parser jsdom is built on, so a reference is found where a browser would find it, never inside a comment, a string or a script's text.
+*Why:* set by the maintainer in the design review. Models write self-contained pages well, the agent stays free to work however it likes before it publishes, and jen keeps no bundler and no list of the HTML and CSS that loads files.
 
 *Alternatives:*
+- **jen bundling the folder:** parsing `ui/index.html` with `parse5`, following every attribute, CSS `url()` and `@import` that loads a file, and inlining each as a `data:` URL. It's a parser dependency and a hand-kept list of references, to do what the agent can do itself.
 - **Serving `ui/` as files to the frame**, scoped by CSP to the version's own path. The frame's requests carry no token, so the files would have to be served without auth, and they're the owner's data.
-- **Bundling in the page with the browser's `DOMParser`**, storing the folder as files. The agent would learn of a missing file only if someone opened the UI, and it would need a way to list the folder.
-- **Matching references with regular expressions.** They misread HTML, for example a `src=` inside a script's text.
-- **Following `import`s between scripts.** That needs a JavaScript parser and a module bundler. Models write single-file UIs well, and the description asks for them.
 
 ### Versions, kept in `/state`
 
@@ -147,12 +135,12 @@ For a root with `workspace`, the instructions gain one paragraph:
 
 `publish_ui` takes no input. Its description gives the contract:
 - `ui/index.html` is the entry
-- what is inlined, and that network references are refused
-- that `fetch`, imports between files and links to other pages don't work
+- that `ui/index.html` must stand alone: scripts and styles inline, images and fonts as `data:` URLs
+- that `fetch`, references to other files and links to other pages don't work
 - `jen.subscribe` and `jen.act`, that actions must come from the user's clicks or keys, and to give each input a `name`
 - to make each action's context say everything the agent will need to act on it, since nothing else on the page is sent with it, such as a heading beside the button
 - to show replies
-- the 4 MB bound
+- the 4 MiB bound
 
 These are behavior, so the behavior check runs again (see Checks).
 
@@ -177,7 +165,7 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
 
 ## Checks
 
-- **Unit tests:** the bundler against a fake `RuntimeClient`: each reference kind, nested CSS, every refusal collected in one error, the bound. Also the store's versions; the routes and their refusals on the agent and runtime; the tool offered only to a root with `workspace`; and the instructions.
+- **Unit tests:** `publish_ui` against a fake `RuntimeClient`: a file saved byte for byte, and each refusal. Also the store's versions; the routes and their refusals on the agent and runtime; the tool offered only to a root with `workspace`; and the instructions.
 - **The sandbox check**, `src/agent/sandbox.live.test.ts`, needs no model or Docker. It serves an agent's routes in-process with a stored hostile document, opens the page in headless Chromium through Playwright, and asserts:
   - nothing reaches a probe server
   - the token can't be read from the frame
@@ -198,7 +186,7 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
 
 - **WebRTC leaves the frame.** Measured on 2026-11-13: an `RTCPeerConnection` in the frame sent STUN packets over UDP to a host it named, with `webrtc 'block'` in the frame's policy or the page's. Chromium 156 doesn't enforce that directive. So a UI can send data out over UDP. Today that adds nothing: the agent that wrote the UI reaches the internet itself, and the frame holds only the conversation, which the agent already has. Once [JEN-21](https://linear.app/reveer/issue/JEN-21) cuts the agent off, the frame becomes the one way out, so JEN-21 must close it or record why not. Deleting `RTCPeerConnection` in the bridge doesn't close it: a nested `about:blank` frame has a fresh one.
 - **The owner's token is in the URL they open**, so it can land in browser history before the page removes it. It's local, it's the owner's own browser, and JEN-4 replaces it.
-- **A UI that breaks at runtime is invisible to the agent.** An `import` of another file, a `fetch` or a plain bug shows only in the browser's console, and the user tells the agent. Reporting errors automatically would send messages the user didn't make.
+- **A UI that breaks at runtime is invisible to the agent.** A reference to another file, a `fetch` or a plain bug shows only in the browser's console, and the user tells the agent. Reporting errors automatically would send messages the user didn't make.
 - **Swapping versions loses what the user typed** in the old frame. The agent decides when to publish.
 - **Activation lasts a few seconds**, so a click's handler can send several actions, or one on a short timer. It can't send any without the user.
 - **Only Chromium is checked.** Safari and Firefox implement the same sandbox, CSP and user-activation rules, but no check runs on them.

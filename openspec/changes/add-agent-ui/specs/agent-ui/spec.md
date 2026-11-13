@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: A root with workspace publishes its UI
-The agent SHALL offer `publish_ui`, taking no input, only when it is a root (its parent is `owner`) and its grant has `workspace`. The tool SHALL read `ui/index.html` in the agent's workspace and every file it references, bundle them into one HTML document, and save it as the agent's next UI version. Its result SHALL name the new version, the document's size and the files inlined.
+The agent SHALL offer `publish_ui`, taking no input, only when it is a root (its parent is `owner`) and its grant has `workspace`. The tool SHALL read `ui/index.html` in the agent's workspace and save its bytes, unchanged, as the agent's next UI version. Its result SHALL name the new version and the document's size.
 
 #### Scenario: A root with workspace
 - **WHEN** a root agent whose grant has `workspace` calls the model
@@ -19,38 +19,23 @@ The agent SHALL offer `publish_ui`, taking no input, only when it is a root (its
 - **WHEN** a root that has published nothing calls `publish_ui` on a valid `ui/`
 - **THEN** the UI becomes version 1, and the result says so
 
-### Requirement: Publishing inlines every referenced file
-`publish_ui` SHALL parse HTML as a browser does, and SHALL replace each reference to a file in `ui/` with a `data:` URL of that file, typed by its extension. It SHALL follow every attribute that loads a file (`src`, `srcset`, `poster`, and `href` on `link` and SVG `image` and `use`), and `url()` and `@import` in stylesheets, `<style>` elements and `style` attributes. A stylesheet's own references SHALL be inlined before it is. Scripts SHALL be inlined without being read.
+### Requirement: Publishing sends ui/index.html as it is
+`publish_ui` SHALL publish `ui/index.html` alone, without parsing it, rewriting it or reading any file it references. The tool's description SHALL tell the agent that the file must stand alone once sent: scripts and styles inline, images and fonts as `data:` URLs, and nothing fetched.
 
-#### Scenario: Script, stylesheet and image
-- **WHEN** `ui/index.html` references `app.js`, `style.css` and `img/logo.png`, and `style.css` holds `url(fonts/a.woff2)`
-- **THEN** the published document references each as a `data:` URL, and the stylesheet's `data:` URL holds the font as a `data:` URL
-
-#### Scenario: A reference in a script's text
-- **WHEN** a script in `ui/index.html` holds the text `src="missing.png"` in a string
-- **THEN** it isn't read as a reference
-
-### Requirement: References resolve within ui/
-A reference SHALL resolve against the file that holds it, and one starting with `/` against `ui/`. A query string SHALL be dropped and a fragment kept. `data:` and `blob:` URLs, fragment-only references and `<a href>` SHALL be left as they are.
-
-#### Scenario: A root-relative reference from a nested stylesheet
-- **WHEN** `ui/css/main.css` holds `url(/img/bg.png?v=2#x)`
-- **THEN** `ui/img/bg.png` is inlined, with the fragment `#x`
-
-#### Scenario: A link to another page
-- **WHEN** `ui/index.html` holds `<a href="about.html">`
-- **THEN** the link is left as it is, and `about.html` isn't read
+#### Scenario: Other files in ui/
+- **WHEN** `ui/` holds `index.html`, which references `app.js`, and `app.js`
+- **THEN** the published document is `index.html` byte for byte, and `app.js` isn't read
 
 ### Requirement: A publish is all or nothing
-`publish_ui` SHALL refuse, saving nothing and leaving the version unchanged, when `ui/index.html` is missing, when a reference has a scheme or starts with `//`, leaves `ui/` or names a file that doesn't exist, when a stylesheet isn't UTF-8, when stylesheets import each other in a cycle, or when the document would be over 4 MiB. Its error SHALL list every problem found, and for the size bound SHALL name the largest files.
+`publish_ui` SHALL refuse, saving nothing and leaving the version unchanged, when `ui/index.html` is missing, isn't UTF-8, or is over 4 MiB. Its error SHALL say which.
 
-#### Scenario: A CDN script and a missing image
-- **WHEN** `ui/index.html` references `https://cdn.example.com/lib.js` and `missing.png`
-- **THEN** the call fails naming both, and the latest version is unchanged
+#### Scenario: No entry
+- **WHEN** a root calls `publish_ui` with no `ui/index.html` in its workspace
+- **THEN** the call fails saying the file is missing, and the latest version is unchanged
 
 #### Scenario: Too large
-- **WHEN** the bundled document would be over 4 MiB
-- **THEN** the call fails naming the largest files
+- **WHEN** `ui/index.html` is over 4 MiB
+- **THEN** the call fails giving its size and the bound, and the latest version is unchanged
 
 ### Requirement: Every agent starts with a textbox
 An agent that has published nothing SHALL serve the textbox shipped in its image as version 0. The textbox SHALL show the conversation's messages and errors and send what the user types through `jen.act`, as any UI does.

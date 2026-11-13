@@ -2,6 +2,12 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-13
+
+Made in [JEN-18](https://linear.app/reveer/issue/JEN-18), reviewing its design. The proposal and design are in `openspec/changes/add-agent-ui/`:
+
+- **An agent publishes its UI as one file, `ui/index.html`, sent as it is, which must stand alone.** Scripts and styles are inline, images and fonts are `data:` URLs, and nothing is fetched. The agent can keep and do whatever it likes in its workspace before it publishes. `publish_ui` refuses only a missing file, one that isn't UTF-8, or one over 4 MiB. *Why:* set by the maintainer, to keep the task simple. Models write self-contained pages well, and jen keeps no bundler. *Rejected:* jen bundling `ui/` with `parse5` and a hand-kept list of the HTML and CSS that loads files. A check that refuses a published file's URLs can come later if the UI check on Sol shows models breaking the rule.
+
 ## 2026-11-12
 
 Made in [JEN-19](https://linear.app/reveer/issue/JEN-19), aligning on its proposal. The proposal and design are in `openspec/changes/archive/2026-11-12-add-file-tools/`:

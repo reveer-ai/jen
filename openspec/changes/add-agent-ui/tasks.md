@@ -6,8 +6,8 @@
 
 ## 2. Publishing
 
-- [ ] 2.1 Add `parse5` to the agent's dependencies, and write the bundler in `src/agent/ui.ts`. It reads `ui/index.html` and what it references through `RuntimeClient.readFile`, follows the references the design lists, resolves them within `ui/`, and inlines each as a `data:` URL typed from a fixed extension table, rewriting stylesheets first. It collects every refusal (missing entry or file, a scheme or `//`, leaving `ui/`, a stylesheet that isn't UTF-8, an import cycle, over 4 MiB with the largest files named) and refuses with all of them. Verify with `ui.test.ts` against a fake `RuntimeClient`, for each scenario in the spec's publishing requirements.
-- [ ] 2.2 Add `publish_ui` to `src/agent/ui.ts` with the description the design gives, offered by `toolsFor` in `src/agent/delegation.ts` only to a root with `workspace`. It saves through `store.publish` and returns the version, size and files inlined. Add the UI paragraph to `instructions` for a root with `workspace`. Verify with `delegation.test.ts` that the tool and the paragraph appear only for a root with `workspace`, and with `ui.test.ts` that a refused publish leaves the version unchanged.
+- [ ] 2.1 Write `publish_ui` in `src/agent/ui.ts`, with the description the design gives. It reads `ui/index.html` through `RuntimeClient.readFile`, refuses it if missing, not UTF-8 or over 4 MiB, and otherwise saves it unchanged through `store.publish` and returns the version and size. Verify with `ui.test.ts` against a fake `RuntimeClient`: a file saved byte for byte, each refusal, and a refused publish leaving the version unchanged.
+- [ ] 2.2 Offer `publish_ui` from `toolsFor` in `src/agent/delegation.ts` only to a root with `workspace`, and add the UI paragraph to `instructions` for a root with `workspace`. Verify with `delegation.test.ts` that the tool and the paragraph appear only for a root with `workspace`.
 
 ## 3. The page, the bridge and the textbox
 
