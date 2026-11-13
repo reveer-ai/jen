@@ -35,7 +35,7 @@ The UI is the folder `ui/` in the agent's workspace, `/home/agent/ui/`, entered 
 
 ### Publishing bundles the folder into one document
 
-The frame has no network (below), so it can't fetch the UI's other files. `publish_ui` therefore reads `ui/index.html` and every file it references, and inlines each reference as a `data:` URL. The result is one HTML document, saved as the next version.
+The frame can't make network requests (below), so it can't load the files `index.html` references, such as its scripts, stylesheets and images, the way a browser normally would. `publish_ui` therefore reads `ui/index.html` and every file it references, and inlines each reference as a `data:` URL. The result is one HTML document, saved as the next version.
 
 References followed, each resolved against the file that holds it:
 - In HTML: `src` on `script`, `img`, `source`, `audio`, `video`, `track` and `input`; `srcset` on `img` and `source`; `poster` on `video`; `href` on `link`; `href` on SVG `image` and `use`.
