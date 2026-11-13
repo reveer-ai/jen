@@ -213,3 +213,34 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
   expect(served.filter((request) => request === "POST /messages")).toHaveLength(1);
   await context.close();
 }, 60_000);
+
+test("a publish whose UI fails to load once still shows, with no other publish or reload", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route(`${base}/page`, (route) => route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${token}` } }));
+  // Fails the next load of the UI once, as a passing fault would.
+  let failNext = false;
+  await page.route(`${base}/ui`, (route) => {
+    if (!failNext) return route.continue();
+    failNext = false;
+    return route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"unavailable"}' });
+  });
+  await page.goto(`${base}/page#token=${token}`);
+  const title = () => page.locator("iframe").getAttribute("title");
+  const shown = (await store.latestUi())!.version;
+  await expect.poll(title).toBe(`UI, version ${shown}`);
+
+  // A publish the stream carries, whose load fails, and then a dropped stream.
+  failNext = true;
+  const version = store.publish("<p>the answer</p>");
+  store.save([
+    { type: "tool_call", id: "publish-again", name: "publish_ui", input: {} },
+    { type: "tool_result", callId: "publish-again", output: `Published ui/index.html as version ${version}.` },
+  ]);
+  agent.emit("saved");
+  await until(() => (failNext ? undefined : true), "the failed load");
+  agentServer.closeAllConnections();
+
+  await expect.poll(title, { timeout: 20_000 }).toBe(`UI, version ${version}`);
+  await context.close();
+}, 60_000);

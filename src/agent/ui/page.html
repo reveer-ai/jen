@@ -91,16 +91,16 @@ function bridge(version) {
 
 const bar = document.getElementById("bar");
 const barText = document.getElementById("bar-text");
-// What the bar shows, and whether it's about the connection, which a
-// reconnect clears.
+// What the bar shows, and its kind: "connection", which a reconnect clears,
+// "ui", which a successful load of the UI clears, or "other".
 let barKind;
 function fail(text, kind = "other") {
   barText.textContent = text;
   barKind = kind;
   bar.classList.add("shown");
 }
-function clearConnectionFailure() {
-  if (barKind === "connection") bar.classList.remove("shown");
+function clearFailure(kind) {
+  if (barKind === kind) bar.classList.remove("shown");
 }
 document.getElementById("bar-close").addEventListener("click", () => bar.classList.remove("shown"));
 
@@ -153,9 +153,21 @@ function show(version, document) {
 }
 
 // Fetches the latest UI and swaps it in if its version is new. At most one
-// fetch is in flight; a call made during one runs once it's done.
+// fetch is in flight; a call made during one runs once it's done. A failed
+// fetch is tried again, waiting longer after each failure, up to
+// MAX_BACKOFF_MS, since the publish that called for it won't come again.
 let fetching = false;
 let again = false;
+let retry;
+let retryDelay = 1000;
+function retryLater() {
+  if (retry !== undefined || refused) return;
+  retry = setTimeout(() => {
+    retry = undefined;
+    refresh();
+  }, retryDelay);
+  retryDelay = Math.min(retryDelay * 2, MAX_BACKOFF_MS);
+}
 async function refresh() {
   if (refused) return;
   if (fetching) return void (again = true);
@@ -163,11 +175,17 @@ async function refresh() {
   try {
     const answer = await request("ui");
     if (answer.status === 401) return refuse();
-    if (!answer.ok) return fail(`The UI couldn't be loaded: the agent answered ${answer.status}. ${await reason(answer)}`, "connection");
+    if (!answer.ok) {
+      fail(`The UI couldn't be loaded: the agent answered ${answer.status}. ${await reason(answer)} Retrying…`, "ui");
+      return retryLater();
+    }
     const { version, document } = await answer.json();
+    retryDelay = 1000;
+    clearFailure("ui");
     if (version !== shown) show(version, document);
   } catch (error) {
-    fail(`The UI couldn't be loaded: ${error.message}`, "connection");
+    fail(`The UI couldn't be loaded: ${error.message} Retrying…`, "ui");
+    retryLater();
   } finally {
     fetching = false;
     if (again) {
@@ -210,8 +228,9 @@ async function stream() {
       if (answer.status === 401) return refuse();
       if (!answer.ok) throw new Error(`the agent answered ${answer.status}. ${await reason(answer)}`);
       backoff = 1000;
-      clearConnectionFailure();
-      if (shown === undefined) refresh();
+      // A reconnect misses no publish, since the stream resumes after the
+      // last event, and a failed load of the UI retries on its own.
+      clearFailure("connection");
       await readEvents(answer.body);
       throw new Error("the connection closed");
     } catch (error) {

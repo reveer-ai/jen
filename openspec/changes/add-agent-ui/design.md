@@ -70,7 +70,7 @@ From there, everything the user sees is the agent's. The textbox doesn't show th
 2. Fetches `ui` (relative to its own path), `{"version", "document"}`, with the token.
 3. Opens `events` with `fetch`, not `EventSource`, because `EventSource` can't send an `Authorization` header. It reads Server-Sent Events from the body, and reconnects with `Last-Event-ID` after a drop, waiting longer after each failure, up to 30 seconds.
 4. Runs the document in a frame (below) that fills the page. It passes the frame nothing from the stream.
-5. When an item is a `tool_result` for a `publish_ui` call, which it matches by the call's ID, it fetches `ui` again. If the version is new, it swaps the frame for the new one. Old publishes in the stream each fetch `ui` too, but no more than one fetch is in flight, and an unchanged version changes nothing.
+5. When an item is a `tool_result` for a `publish_ui` call, which it matches by the call's ID, it fetches `ui` again. If the version is new, it swaps the frame for the new one. Old publishes in the stream each fetch `ui` too, but no more than one fetch is in flight, and an unchanged version changes nothing. A failed fetch is tried again, waiting longer after each failure, up to 30 seconds, since the publish that called for it won't come again: a reconnect resumes after it.
 6. Posts each action the frame hands it (below) to `messages`, as the viewer.
 
 The page draws nothing of its own except a thin bar for failures: no token, `401`, a refused action, a dropped connection, or an error event from the agent, such as a failed model call. The bar shows the agent's errors because nothing else on the page would.
