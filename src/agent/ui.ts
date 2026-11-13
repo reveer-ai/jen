@@ -36,6 +36,7 @@ function publishUi(runtime: RuntimeClient, store: Pick<Store, "publish">): Tool 
       "The UI runs with no network, so fetch, references to other files and links to other pages don't work. " +
       "The UI can call jen.act(context) to send you an action, and read jen.version, the version it shows. " +
       "Call jen.act only from the user's clicks or keys: an action sent on load or on a timer is dropped. " +
+      "Forms never submit, and a form's submit event never fires, so call jen.act from a button's click handler or an input's keydown handler, not from a submit handler. " +
       "An action brings you its context, any JSON value, and the value of every input, select and textarea, keyed by its name or id, so give each input a name. " +
       "Nothing else on the page is sent, such as a heading beside the button, so make each action's context say everything you'll need to act on it. " +
       "The user sees only what your UI shows, never your text replies, so answer each action by publishing, and make every UI give the user a way to act or type. " +

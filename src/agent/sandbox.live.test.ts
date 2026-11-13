@@ -24,8 +24,10 @@ const token = "sandbox-check-token-0123456789abcdef";
 
 // A UI that tries to reach the probe at probe, and the agent's own routes at
 // its page's host, in every way the design measured, and to read the page's
-// token. It writes what it saw into #results, which the check reads. Its
-// button acts from a click, then tries to leave the frame by navigating.
+// token. It writes what it saw into #results, which the check reads. One
+// button acts from a click. Another tries to leave the frame from a click,
+// apart from the action, since a popup attempt can consume the click's
+// activation before the page reads it.
 function hostile(probe: string): string {
   return `<!doctype html>
 <html><head>
@@ -41,6 +43,7 @@ function hostile(probe: string): string {
 <input type="checkbox" name="t" value="c">
 <input value="unnamed">
 <button id="act">Act</button>
+<button id="escape">Escape</button>
 <a id="top" href="${probe}/top-link" target="_top">top</a>
 <img src="${probe}/img">
 <iframe src="${probe}/iframe"></iframe>
@@ -79,9 +82,9 @@ function hostile(probe: string): string {
   // A forged action naming another version.
   parent.postMessage({ jen: "act", version: 7, body: '{"context":"forged","inputs":{}}' }, "*");
   document.getElementById("results").textContent = JSON.stringify(results);
-  document.getElementById("act").addEventListener("click", () => {
-    jen.act({ choice: "b" });
-    // Then try to leave the frame, which the sandbox refuses.
+  document.getElementById("act").addEventListener("click", () => jen.act({ choice: "b" }));
+  // Tries to leave the frame, which the sandbox refuses.
+  document.getElementById("escape").addEventListener("click", () => {
     try { window.open("${probe}/window-open-click"); } catch {}
     document.getElementById("top").click();
     location.href = "${probe}/location";
@@ -185,7 +188,10 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
 
   // A click's action reaches the inbox, in the given format.
   await page.frameLocator("iframe").locator("#act").click();
-  await until(() => (messages().length > 0 ? true : undefined), "the clicked action to reach the inbox");
+  await until(() => (messages().length > 0 ? true : undefined), "the clicked action to reach the inbox", 20_000).catch(async (error) => {
+    const bar = await page.locator("#bar-text").textContent();
+    throw new Error(`${error.message}. The page's bar says ${JSON.stringify(bar)}, and the agent served ${JSON.stringify(served)}`);
+  });
   await agent.idle();
   expect(messages()).toEqual([
     {
@@ -196,8 +202,9 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
     },
   ]);
 
-  // The click's navigations had time to leave, and nothing reached any server
-  // but the page's own requests.
+  // A click's popup and navigations don't leave the frame, and nothing
+  // reached any server but the page's own requests.
+  await page.frameLocator("iframe").locator("#escape").click();
   await sleep(1500);
   expect(page.url()).toBe(`${base}/page`);
   expect(probed).toEqual([]);

@@ -33,13 +33,13 @@
 ## 5. Checks
 
 - [ ] 5.1 Add Playwright as a dev dependency. Write `src/agent/sandbox.live.test.ts` as the design gives it: the agent's server in-process, with a scripted model and a store holding a hostile document, a probe server, headless Chromium, and the four assertions. Add a `sandbox` job to `.github/workflows/ci.yml` that installs Chromium and runs it on every push. Verify by running it locally, then by CI's `sandbox` job.
-- [ ] 5.2 Write `src/runtime/ui.live.test.ts` as the design gives it, on `openai/gpt-6-sol` with the live credentials. Run it until it passes, and record in the design what Sol wrote and how many runs it took. Reword `publish_ui`'s description or the paragraph only on a run's evidence.
+- [x] 5.2 Write `src/runtime/ui.live.test.ts` as the design gives it, on `openai/gpt-6-sol` with the live credentials. Run it until it passes, and record in the design what Sol wrote and how many runs it took. Reword `publish_ui`'s description or the paragraph only on a run's evidence.
 - [ ] 5.3 Count a `publish_ui` call as a fault in `src/runtime/behavior.live.test.ts`. Run the behavior check on `openai/gpt-6-luna` and hold it to the bar set on 2026-11-11.
 
 ## 6. Docs and record
 
-- [ ] 6.1 Add the page, the frame, the bridge and the action path to `docs/architecture.html`, and add the new source paths to its `describes` meta. Verify by opening the page and reading the new section against the design.
-- [ ] 6.2 In `record/environment.md`:
+- [x] 6.1 Add the page, the frame, the bridge and the action path to `docs/architecture.html`, and add the new source paths to its `describes` meta. Verify by opening the page and reading the new section against the design.
+- [x] 6.2 In `record/environment.md`:
   - describe `ui.ts` and `src/agent/ui/` in the code layout
   - add the page and UI routes to the API paragraph, with how the owner opens a root's UI
   - describe the sandbox and UI checks under the commands

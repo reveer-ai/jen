@@ -187,6 +187,8 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
   2. The check types in it a task asking for a UI with a button that asks the agent for a number and shows the latest one.
   3. Once a version above 0 is up, the check clicks the button.
   4. It passes when the frame then shows the agent's new number.
+
+  Run on 2026-11-13, it passed 3 runs of 3, each in under 25 seconds. Run 1's output wasn't kept. In runs 2 and 3, Sol wrote a self-contained page with a "New number" button calling `jen.act({action: "new_number"})` and a message box, published it as version 1, then answered the click by picking the number with `python3` in its workspace, writing it in with one `edit_file`, and publishing version 2. Run 2 showed a fault the check doesn't catch: Sol's message box was a `<form>` with a submit handler, and in a frame without `allow-forms` Chromium 158 fires no submit event, from a click or from Enter (measured), so the user's way to keep talking was dead. `publish_ui`'s description now says forms never submit and to act from click or keydown handlers. In run 3, after that change, both of Sol's controls used them.
 - **The behavior check** runs again on `openai/gpt-6-luna`, since its command and file tasks' roots now see the UI paragraph and `publish_ui`. A run that calls `publish_ui` is a fault: none of its tasks asks for a UI. It's held to the bar set on 2026-11-11.
 
 *Why Playwright:* it drives a real Chromium in CI and in the frame, with trusted clicks that give user activation. It's a dev dependency only. *Alternative:* driving Chrome over the DevTools protocol by hand with Node's WebSocket, which still needs a browser binary and rebuilds what Playwright gives.
