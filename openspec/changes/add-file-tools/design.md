@@ -156,6 +156,24 @@ The replacement is literal: it splits on `old_string` and joins with `new_string
   - The `files` task passed 3 of 3 runs. Every run wrote `release.md` with `write_file`. One run edited `settings.conf` with `edit_file`; the other two edited it with commands through `run_command`, which left the same exact bytes. No file tool call failed, so the descriptions stand as drafted.
   - One delegation run failed, `question-2`: the root messaged a sub-agent it hadn't spawned before asking its question. That's a failure already seen on `main`, and within its 0 to 2 failed runs a pass.
 
+## As built
+
+What the implementation settled that the design left open:
+- **The route:** a path is at most 4096 bytes, Linux's own limit, and a status line at most 4 KiB, past which the runtime answers `502` without waiting for the stream.
+- **`read_file`:**
+  - Line numbers are right-aligned to six places, as `cat -n` aligns them.
+  - A cut line's mark gives its length in characters.
+  - An empty file says so.
+  - An `offset` past the end is an error giving the file's line count.
+  - A `limit` over 2000 is held to 2000.
+- **`edit_file`:**
+  - Keeps a byte-order mark, so editing a file doesn't drop it.
+  - With `replace_all`, reports the count even for one match.
+  - The edited lines it shows end where `new_string`'s last line does, so a final newline in it adds no line.
+- **The behavior check** prints each run's tool calls, passing or not, so it can show which tools a model chose.
+
+The two script safeguards above, the step bound and the folder-path refusal, came from the implementation review.
+
 ## Risks / Trade-offs
 
 - **[A file changes between an edit's read and its write]** A background process writing the same file loses its change. → Rare: it needs the agent's own background process writing the file it's editing. An exact-match edit also fails rather than guessing when the text moved. A conditional write would add a version check to every call for a case nothing hits yet.
