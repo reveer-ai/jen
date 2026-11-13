@@ -31,5 +31,6 @@ jen's core concept is that the agents are the UI (see `record/product.md`), and 
 - **Depends on [JEN-19](https://linear.app/reveer/issue/JEN-19)**, which gives agents a workspace and file tools. This change is designed against it and implemented after it merges.
 - **Agent code:** a new module for `publish_ui`, the page and the starting UI in `src/agent/`, with the tool wired into the loop's tools and instructions, and the new routes in `src/agent/server.ts`.
 - **Runtime code:** the relay in `src/runtime/server.ts`.
+- **Dependencies:** `parse5` in the agent's image, to find a UI's references as a browser would, and Playwright as a dev dependency, to drive a real browser in the checks. CI gains a job that runs the sandbox check in Chromium (see design.md).
 - **Instructions are behavior.** The UI tool's description and instructions change how agents act, so the behavior check (`src/runtime/behavior.live.test.ts`) runs again on Luna to show delegation still holds.
 - **Docs:** `docs/architecture.html` gains the page, the frame and the action path.
