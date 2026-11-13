@@ -163,6 +163,10 @@ const FILE_READ_BOUND = MAX_FILE + 64 * 1024;
 const FILE_MS = 30_000;
 // The longest status line a file script prints, which holds a tool's error.
 const STATUS_MAX = 4096;
+// How long a file script lets a step that can block run, in seconds: opening
+// a pipe nothing writes to, or reads from, waits forever. It's under FILE_MS,
+// so the script ends the step and answers itself, leaving nothing running.
+const FILE_STEP_S = 25;
 // Each file script is sent with every exec, as the wrapper is, and its
 // arguments are the path and a size, never spliced into it. It runs as agent
 // in the home directory, so a file operation reaches exactly what a command
@@ -172,6 +176,8 @@ const STATUS_MAX = 4096;
 // after the last ": ", such as "Permission denied". LC_ALL=C keeps messages in
 // English.
 //
+// A step that can block, such as opening a pipe, is bounded by FILE_STEP_S.
+//
 // The read script copies at most its bound plus one byte of the file into
 // /tmp and measures the copy, since a pseudo-file's stat size is 0. It prints
 // "ok <size>" and then exactly the copy's bytes, "missing", "large <size>", or
@@ -179,9 +185,11 @@ const STATUS_MAX = 4096;
 export const READ_SCRIPT = `export LC_ALL=C
 reason() { printf '%s' "\${1##*: }" | head -n 1; }
 tmp=$(mktemp /tmp/.jen-read.XXXXXXXX 2>&1) || { printf 'error %s\\n' "$(reason "$tmp")"; exit 0; }
-err=$(head -c $(($2 + 1)) -- "$1" 2>&1 >"$tmp")
-if [ $? -ne 0 ]; then
+err=$(timeout -s KILL ${FILE_STEP_S} head -c $(($2 + 1)) -- "$1" 2>&1 >"$tmp")
+code=$?
+if [ $code -ne 0 ]; then
   rm -f -- "$tmp"
+  [ $code -eq 137 ] && { echo "error the read didn't finish within ${FILE_STEP_S} seconds, as when the file is a pipe nothing writes to"; exit 0; }
   err=$(reason "$err")
   if [ "$err" = "No such file or directory" ]; then echo missing; else printf 'error %s\\n' "$err"; fi
   exit 0
@@ -199,7 +207,8 @@ rm -f -- "$tmp"
 printf 'ok %s\\n' "$size"
 cat <&3
 `;
-// The write script resolves the path through symlinks, as a redirect would
+// The write script refuses a path that names a folder, such as one ending in
+// a slash, then resolves the path through symlinks, as a redirect would
 // follow them, creates its folders, and refuses a folder and an existing file
 // it can't write: a rename needs only the folder to be writable, so without
 // that check a write would replace a read-only file. It reads exactly the
@@ -213,13 +222,17 @@ export const WRITE_SCRIPT = `export LC_ALL=C
 tmp=
 reason() { printf '%s' "\${1##*: }" | head -n 1; }
 fail() { [ -z "$tmp" ] || rm -f -- "$tmp"; printf 'error %s\\n' "$1"; exit 0; }
+case $1 in */ | */. | */.. | . | ..) fail "Is a directory" ;; esac
 target=$(realpath -m -- "$1" 2>&1) || fail "$(reason "$target")"
 [ -d "$target" ] && fail "Is a directory"
 dir=\${target%/*}
 name=\${target##*/}
 err=$(mkdir -p -- "\${dir:-/}" 2>&1) || fail "$(reason "$err")"
 if [ -e "$target" ]; then
-  err=$( { : >>"$target"; } 2>&1) || fail "$(reason "$err")"
+  err=$(timeout -s KILL ${FILE_STEP_S} bash -c ': >>"$1"' jen "$target" 2>&1)
+  code=$?
+  [ $code -eq 137 ] && fail "the write didn't finish within ${FILE_STEP_S} seconds, as when the file is a pipe nothing reads from"
+  [ $code -eq 0 ] || fail "$(reason "$err")"
 fi
 tmp=$(mktemp -- "$dir/.$name.jen-XXXXXXXX" 2>&1) || { err=$tmp; tmp=; fail "$(reason "$err")"; }
 err=$(head -c "$2" 2>&1 >"$tmp") || fail "$(reason "$err")"

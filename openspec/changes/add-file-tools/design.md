@@ -49,7 +49,7 @@ The script reads exactly the declared number of bytes with `head -c`, so it neve
 ### A write lands whole: a temporary file, then a rename
 
 The write script:
-1. resolves the path, following symlinks, so a write through a link lands on its target, as `>` would
+1. refuses a path that names a folder, such as one ending in `/`, as `>` would, then resolves the path, following symlinks, so a write through a link lands on its target, as `>` would
 2. creates the target's folders, like `mkdir -p`
 3. refuses a path that is a folder, and an existing file it can't write (`Permission denied`), as `>` would. A rename needs only the folder to be writable, so without this check a write would replace a file made read-only.
 4. reads the declared number of bytes from stdin into a new temporary file beside the target, named `.<name>.jen-<random>`
@@ -78,6 +78,8 @@ As with commands, any process in the workspace can write to the exec's stream th
 - It reads at most the file bound plus 64 KiB of frames and status.
 - It answers `502` to content longer than the size reported, or a stream that ends before it.
 - It ends every call within a fixed 30 seconds: 16 MiB took well under a second.
+
+A step that can block forever, such as opening a pipe nothing writes to or reads from, is bounded at 25 seconds inside the script. The script then ends it, deletes its temporary file and reports why, so nothing is left running when the runtime answers. Found in the implementation review: without it, an abandoned read left `head` and its copy in `/tmp`.
 
 ### The route
 

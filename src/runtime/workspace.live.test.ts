@@ -310,6 +310,27 @@ describe("files", () => {
     expect((await file("/home/agent", "x")).status).toBe(400);
   });
 
+  test("a path naming a folder is refused as a redirect would refuse it, and writes nothing", async () => {
+    for (const path of ["slash/", "slash/.", "."]) {
+      const write = await file(path, "x");
+      expect([write.status, write.error], path).toEqual([400, "Is a directory"]);
+    }
+    expect(await output("ls -d slash 2>&1; true")).toMatch(/No such file or directory/);
+  });
+
+  test("a read or write of a pipe nothing uses is answered within 30 seconds, and leaves nothing running", async () => {
+    await output("mkfifo read-pipe write-pipe");
+    const started = Date.now();
+    const [read, write] = await Promise.all([file("read-pipe"), file("write-pipe", "x")]);
+    expect((Date.now() - started) / 1000).toBeLessThan(30);
+    expect([read.status, read.error]).toEqual([400, "the read didn't finish within 25 seconds, as when the file is a pipe nothing writes to"]);
+    expect([write.status, write.error]).toEqual([400, "the write didn't finish within 25 seconds, as when the file is a pipe nothing reads from"]);
+    // Anchored to the scripts' last arguments, so the pattern can't match this command's own wrapper.
+    expect(await output("ps -eo args | grep -cE '[j]en (read-pipe 16777216|write-pipe 1)$|^[h]ead -c 16777217'; ls -A /tmp | grep -c jen-read; ls -A | grep -c jen-; true")).toBe(
+      "0\n0\n0\n",
+    );
+  }, 60_000);
+
   test("a 17 MiB file gets 413", async () => {
     await output("head -c 17825792 /dev/zero > big.bin");
     expect((await file("big.bin")).status).toBe(413);
