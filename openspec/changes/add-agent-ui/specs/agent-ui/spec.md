@@ -16,7 +16,7 @@ The agent SHALL offer `publish_ui`, taking no input, only when it is a root (its
 - **THEN** the model isn't offered `publish_ui`
 
 #### Scenario: A first publish
-- **WHEN** a root that has published nothing calls `publish_ui` on a valid `ui/`
+- **WHEN** a root that has published nothing calls `publish_ui` on a valid `ui/index.html`
 - **THEN** the UI becomes version 1, and the result says so
 
 ### Requirement: Publishing sends ui/index.html as it is
@@ -67,7 +67,7 @@ The page SHALL run the UI in an `<iframe sandbox="allow-scripts">` whose documen
 - **THEN** each read throws
 
 ### Requirement: The page swaps in a new version when one is published
-When the stream carries the result of a `publish_ui` call, the page SHALL fetch `ui`, and if its version differs from the one showing, SHALL replace the frame with one running the new version It SHALL have at most one fetch of `ui` in flight.
+When the stream carries the result of a `publish_ui` call, the page SHALL fetch `ui`, and if its version differs from the one showing, SHALL replace the frame with one running the new version. It SHALL have at most one fetch of `ui` in flight.
 
 #### Scenario: The agent publishes while the page is open
 - **WHEN** the agent publishes version 2 while the page shows version 1
