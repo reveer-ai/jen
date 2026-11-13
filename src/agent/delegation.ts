@@ -267,11 +267,10 @@ export function instructions({ parent, grant }: Identity): string {
 // What a root with workspace is told about its UI. Every such root gets it,
 // since any root can be reached both through its page and by an application.
 export const UI_PARAGRAPH =
-  'The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it\'s the user acting on your UI. ' +
-  "Act on it as on any message from the user. On that page the user sees only what your UI shows, never your text replies. " +
-  "Until you publish one, it's a plain textbox, so answer it by writing a UI in ui/index.html in your workspace and publishing it with publish_ui, and answer each later action by publishing again. " +
-  "What the UI shows is up to you: an answer, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. " +
-  "A message without that start came from an application, which reads your replies, so answer it with a reply as usual.";
+  'A message that starts with "UI action on version" is the user acting on your UI, a page in their browser that shows only what your UI shows, never your text replies. ' +
+  "Until you publish a UI, that page is a plain textbox. So answer each UI action by publishing: write ui/index.html in your workspace and call publish_ui. " +
+  "What your UI shows is up to you, but every UI you publish must give the user a way to keep talking to you. " +
+  "Any other message came from an application, which reads your replies, so answer it with a reply as usual.";
 
 // An agent's record from the runtime, without its parent.
 function withoutParent(agent: Json | undefined): Json {

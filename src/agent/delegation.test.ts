@@ -396,7 +396,7 @@ describe("the agent is told how to work in a tree", () => {
     expect(text).toContain(UI_PARAGRAPH);
     expect(text).toMatch(/starts with "UI action on version"/);
     expect(text).toMatch(/never your text replies/);
-    expect(text).toMatch(/plain textbox, so answer it by writing a UI in ui\/index\.html/);
+    expect(text).toMatch(/plain textbox\. So answer each UI action by publishing: write ui\/index\.html/);
     expect(text).toMatch(/publish_ui/);
     expect(text).toMatch(/must give the user a way to keep talking to you/);
     expect(text).toMatch(/came from an application, which reads your replies/);

@@ -32,7 +32,7 @@
 
 ## 5. Checks
 
-- [ ] 5.1 Add Playwright as a dev dependency. Write `src/agent/sandbox.live.test.ts` as the design gives it: the agent's server in-process, with a scripted model and a store holding a hostile document, a probe server, headless Chromium, and the four assertions. Add a `sandbox` job to `.github/workflows/ci.yml` that installs Chromium and runs it on every push. Verify by running it locally, then by CI's `sandbox` job.
+- [x] 5.1 Add Playwright as a dev dependency. Write `src/agent/sandbox.live.test.ts` as the design gives it: the agent's server in-process, with a scripted model and a store holding a hostile document, a probe server, headless Chromium, and the four assertions. Add a `sandbox` job to `.github/workflows/ci.yml` that installs Chromium and runs it on every push. Verify by running it locally, then by CI's `sandbox` job.
 - [x] 5.2 Write `src/runtime/ui.live.test.ts` as the design gives it, on `openai/gpt-6-sol` with the live credentials. Run it until it passes, and record in the design what Sol wrote and how many runs it took. Reword `publish_ui`'s description or the paragraph only on a run's evidence.
 - [ ] 5.3 Count a `publish_ui` call as a fault in `src/runtime/behavior.live.test.ts`. Run the behavior check on `openai/gpt-6-luna` and hold it to the bar set on 2026-11-11.
 

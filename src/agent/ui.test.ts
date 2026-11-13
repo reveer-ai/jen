@@ -70,7 +70,7 @@ describe("a root with workspace publishes its UI", () => {
   test("the description gives the contract", () => {
     const [tool] = uiTools(root, fakeRuntime({}).runtime, store);
     expect(tool!.inputSchema).toEqual({ type: "object", properties: {} });
-    for (const part of [/ui\/index\.html/, /submit event never fires/, /stand alone/, /data: URLs/, /fetch/, /jen\.act/, /jen\.version/, /clicks or keys/, /give each input a name/, /never your text replies/, /4 MB/]) {
+    for (const part of [/ui\/index\.html/, /stand alone/, /data: URLs/, /no fetch/, /jen\.act/, /jen\.version/, /click or keydown handlers/, /submit handler never runs/, /give each input a name/, /nothing else on the page is sent/, /never sees your text replies/, /a way to act or type/, /4 MB/]) {
       expect(tool!.description).toMatch(part);
     }
   });
