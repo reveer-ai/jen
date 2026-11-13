@@ -1,8 +1,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
+import type { Duplex } from "node:stream";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDocker, DockerError, type Docker } from "./docker.ts";
 
 type Seen = { method: string; url: string; body: any };
@@ -70,7 +71,7 @@ test("creates a container with its fixed settings and returns its ID", async () 
     labels: { "jen.agent": "a1" },
     volume: { name: "jen-agent-a1", path: "/state" },
     network: "jen",
-    maxRetries: 3,
+    restart: { maxRetries: 3 },
   });
   expect(id).toBe("c1");
   expect(seen[0]).toEqual({
@@ -85,6 +86,40 @@ test("creates a container with its fixed settings and returns its ID", async () 
         NetworkMode: "jen",
         RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 },
       },
+    },
+  });
+});
+
+test("creates a sandboxed container with every setting it's given", async () => {
+  replies.push({ status: 201, body: { Id: "c2" } });
+  await docker.createContainer("jen-workspace-a1", {
+    image: "jen-workspace",
+    env: [],
+    labels: { "jen.workspace": "a1" },
+    volume: { name: "jen-workspace-a1", path: "/home/agent" },
+    network: "none",
+    restart: "unless-stopped",
+    sandbox: { user: "agent", tmp: { path: "/tmp", bytes: 512 * 2 ** 20 }, shmBytes: 64 * 2 ** 20, memoryBytes: 2 * 2 ** 30, nanoCpus: 2e9, pids: 512 },
+  });
+  expect(seen[0]!.body).toEqual({
+    Image: "jen-workspace",
+    Env: [],
+    Labels: { "jen.workspace": "a1" },
+    User: "agent",
+    HostConfig: {
+      Mounts: [{ Type: "volume", Source: "jen-workspace-a1", Target: "/home/agent" }],
+      NetworkMode: "none",
+      RestartPolicy: { Name: "unless-stopped" },
+      Tmpfs: { "/tmp": "rw,exec,nosuid,nodev,size=536870912" },
+      ShmSize: 67108864,
+      IpcMode: "private",
+      CapDrop: ["ALL"],
+      SecurityOpt: ["no-new-privileges"],
+      ReadonlyRootfs: true,
+      Init: true,
+      PidsLimit: 512,
+      Memory: 2147483648,
+      NanoCpus: 2000000000,
     },
   });
 });
@@ -118,7 +153,7 @@ test("inspects a container", async () => {
     body: {
       Id: "c1",
       Name: "/jen-runtime",
-      State: { Status: "running" },
+      State: { Status: "running", StartedAt: "2026-11-11T20:00:00.000000000Z" },
       Config: { Env: ["A=1"], Labels: { x: "y" } },
       NetworkSettings: { Networks: { bridge: {}, jen: {} } },
     },
@@ -127,6 +162,7 @@ test("inspects a container", async () => {
     id: "c1",
     name: "jen-runtime",
     state: "running",
+    startedAt: "2026-11-11T20:00:00.000000000Z",
     labels: { x: "y" },
     env: ["A=1"],
     networks: ["bridge", "jen"],
@@ -206,4 +242,145 @@ test("watches containers' exits by label, across chunks, and reconnects when the
   stop();
   engine.closeAllConnections();
   await new Promise((resolve) => engine.close(resolve));
+});
+
+describe("exec", () => {
+  // An engine whose exec start upgrades the connection and hands start the
+  // raw stream, which it keeps open until start ends it. What the client
+  // writes to the stream is the exec's stdin. With refuse, the start answers
+  // that status instead.
+  async function engine(start: (socket: Duplex) => void, refuse?: { status: number; message: string }) {
+    const socket = join(dir, "exec.sock");
+    const requests: Seen[] = [];
+    const starts: { headers: http.IncomingHttpHeaders }[] = [];
+    const stdin: Buffer[] = [];
+    const closed: string[] = [];
+    const server = http.createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      requests.push({ method: req.method!, url: req.url!, body: JSON.parse(Buffer.concat(chunks).toString("utf8") || "null") });
+      res.writeHead(201, { "Content-Type": "application/json" }).end(JSON.stringify({ Id: "e1" }));
+    });
+    server.on("upgrade", async (req, stream: Duplex, head: Buffer) => {
+      starts.push({ headers: req.headers });
+      // Node gives an upgrade request's body to the request, and what follows
+      // it to the stream.
+      stream.on("data", (chunk: Buffer) => stdin.push(chunk));
+      stream.on("error", () => {});
+      // The client closing its side closes the stream, as the engine does.
+      stream.on("end", () => stream.end());
+      stream.on("close", () => closed.push(req.url!));
+      if (head.length > 0) stdin.push(head);
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      requests.push({ method: req.method!, url: req.url!, body: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+      if (refuse) {
+        const body = JSON.stringify({ message: refuse.message });
+        return void stream.end(`HTTP/1.1 ${refuse.status} Refused\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`);
+      }
+      stream.write("HTTP/1.1 101 UPGRADED\r\nContent-Type: application/vnd.docker.raw-stream\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n");
+      start(stream);
+    });
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    return {
+      docker: createDocker(socket),
+      requests,
+      starts,
+      input: () => Buffer.concat(stdin),
+      closed,
+      close: () => (server.closeAllConnections(), new Promise((resolve) => server.close(resolve))),
+    };
+  }
+  const frame = (stream: number, text: string) => {
+    const payload = Buffer.from(text);
+    const header = Buffer.alloc(8);
+    header[0] = stream;
+    header.writeUInt32BE(payload.length, 4);
+    return Buffer.concat([header, payload]);
+  };
+  const spec = { user: "agent", workdir: "/home/agent", cmd: ["bash", "-c", "echo hi"] };
+  const never = new AbortController().signal;
+
+  test("without input, creates the exec with no stdin, starts it upgraded, and decodes stdout's frames across chunks", async () => {
+    const { docker, requests, starts, input, close } = await engine((stream) => {
+      const bytes = Buffer.concat([frame(1, "hello "), frame(2, "ignored"), frame(1, "world")]);
+      stream.write(bytes.subarray(0, 3));
+      stream.write(bytes.subarray(3, 20));
+      stream.end(bytes.subarray(20));
+    });
+    const out: Buffer[] = [];
+    const end = await docker.exec("c1", spec, { bound: 1024, signal: never, onOutput: (chunk) => out.push(Buffer.from(chunk)) });
+    expect(end).toBe("ended");
+    expect(Buffer.concat(out).toString()).toBe("hello world");
+    expect(requests).toEqual([
+      {
+        method: "POST",
+        url: "/v1.47/containers/c1/exec",
+        body: { AttachStdin: false, AttachStdout: true, AttachStderr: false, Tty: false, User: "agent", WorkingDir: "/home/agent", Cmd: ["bash", "-c", "echo hi"] },
+      },
+      { method: "POST", url: "/v1.47/exec/e1/start", body: { Detach: false, Tty: false } },
+    ]);
+    expect(starts[0]!.headers).toMatchObject({ connection: "Upgrade", upgrade: "tcp" });
+    expect(input()).toEqual(Buffer.alloc(0));
+    await close();
+  });
+
+  test("with input, attaches stdin and writes the input to the stream once upgraded", async () => {
+    const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+    let got: () => Buffer;
+    const { docker, requests, input, close } = await engine((stream) => {
+      // Echoes the input back once it has all arrived, as head -c does.
+      const check = () => {
+        if (got().length < bytes.length) return void setTimeout(check, 1);
+        stream.end(frame(1, "ok\n"));
+      };
+      check();
+    });
+    got = input;
+    const out: Buffer[] = [];
+    const end = await docker.exec("c1", { ...spec, input: bytes }, { bound: 1024, signal: never, onOutput: (chunk) => out.push(Buffer.from(chunk)) });
+    expect(end).toBe("ended");
+    expect(Buffer.concat(out).toString()).toBe("ok\n");
+    expect(requests[0]!.body.AttachStdin).toBe(true);
+    expect(input()).toEqual(bytes);
+    await close();
+  });
+
+  test("stops reading past the bound and closes the stream", async () => {
+    const { docker, closed, close } = await engine((stream) => {
+      stream.write(frame(1, "a".repeat(100)));
+      stream.write(frame(1, "b".repeat(100)));
+    });
+    const out: Buffer[] = [];
+    const end = await docker.exec("c1", spec, { bound: 150, signal: never, onOutput: (chunk) => out.push(Buffer.from(chunk)) });
+    expect(end).toBe("bound");
+    expect(Buffer.concat(out).toString()).toBe("a".repeat(100));
+    await vi.waitFor(() => expect(closed).toEqual(["/v1.47/exec/e1/start"]));
+    await close();
+  });
+
+  test("an abort closes a stream that never ends", async () => {
+    const { docker, closed, close } = await engine((stream) => stream.write(frame(1, "first")));
+    const abort = new AbortController();
+    const out: string[] = [];
+    const reading = docker.exec("c1", spec, { bound: 1024, signal: abort.signal, onOutput: (chunk) => out.push(chunk.toString()) });
+    await vi.waitFor(() => expect(out).toEqual(["first"]));
+    abort.abort();
+    expect(await reading).toBe("aborted");
+    await vi.waitFor(() => expect(closed).toHaveLength(1));
+    await close();
+  });
+
+  test("an exec in a container that isn't running is a DockerError", async () => {
+    replies.push({ status: 409, body: { message: "container c1 is not running" } });
+    await expect(docker.exec("c1", spec, { bound: 1024, signal: never, onOutput: () => {} })).rejects.toMatchObject({ status: 409 });
+  });
+
+  test.each([404, 409])("a start the engine answers %i is a DockerError with its message", async (status) => {
+    const { docker, close } = await engine(() => {}, { status, message: "no such exec" });
+    const error = await docker.exec("c1", { ...spec, input: Buffer.from("x") }, { bound: 1024, signal: never, onOutput: () => {} }).catch((e) => e);
+    expect(error).toBeInstanceOf(DockerError);
+    expect(error).toMatchObject({ status, message: "no such exec" });
+    await close();
+  });
 });

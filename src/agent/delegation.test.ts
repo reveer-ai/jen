@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, type Identity } from "./delegation.ts";
+import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, type Identity } from "./delegation.ts";
 import { Agent, INTERRUPTED } from "./loop.ts";
 import type { Item, Json } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
@@ -15,8 +15,12 @@ const env = { JEN_AGENT_ID: "a1b2c3d4e5f6", JEN_PARENT: "owner", JEN_GRANT: '{"s
 
 describe("the agent knows who it is", () => {
   test("reads its ID, parent, grant and wake ID", () => {
-    expect(readIdentity({ ...env, JEN_WAKE: "w1" })).toEqual({ id: "a1b2c3d4e5f6", parent: "owner", grant: { spawn: true }, wake: "w1" });
+    expect(readIdentity({ ...env, JEN_WAKE: "w1" })).toEqual({ id: "a1b2c3d4e5f6", parent: "owner", grant: { spawn: true, workspace: false }, wake: "w1" });
     expect(readIdentity(env).wake).toBeUndefined();
+  });
+
+  test("reads a grant with both capabilities", () => {
+    expect(readIdentity({ ...env, JEN_GRANT: '{"spawn":false,"workspace":true}' }).grant).toEqual({ spawn: false, workspace: true });
   });
 
   // The entrypoint, run as the container runs it, with everything else it needs.
@@ -34,6 +38,8 @@ describe("the agent knows who it is", () => {
     ["JEN_GRANT", { JEN_GRANT: "spawn" }],
     ["JEN_GRANT", { JEN_GRANT: '{"spawn":"yes"}' }],
     ["JEN_GRANT", { JEN_GRANT: '{"spawn":true,"docker":true}' }],
+    ["JEN_GRANT", { JEN_GRANT: '{"spawn":false,"x":true}' }],
+    ["JEN_GRANT", { JEN_GRANT: '{"spawn":false,"workspace":"yes"}' }],
     ["JEN_WAKE", { JEN_WAKE: "" }],
   ])("exits non-zero naming %s when it's missing or malformed", (name, overrides) => {
     const run = main(overrides);
@@ -74,9 +80,9 @@ afterEach(async () => {
   await new Promise((resolve) => runtime.close(resolve));
 });
 
-const child: Identity = { id: "c0c0c0c0c0c0", parent: "a1b2c3d4e5f6", grant: { spawn: false } };
-const lead: Identity = { id: "e0e0e0e0e0e0", parent: "a1b2c3d4e5f6", grant: { spawn: true } };
-const root: Identity = { id: "a1b2c3d4e5f6", parent: "owner", grant: { spawn: true } };
+const child: Identity = { id: "c0c0c0c0c0c0", parent: "a1b2c3d4e5f6", grant: { spawn: false, workspace: false } };
+const lead: Identity = { id: "e0e0e0e0e0e0", parent: "a1b2c3d4e5f6", grant: { spawn: true, workspace: false } };
+const root: Identity = { id: "a1b2c3d4e5f6", parent: "owner", grant: { spawn: true, workspace: false } };
 const signal = new AbortController().signal;
 
 // A record of debts kept in memory, as the store keeps them.
@@ -223,6 +229,22 @@ describe("delegation tools follow the grant", () => {
     expect(delegationTools(child, client, debts)).toEqual([]);
   });
 
+  const delegation = ["message_sub_agent", "spawn_agent", "list_agents", "stop_agent", "start_agent", "delete_agent"];
+  const workspace = ["run_command", "read_file", "write_file", "edit_file"];
+  test.each([
+    [{ spawn: true, workspace: false }, delegation],
+    [{ spawn: false, workspace: true }, workspace],
+    [{ spawn: true, workspace: true }, [...delegation, ...workspace]],
+    [{ spawn: false, workspace: false }, []],
+  ])("an agent with %j is offered its grant's tools", (grant, names) => {
+    expect(toolsFor({ ...root, grant }, client, debts).map((t) => t.name)).toEqual(names);
+  });
+
+  test("spawn_agent can pass workspace on", () => {
+    const schema = toolOf(root, "spawn_agent").inputSchema as { properties: { grant: { properties: object } } };
+    expect(Object.keys(schema.properties.grant.properties)).toEqual(["spawn", "workspace"]);
+  });
+
   test("stop, start and delete call their routes and return the runtime's answer, without the parent", async () => {
     answer = (method, path) =>
       method === "DELETE" ? { status: 204 } : { status: 200, body: { id: "d1d1d1d1d1d1", parent: root.id, grant: { spawn: false }, state: path.endsWith("/stop") ? "stopped" : "running" } };
@@ -231,6 +253,57 @@ describe("delegation tools follow the grant", () => {
     expect(JSON.parse(await toolOf(root, "start_agent").run(id, signal))).toEqual({ id: "d1d1d1d1d1d1", grant: { spawn: false }, state: "running" });
     expect(await toolOf(root, "delete_agent").run(id, signal)).toBe("done");
     expect(requests.map((r) => `${r.method} ${r.path}`)).toEqual(["POST /agents/d1d1d1d1d1d1/stop", "POST /agents/d1d1d1d1d1d1/start", "DELETE /agents/d1d1d1d1d1d1"]);
+  });
+});
+
+describe("RuntimeClient moves a file's raw bytes", () => {
+  // A runtime that keeps the last body put, and answers a get with it, or
+  // with refusal when one is set.
+  let files: http.Server;
+  let seen: { method: string; url: string; auth?: string; type?: string }[];
+  let kept: Buffer;
+  let refusal: { status: number; error: string } | undefined;
+  let fileClient: RuntimeClient;
+  beforeEach(async () => {
+    seen = [];
+    kept = Buffer.alloc(0);
+    refusal = undefined;
+    files = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        seen.push({ method: req.method!, url: req.url!, auth: req.headers.authorization, type: req.headers["content-type"] });
+        if (refusal) return void res.writeHead(refusal.status, { "Content-Type": "application/json" }).end(JSON.stringify({ error: refusal.error }));
+        if (req.method === "PUT") return void ((kept = Buffer.concat(chunks)), res.writeHead(204).end());
+        res.writeHead(200, { "Content-Type": "application/octet-stream" }).end(kept);
+      });
+    });
+    await new Promise<void>((resolve) => files.listen(0, "127.0.0.1", resolve));
+    fileClient = new RuntimeClient(`http://127.0.0.1:${(files.address() as AddressInfo).port}`, "agent-token");
+  });
+  afterEach(async () => {
+    files.closeAllConnections();
+    await new Promise((resolve) => files.close(resolve));
+  });
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+
+  test("bytes pass both ways unchanged, with the path encoded in the query and the agent's own token", async () => {
+    await fileClient.writeFile("a b/ü?&#.bin", bytes);
+    expect(await fileClient.readFile("a b/ü?&#.bin")).toEqual(bytes);
+    const url = `/workspace/files?path=${encodeURIComponent("a b/ü?&#.bin")}`;
+    expect(seen).toEqual([
+      { method: "PUT", url, auth: "Bearer agent-token", type: "application/octet-stream" },
+      { method: "GET", url, auth: "Bearer agent-token", type: undefined },
+    ]);
+  });
+
+  test("a refusal throws a RuntimeRefusal with its status and message", async () => {
+    refusal = { status: 404, error: "no file at notes/release.md" };
+    const error = await fileClient.readFile("notes/release.md").catch((e) => e);
+    expect(error).toBeInstanceOf(RuntimeRefusal);
+    expect(error).toMatchObject({ status: 404, message: "the runtime answered 404: no file at notes/release.md" });
+    refusal = { status: 400, error: "Permission denied" };
+    await expect(fileClient.writeFile("ro.txt", bytes)).rejects.toMatchObject({ status: 400 });
   });
 });
 

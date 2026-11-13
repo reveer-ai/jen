@@ -3,6 +3,13 @@
 // keeps nothing of its own, so it can be restarted at any moment and read the
 // tree back.
 //
+// An agent with the workspace grant also has a workspace: a volume of its own
+// and a sandboxed container with no network, where the runtime runs the
+// agent's commands and reads and writes its files. The workspace follows
+// what's done to its agent: it's started before the agent and removed after
+// it. It's labelled jen.workspace, not jen.agent, so nothing that reads the
+// tree mistakes it for an agent.
+//
 // A caller is the owner (null) or an agent, named by its ID and the hash of
 // the token it authenticated with. The owner is every agent's ancestor and has
 // every capability; a root agent's parent is the owner. On the wire the
@@ -11,13 +18,18 @@
 import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { DockerError, type Container, type Docker } from "./docker.ts";
+import { DockerError, type Container, type Docker, type ExecEnd, type Sandbox } from "./docker.ts";
 
 export type Caller = { id: string; credential: string } | null;
 
+// What an agent may do: start sub-agents, and run commands in a workspace of
+// its own. Each key is a capability, and a key that's missing means false.
 export interface Grant {
   spawn: boolean;
+  workspace: boolean;
 }
+
+const CAPABILITIES = ["spawn", "workspace"] as const satisfies readonly (keyof Grant)[];
 
 export interface Agent {
   id: string;
@@ -32,6 +44,8 @@ export interface RuntimeOptions {
   name: string;
   // The agent image, run with its default command.
   image: string;
+  // The workspace image, run with its default command.
+  workspaceImage: string;
   model: { model: string; apiKey: string; baseURL?: string };
   maxDepth: number;
   maxAgents: number;
@@ -42,6 +56,15 @@ export interface RuntimeOptions {
   ready?: (url: string) => Promise<void>;
   // Posts a message from the runtime to the agent at url, with its token.
   send?: (url: string, token: string, text: string) => Promise<void>;
+}
+
+// A command's outcome. exitCode is null when the command was killed by its
+// timeout, and cut is set when the output was cut to its start and end.
+export interface CommandResult {
+  exitCode: number | null;
+  output: string;
+  timedOut: boolean;
+  cut?: { bytes: number; file: string };
 }
 
 // Where to reach a running agent's protocol, and its current token.
@@ -64,7 +87,7 @@ export class RuntimeError extends Error {
 }
 
 // The owner's grant: every capability.
-const OWNER_GRANT: Grant = { spawn: true };
+const OWNER_GRANT: Grant = { spawn: true, workspace: true };
 const MAX_RETRIES = 3;
 // The address agents reach the runtime at, by its alias on their network.
 const RUNTIME_URL = "http://runtime:8080";
@@ -72,6 +95,157 @@ const READY_MS = 30_000;
 // How long a message from the runtime may take to be accepted. Notices are
 // sent while holding the tree-operation queue, so one must never wait forever.
 const SEND_MS = 10_000;
+// A workspace's home directory, where its volume is mounted and every command
+// starts, and what bounds it. These are fixed: no caller can change them.
+const HOME = "/home/agent";
+const SANDBOX: Sandbox = {
+  user: "agent",
+  tmp: { path: "/tmp", bytes: 512 * 2 ** 20 },
+  shmBytes: 64 * 2 ** 20,
+  memoryBytes: 2 * 2 ** 30,
+  nanoCpus: 2e9,
+  pids: 512,
+};
+// The longest a command may run, in seconds.
+export const MAX_TIMEOUT = 600;
+// Output within OUTPUT_CAP bytes is returned whole, and longer output is cut
+// to its first OUTPUT_START and last OUTPUT_END bytes.
+const OUTPUT_CAP = 8 * 1024;
+const OUTPUT_START = 2 * 1024;
+const OUTPUT_END = OUTPUT_CAP - OUTPUT_START;
+// The most the runtime reads from a command's exec. The wrapper's own output
+// is at most OUTPUT_CAP and two short lines, so only a command that writes
+// around its output file comes near it.
+const READ_BOUND = 16 * 1024;
+// How long a command's report may take once its timeout has passed, and how
+// long any kill may take.
+const GRACE_MS = 5_000;
+// How long a stream that ended without a report is given to show whether its
+// workspace stopped: the stream can end before the engine says so.
+const STOPPED_MS = 1_000;
+// Runs each command, sent with every exec, so nothing in the workspace can
+// change how commands run. Its arguments are the command, never spliced into
+// the script, and the file its output goes to. It prints, in order:
+// 1. its own PID and the process group the command runs in. The command's
+//    shell prints this line before it starts the command, so it's the
+//    wrapper's own: whatever follows may be the command's.
+// 2. once the command's shell exits, its exit code and the output's size
+// 3. the output, whole within OUTPUT_CAP, or else its start and end.
+// set -m gives the command a process group of its own, which the runtime
+// kills on a timeout or a hang-up. Output goes to a file, not the exec's
+// stream, so a background process holds the file and not the call, and long
+// output is kept whole. A file that's printed whole is deleted first.
+const WRAPPER = `set -m
+mkdir -p -- "\${2%/*}"
+bash -c 'echo "$PPID $$"; exec bash -c "$1" </dev/null >"$2" 2>&1' jen "$1" "$2" &
+wait -f $!
+code=$?
+size=$(stat -c %s -- "$2" 2>/dev/null) || { size=0; : >"$2"; }
+if [ "$size" -le ${OUTPUT_CAP} ]; then
+  exec 3<"$2"
+  rm -f -- "$2"
+  printf '%s %s\n' "$code" "$size"
+  head -c "$size" <&3
+else
+  printf '%s %s\n' "$code" "$size"
+  head -c ${OUTPUT_START} -- "$2"
+  tail -c ${OUTPUT_END} -- "$2"
+fi
+`;
+// The largest file the runtime reads or writes, in bytes. It holds a whole
+// file in memory while it moves it, so this caps what any caller can make the
+// shared runtime hold.
+export const MAX_FILE = 16 * 2 ** 20;
+// The most the runtime reads from a file operation's exec: the file, its
+// status line and the stream's frame headers.
+const FILE_READ_BOUND = MAX_FILE + 64 * 1024;
+// How long a file operation may take. 16 MiB takes well under a second.
+const FILE_MS = 30_000;
+// The longest status line a file script prints, which holds a tool's error.
+const STATUS_MAX = 4096;
+// How long a file script lets a step that can block run, in seconds: opening
+// a pipe nothing writes to, or reads from, waits forever. It's under FILE_MS,
+// so the script ends the step and answers itself, leaving nothing running.
+const FILE_STEP_S = 25;
+// Each file script is sent with every exec, as the wrapper is, and its
+// arguments are the path and a size, never spliced into it. It runs as agent
+// in the home directory, so a file operation reaches exactly what a command
+// can: a relative path is relative to the home, a symlink is followed, and the
+// kernel decides what may be read or written. It prints a status line before
+// anything else, and an error's message is the failing tool's own, its text
+// after the last ": ", such as "Permission denied". LC_ALL=C keeps messages in
+// English.
+//
+// A step that can block, such as opening a pipe, is bounded by FILE_STEP_S.
+//
+// The read script copies at most its bound plus one byte of the file into
+// /tmp and measures the copy, since a pseudo-file's stat size is 0. It prints
+// "ok <size>" and then exactly the copy's bytes, "missing", "large <size>", or
+// "error <message>". The copy is deleted before it's sent, and held open.
+export const READ_SCRIPT = `export LC_ALL=C
+reason() { printf '%s' "\${1##*: }" | head -n 1; }
+tmp=$(mktemp /tmp/.jen-read.XXXXXXXX 2>&1) || { printf 'error %s\\n' "$(reason "$tmp")"; exit 0; }
+err=$(timeout -s KILL ${FILE_STEP_S} head -c $(($2 + 1)) -- "$1" 2>&1 >"$tmp")
+code=$?
+if [ $code -ne 0 ]; then
+  rm -f -- "$tmp"
+  [ $code -eq 137 ] && { echo "error the read didn't finish within ${FILE_STEP_S} seconds, as when the file is a pipe nothing writes to"; exit 0; }
+  err=$(reason "$err")
+  if [ "$err" = "No such file or directory" ]; then echo missing; else printf 'error %s\\n' "$err"; fi
+  exit 0
+fi
+size=$(stat -c %s -- "$tmp")
+if [ "$size" -gt "$2" ]; then
+  rm -f -- "$tmp"
+  real=$(stat -L -c %s -- "$1" 2>/dev/null) || real=$size
+  [ "$real" -gt "$size" ] || real=$size
+  printf 'large %s\\n' "$real"
+  exit 0
+fi
+exec 3<"$tmp"
+rm -f -- "$tmp"
+printf 'ok %s\\n' "$size"
+cat <&3
+`;
+// The write script refuses a path that names a folder, such as one ending in
+// a slash, then resolves the path through symlinks, as a redirect would
+// follow them, creates its folders, and refuses a folder and an existing file
+// it can't write: a rename needs only the folder to be writable, so without
+// that check a write would replace a read-only file. It reads exactly the
+// declared size from stdin into a temporary file beside the target, and
+// deletes it if fewer bytes arrived, as when the caller hangs up. Otherwise
+// it gives the temporary file the target's mode, or a new file's, and renames
+// it over the target, which within one folder is atomic: a reader sees the
+// old file or the new one, never part of one. It prints "ok" or
+// "error <message>".
+export const WRITE_SCRIPT = `export LC_ALL=C
+tmp=
+reason() { printf '%s' "\${1##*: }" | head -n 1; }
+fail() { [ -z "$tmp" ] || rm -f -- "$tmp"; printf 'error %s\\n' "$1"; exit 0; }
+case $1 in */ | */. | */.. | . | ..) fail "Is a directory" ;; esac
+target=$(realpath -m -- "$1" 2>&1) || fail "$(reason "$target")"
+[ -d "$target" ] && fail "Is a directory"
+dir=\${target%/*}
+name=\${target##*/}
+err=$(mkdir -p -- "\${dir:-/}" 2>&1) || fail "$(reason "$err")"
+if [ -e "$target" ]; then
+  err=$(timeout -s KILL ${FILE_STEP_S} bash -c ': >>"$1"' jen "$target" 2>&1)
+  code=$?
+  [ $code -eq 137 ] && fail "the write didn't finish within ${FILE_STEP_S} seconds, as when the file is a pipe nothing reads from"
+  [ $code -eq 0 ] || fail "$(reason "$err")"
+fi
+tmp=$(mktemp -- "$dir/.$name.jen-XXXXXXXX" 2>&1) || { err=$tmp; tmp=; fail "$(reason "$err")"; }
+err=$(head -c "$2" 2>&1 >"$tmp") || fail "$(reason "$err")"
+got=$(stat -c %s -- "$tmp")
+[ "$got" = "$2" ] || fail "the write was cut short: $got of $2 bytes arrived"
+if [ -e "$target" ]; then
+  err=$(chmod --reference="$target" -- "$tmp" 2>&1) || fail "$(reason "$err")"
+else
+  chmod "$(printf '%o' $((0666 & ~$(umask))))" -- "$tmp"
+fi
+err=$(mv -fT -- "$tmp" "$target" 2>&1) || fail "$(reason "$err")"
+echo ok
+`;
 // IDs that name the owner and the runtime. Agent IDs are 12 hex characters,
 // so neither can collide, and no route reaches either.
 const RESERVED = new Set(["owner", "runtime"]);
@@ -142,10 +316,20 @@ export class Runtime {
       for (const node of nodes.values()) {
         if (node.parent !== null && !nodes.has(node.parent) && nodes.has(node.id)) {
           for (const gone of subtree(nodes, node.id)) {
-            await this.#remove(gone.id);
+            await this.#remove(gone);
             nodes.delete(gone.id);
           }
         }
+      }
+      // A workspace is left running only beside its running agent, and kept
+      // only while its agent exists.
+      const workspaces = [`jen.runtime=${name}`, "jen.workspace"];
+      for (const c of await docker.listContainers(workspaces)) {
+        const node = nodes.get(c.labels["jen.workspace"]);
+        if (!node || !running(node) || !node.grant.workspace || c.name !== this.#workspace(node.id)) await docker.removeContainer(c.id);
+      }
+      for (const v of await docker.listVolumes(workspaces)) {
+        if (!nodes.has(v.labels["jen.workspace"])) await docker.removeVolume(v.name);
       }
     });
   }
@@ -160,7 +344,9 @@ export class Runtime {
     return undefined;
   }
 
-  spawn(caller: Caller, grant: Grant): Promise<Agent> {
+  // grant may leave a capability out, which means false.
+  spawn(caller: Caller, requested: Partial<Grant>): Promise<Agent> {
+    const grant = fullGrant(requested);
     return this.#serial(async () => {
       const { nodes } = await this.#read();
       const parentId = authorize(nodes, caller);
@@ -172,13 +358,13 @@ export class Runtime {
         depth = depthOf(nodes, parent) + 1;
       }
       if (!parentGrant.spawn) throw new RuntimeError(403, "the caller may not spawn");
-      for (const key of Object.keys(grant) as (keyof Grant)[]) {
+      for (const key of CAPABILITIES) {
         if (grant[key] && !parentGrant[key]) throw new RuntimeError(403, `the grant exceeds the caller's: ${key}`);
       }
       if (depth > this.#o.maxDepth) throw new RuntimeError(403, `the agent would be deeper than ${this.#o.maxDepth}`);
       if (nodes.size >= this.#o.maxAgents) throw new RuntimeError(403, `the runtime already holds ${this.#o.maxAgents} agents`);
 
-      const node: Node = { id: randomBytes(6).toString("hex"), parent: parentId, grant: { spawn: grant.spawn } };
+      const node: Node = { id: randomBytes(6).toString("hex"), parent: parentId, grant };
       try {
         await this.#o.docker.createVolume(this.#resource(node.id), {
           "jen.runtime": this.#o.name,
@@ -186,12 +372,16 @@ export class Runtime {
           "jen.parent": node.parent ?? "",
           "jen.grant": JSON.stringify(node.grant),
         });
+        if (node.grant.workspace) {
+          await this.#o.docker.createVolume(this.#workspace(node.id), { "jen.runtime": this.#o.name, "jen.workspace": node.id });
+          await this.#runWorkspace(node);
+        }
         await this.#run(node);
       } catch (error) {
         // The step may have happened even if it reported failure, so undo
         // everything by name.
         try {
-          await this.#remove(node.id);
+          await this.#remove(node);
         } catch {
           throw new RuntimeError(500, `spawning failed (${message(error)}), and agent ${node.id} is left stopped or running`, node.id);
         }
@@ -213,12 +403,13 @@ export class Runtime {
     return describe(reach(nodes, caller, id));
   }
 
-  // Stops the agent and everything under it, deepest first, keeping state.
+  // Stops the agent and everything under it, deepest first, keeping state
+  // and workspaces' files.
   stop(caller: Caller, id: string): Promise<Agent> {
     return this.#serial(async () => {
       const { nodes } = await this.#read();
       const target = reach(nodes, caller, id);
-      for (const node of subtree(nodes, id)) await this.#o.docker.removeContainer(this.#resource(node.id));
+      for (const node of subtree(nodes, id)) await this.#halt(node);
       return describe(target, "stopped");
     });
   }
@@ -246,8 +437,243 @@ export class Runtime {
     return this.#serial(async () => {
       const { nodes } = await this.#read();
       reach(nodes, caller, id);
-      for (const node of subtree(nodes, id)) await this.#remove(node.id);
+      for (const node of subtree(nodes, id)) await this.#remove(node);
     });
+  }
+
+  // Runs command in the caller's own workspace, with timeout in seconds, and
+  // answers once its shell exits. It runs outside the queue, since it can take
+  // minutes. signal is the caller hanging up, which kills the command.
+  //
+  // The wrapper and the command run as the same user, so the command can write
+  // to the exec's stream directly, forge the wrapper's report, stop the
+  // wrapper or hold the stream open. None of that bounds the runtime: it reads
+  // at most READ_BOUND bytes, answers within timeout plus GRACE_MS, trusts only
+  // the first line, and answers as soon as a report parses.
+  async runCommand(caller: Caller, command: string, timeout: number, signal: AbortSignal): Promise<CommandResult> {
+    const { container, stopped } = await this.#callerWorkspace(caller, () => {
+      if (!(timeout >= 1 && timeout <= MAX_TIMEOUT)) throw new RuntimeError(400, `timeout must be from 1 to ${MAX_TIMEOUT} seconds`);
+    });
+    const file = `${HOME}/.jen/output/${randomBytes(8).toString("hex")}.log`;
+    const { docker } = this.#o;
+    // Kills the given processes, or process groups by their negated ID, and
+    // ignores a failure: the workspace may be gone, and so are they.
+    const kill = (targets: number[]) =>
+      docker
+        .exec(container, { user: SANDBOX.user, workdir: HOME, cmd: ["kill", "-KILL", "--", ...targets.map(String)] }, { bound: 1024, signal: AbortSignal.timeout(GRACE_MS), onOutput: () => {} })
+        .catch(() => undefined);
+
+    return new Promise<CommandResult>((resolve, reject) => {
+      const stream = new AbortController();
+      let received: Buffer = Buffer.alloc(0);
+      let head: Head | undefined;
+      let timedOut = false;
+      let hungUp = false;
+      let settled = false;
+      const timers: NodeJS.Timeout[] = [];
+
+      // Settles once: closes the stream, then, after killing before if given,
+      // answers with outcome. A call answered before the first line came, by
+      // its timeout or a hang-up, would leave its command running, so the
+      // stream stays open a while longer for the line, and its group is
+      // killed if it comes.
+      const settle = (outcome: CommandResult | RuntimeError, before?: number[]) => {
+        if (settled) return;
+        settled = true;
+        for (const timer of timers) clearTimeout(timer);
+        signal.removeEventListener("abort", hangUp);
+        if (head || !(timedOut || hungUp)) stream.abort();
+        else setTimeout(() => stream.abort(), GRACE_MS);
+        void (before ? kill(before) : Promise.resolve()).then(() => (outcome instanceof RuntimeError ? reject(outcome) : resolve(outcome)));
+      };
+      const wroteAround = () => new RuntimeError(502, "the command wrote around its output file, so its output couldn't be read");
+      const group = () => (head ? [-head.group] : undefined);
+
+      const onOutput = (chunk: Buffer) => {
+        if (settled && head) return;
+        received = Buffer.concat([received, chunk]);
+        if (!head) {
+          const parsed = parseHead(received);
+          if (parsed === "partial") return;
+          if (parsed === "malformed") return settled ? stream.abort() : settle(wroteAround());
+          head = parsed;
+          // The call was already answered without it, so only the kill is left.
+          if (settled) return void kill([-head.group, head.wrapper]).then(() => stream.abort());
+          if (hungUp) return settle(new RuntimeError(499, "the caller hung up"), group());
+          if (timedOut) void kill([-head.group]);
+        }
+        const report = parseReport(received.subarray(head.length), file);
+        if (report === "partial") return;
+        if (report === "malformed") return settle(wroteAround(), group());
+        // A report that came after the timeout killed the command.
+        settle(timedOut ? { ...report, exitCode: null, timedOut: true } : report);
+      };
+
+      const hangUp = () => {
+        hungUp = true;
+        // Without the first line there's no group to kill yet, so the line is
+        // awaited, though no longer than the grace.
+        if (head) settle(new RuntimeError(499, "the caller hung up"), group());
+        else timers.push(setTimeout(() => settle(new RuntimeError(499, "the caller hung up")), GRACE_MS));
+      };
+      if (signal.aborted) return reject(new RuntimeError(499, "the caller hung up"));
+      signal.addEventListener("abort", hangUp, { once: true });
+
+      timers.push(
+        setTimeout(() => {
+          timedOut = true;
+          if (head) void kill([-head.group]);
+          // A report that doesn't come in time means the wrapper itself was
+          // stopped, so it's killed too, and nothing it said is used.
+          timers.push(
+            setTimeout(() => {
+              const wrapper = head?.wrapper;
+              settle({ exitCode: null, output: "", timedOut: true });
+              if (wrapper !== undefined) void kill([wrapper]);
+            }, GRACE_MS),
+          );
+        }, timeout * 1000),
+      );
+
+      docker
+        .exec(container, { user: SANDBOX.user, workdir: HOME, cmd: ["bash", "-c", WRAPPER, "jen", command, file] }, { bound: READ_BOUND, signal: stream.signal, onOutput })
+        .then(
+          async (end: ExecEnd) => {
+            if (settled) return;
+            if (end === "bound") return settle(wroteAround(), group());
+            if (timedOut) return settle({ exitCode: null, output: "", timedOut: true });
+            if (await stopped()) settle(new RuntimeError(409, "the workspace stopped during the command"));
+            else settle(new RuntimeError(502, "the command's output ended before its report"), group());
+          },
+          (error) => settle(execFailed(error, "the command couldn't be run")),
+        );
+    });
+  }
+
+  // The bytes of the file at path in the caller's own workspace, read as the
+  // agent, as a command would read it. Like a command, it runs outside the
+  // queue, and signal is the caller hanging up.
+  async readFile(caller: Caller, path: string, signal: AbortSignal): Promise<Buffer> {
+    const content = await this.#fileOp(caller, "read", [READ_SCRIPT, "jen", path, String(MAX_FILE)], undefined, signal, (status) => {
+      if (status === "missing") throw new RuntimeError(404, `no file at ${path}`);
+      if (/^large \d{1,15}$/.test(status)) throw new RuntimeError(413, `the file is ${status.slice(6)} bytes, over the ${MAX_FILE}-byte limit`);
+      if (status.startsWith("error ")) throw new RuntimeError(400, status.slice(6));
+      const ok = /^ok (\d{1,9})$/.exec(status);
+      if (!ok || Number(ok[1]) > MAX_FILE) throw malformed();
+      return Number(ok[1]);
+    });
+    return content!;
+  }
+
+  // Writes bytes as the whole file at path in the caller's own workspace, as
+  // the agent, creating its folders. The file is replaced only once every
+  // byte has arrived. Like a command, it runs outside the queue.
+  async writeFile(caller: Caller, path: string, bytes: Buffer, signal: AbortSignal): Promise<void> {
+    if (bytes.length > MAX_FILE) throw new RuntimeError(413, `the file is larger than ${MAX_FILE} bytes`);
+    await this.#fileOp(caller, "write", [WRITE_SCRIPT, "jen", path, String(bytes.length)], bytes, signal, (status) => {
+      if (status === "ok") return "done";
+      if (status.startsWith("error ")) throw new RuntimeError(400, status.slice(6));
+      throw malformed();
+    });
+  }
+
+  // Runs a file script in the caller's workspace with args, and reads its
+  // status line with parse, which throws a refusal, answers "done", or gives
+  // the size of the content that follows, which is then the answer. It reads
+  // at most FILE_READ_BOUND bytes and answers within FILE_MS, whatever the
+  // workspace does, and trusts nothing from the stream that it enforces: any
+  // process in the workspace can write to it.
+  async #fileOp(
+    caller: Caller,
+    action: "read" | "write",
+    args: string[],
+    input: Buffer | undefined,
+    signal: AbortSignal,
+    parse: (status: string) => "done" | number,
+  ): Promise<Buffer | undefined> {
+    const { container, stopped } = await this.#callerWorkspace(caller);
+    const { docker } = this.#o;
+    return new Promise<Buffer | undefined>((resolve, reject) => {
+      const stream = new AbortController();
+      // Before the status line, what's arrived; after it, the content.
+      let head: Buffer = Buffer.alloc(0);
+      let size: number | undefined;
+      const content: Buffer[] = [];
+      let received = 0;
+      let settled = false;
+      const settle = (outcome: Buffer | undefined | RuntimeError) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", hangUp);
+        stream.abort();
+        if (outcome instanceof RuntimeError) reject(outcome);
+        else resolve(outcome);
+      };
+      const more = (chunk: Buffer) => {
+        received += chunk.length;
+        content.push(chunk);
+        if (received > size!) settle(new RuntimeError(502, `the workspace sent more than the ${size}-byte file it reported`));
+      };
+      const onOutput = (chunk: Buffer) => {
+        if (settled) return;
+        if (size !== undefined) return more(chunk);
+        head = Buffer.concat([head, chunk]);
+        const newline = head.subarray(0, STATUS_MAX + 1).indexOf(10);
+        if (newline < 0) return void (head.length > STATUS_MAX && settle(malformed()));
+        let parsed: "done" | number;
+        try {
+          parsed = parse(head.subarray(0, newline).toString("utf8"));
+        } catch (error) {
+          return settle(error instanceof RuntimeError ? error : malformed());
+        }
+        if (parsed === "done") return settle(undefined);
+        size = parsed;
+        more(head.subarray(newline + 1));
+      };
+      const hangUp = () => settle(new RuntimeError(499, "the caller hung up"));
+      const timer = setTimeout(() => settle(new RuntimeError(502, `the workspace didn't finish the ${action} within ${FILE_MS / 1000} seconds`)), FILE_MS);
+      if (signal.aborted) return hangUp();
+      signal.addEventListener("abort", hangUp, { once: true });
+      docker
+        .exec(container, { user: SANDBOX.user, workdir: HOME, cmd: ["bash", "-c", ...args], ...(input === undefined ? {} : { input }) }, { bound: FILE_READ_BOUND, signal: stream.signal, onOutput })
+        .then(
+          async (end: ExecEnd) => {
+            if (settled) return;
+            if (end === "bound") return settle(new RuntimeError(502, `the workspace sent more than the ${action} could hold`));
+            if (size !== undefined && received === size) return settle(Buffer.concat(content));
+            if (await stopped()) settle(new RuntimeError(409, `the workspace stopped during the ${action}`));
+            else if (size !== undefined) settle(new RuntimeError(502, `the workspace sent ${received} bytes of the ${size}-byte file it reported`));
+            else settle(new RuntimeError(502, `the workspace's answer to the ${action} ended before its status`));
+          },
+          (error) => settle(execFailed(error, `the ${action} couldn't be run`)),
+        );
+    });
+  }
+
+  // The caller's own workspace container, refusing the owner, which has none,
+  // and an agent without the grant, then check, then a workspace that isn't
+  // running. stopped tells whether the workspace has since stopped, been
+  // replaced or restarted, waiting up to STOPPED_MS for the engine to say so.
+  async #callerWorkspace(caller: Caller, check?: () => void): Promise<{ container: string; stopped: () => Promise<boolean> }> {
+    if (caller === null) throw new RuntimeError(404, "the owner has no workspace");
+    const { nodes } = await this.#read();
+    const node = nodes.get(authorize(nodes, caller)!)!;
+    if (!node.grant.workspace) throw new RuntimeError(403, "the caller has no workspace");
+    check?.();
+    const container = this.#workspace(node.id);
+    const { docker } = this.#o;
+    const before = await docker.inspectContainer(container);
+    if (!before || before.state !== "running") throw new RuntimeError(409, "the workspace isn't running");
+    const stopped = async () => {
+      for (const deadline = Date.now() + STOPPED_MS; ; ) {
+        const now = await docker.inspectContainer(container).catch(() => undefined);
+        if (!now || now.id !== before.id || now.state !== "running" || now.startedAt !== before.startedAt) return true;
+        if (Date.now() >= deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
+    return { container, stopped };
   }
 
   // Where to relay to a running agent the caller can reach, and its current token.
@@ -298,6 +724,8 @@ export class Runtime {
       const node = nodes.get(id);
       // Only the agent's current container counts, not one since replaced.
       if (!node || node.container?.id !== details.id) return;
+      // The agent counts as stopped now, and so its workspace stops too.
+      if (node.grant.workspace) await this.#o.docker.removeContainer(this.#workspace(node.id));
       const parent = nodes.get(node.parent ?? "");
       // A root's parent is the owner, who sees it as stopped.
       if (!parent) return;
@@ -312,11 +740,13 @@ export class Runtime {
   // Starts a stopped agent's container, and on failure leaves it stopped. A
   // start with messages to deliver holds the agent until the first arrives.
   async #start(node: Node, wake: boolean) {
-    await this.#o.docker.removeContainer(this.#resource(node.id));
+    // Whatever is left over, such as containers the engine gave up restarting.
+    await this.#halt(node);
     try {
+      if (node.grant.workspace) await this.#runWorkspace(node);
       await this.#run(node, wake ? randomBytes(16).toString("hex") : undefined);
     } catch (error) {
-      await this.#o.docker.removeContainer(this.#resource(node.id));
+      await this.#halt(node);
       throw new RuntimeError(500, `starting failed: ${message(error)}`);
     }
   }
@@ -354,17 +784,43 @@ export class Runtime {
       labels: { "jen.runtime": name, "jen.agent": node.id, "jen.credential": sha256(token) },
       volume: { name: resource, path: "/state" },
       network: name,
-      maxRetries: MAX_RETRIES,
+      restart: { maxRetries: MAX_RETRIES },
     });
     await docker.startContainer(resource);
     await this.#o.ready(this.#o.agentURL(resource));
   }
 
-  // Removes an agent's container and then its volume. Each step succeeds when
-  // there's nothing to remove, so an interrupted removal can be repeated.
-  async #remove(id: string) {
-    await this.#o.docker.removeContainer(this.#resource(id));
-    await this.#o.docker.removeVolume(this.#resource(id));
+  // Creates and starts a new workspace container for the agent, on its
+  // workspace volume, with the fixed sandbox and no network.
+  async #runWorkspace(node: Node) {
+    const { docker, name, workspaceImage } = this.#o;
+    const resource = this.#workspace(node.id);
+    await docker.createContainer(resource, {
+      image: workspaceImage,
+      env: [],
+      labels: { "jen.runtime": name, "jen.workspace": node.id },
+      volume: { name: resource, path: HOME },
+      network: "none",
+      // A workspace whose first process dies comes back with its files.
+      restart: "unless-stopped",
+      sandbox: SANDBOX,
+    });
+    await docker.startContainer(resource);
+  }
+
+  // Removes an agent's container, then its workspace's, keeping both volumes.
+  async #halt(node: Node) {
+    await this.#o.docker.removeContainer(this.#resource(node.id));
+    if (node.grant.workspace) await this.#o.docker.removeContainer(this.#workspace(node.id));
+  }
+
+  // Removes an agent's containers, then its workspace volume, and its own
+  // volume, its record, last. Each step succeeds when there's nothing to
+  // remove, so an interrupted removal can be repeated and still finds the agent.
+  async #remove(node: Node) {
+    await this.#halt(node);
+    if (node.grant.workspace) await this.#o.docker.removeVolume(this.#workspace(node.id));
+    await this.#o.docker.removeVolume(this.#resource(node.id));
   }
 
   // The tree as the engine has it: every agent, with its container if it has
@@ -390,11 +846,53 @@ export class Runtime {
     return `${this.#o.name}-agent-${id}`;
   }
 
+  // And its workspace's volume and container share this one.
+  #workspace(id: string) {
+    return `${this.#o.name}-workspace-${id}`;
+  }
+
   #serial<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(operation);
     this.#queue = result.catch(() => {});
     return result;
   }
+}
+
+// The wrapper's first line: its own PID, the command's process group, and the
+// line's length in bytes.
+interface Head {
+  wrapper: number;
+  group: number;
+  length: number;
+}
+
+// The wrapper's first line, once it has arrived whole.
+function parseHead(received: Buffer): Head | "partial" | "malformed" {
+  const text = received.subarray(0, 32).toString("latin1");
+  const line = /^(\d{1,10}) (\d{1,10})\n/.exec(text);
+  if (line) return { wrapper: Number(line[1]), group: Number(line[2]), length: line[0].length };
+  return /^\d{0,10}( \d{0,10})?$/.test(text) && received.length < 32 ? "partial" : "malformed";
+}
+
+// The report that follows the first line: the exit code and the output's
+// size, then the output, whole within OUTPUT_CAP or else its start and end.
+// Anything after it is ignored. file is where a cut output was kept.
+function parseReport(received: Buffer, file: string): CommandResult | "partial" | "malformed" {
+  const text = received.subarray(0, 32).toString("latin1");
+  const line = /^(\d{1,3}) (\d{1,15})\n/.exec(text);
+  if (!line) return /^\d{0,3}( \d{0,15})?$/.test(text) && received.length < 32 ? "partial" : "malformed";
+  const exitCode = Number(line[1]);
+  const bytes = Number(line[2]);
+  const output = received.subarray(line[0].length);
+  if (bytes <= OUTPUT_CAP) {
+    if (output.length < bytes) return "partial";
+    return { exitCode, output: output.subarray(0, bytes).toString("utf8"), timedOut: false };
+  }
+  if (output.length < OUTPUT_CAP) return "partial";
+  // A character split by the cut decodes as a replacement character.
+  const start = output.subarray(0, OUTPUT_START).toString("utf8");
+  const end = output.subarray(OUTPUT_START, OUTPUT_CAP).toString("utf8");
+  return { exitCode, output: start + end, timedOut: false, cut: { bytes, file } };
 }
 
 // Connects to url's host and port every 100 ms until one connection succeeds,
@@ -515,11 +1013,18 @@ function subtree(nodes: Map<string, Node>, id: string): Node[] {
   return found.sort((a, b) => depthOf(nodes, b) - depthOf(nodes, a));
 }
 
+// Every capability, with only a true value granting it.
+function fullGrant(grant: Partial<Record<keyof Grant, unknown>>): Grant {
+  return { spawn: grant.spawn === true, workspace: grant.workspace === true };
+}
+
+// A grant stored before a capability existed reads that capability as false.
 function parseGrant(label: string | undefined): Grant {
   try {
-    return { spawn: JSON.parse(label ?? "{}")?.spawn === true };
+    const stored = JSON.parse(label ?? "{}");
+    return fullGrant(typeof stored === "object" && stored !== null ? stored : {});
   } catch {
-    return { spawn: false };
+    return fullGrant({});
   }
 }
 
@@ -529,4 +1034,17 @@ function sha256(value: string): string {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// A status line the runtime can't read: something in the workspace wrote to
+// the stream.
+function malformed(): RuntimeError {
+  return new RuntimeError(502, "the workspace's answer couldn't be read");
+}
+
+// An exec the engine refused: a workspace that's gone or stopped is 409, as
+// for any call to it, and anything else is the engine failing.
+function execFailed(error: unknown, what: string): RuntimeError {
+  if (error instanceof DockerError && (error.status === 404 || error.status === 409)) return new RuntimeError(409, "the workspace isn't running");
+  return new RuntimeError(502, `${what}: ${message(error)}`);
 }

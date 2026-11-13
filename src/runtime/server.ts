@@ -5,12 +5,14 @@
 // runtime checks the token again when it acts, so one that stops being
 // current while its request waits is refused then. Requests to an agent's
 // protocol are relayed to it with its own token, which never leaves the
-// runtime, and a message with its sender in Jen-From.
+// runtime, and a message with its sender in Jen-From. POST /workspace/commands
+// runs a command in the caller's own workspace, and in no other, and GET and
+// PUT /workspace/files?path=<path> read and write a file's raw bytes there.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pipeline } from "node:stream";
-import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
+import { MAX_FILE, MAX_TIMEOUT, RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
 
 export interface RuntimeServerOptions {
   runtime: Runtime;
@@ -24,6 +26,15 @@ const FORWARDED = ["content-type", "content-length", "accept", "last-event-id"];
 // The most a spawn body may hold. A grant is a few dozen bytes; the bound keeps
 // any caller from making the shared runtime buffer an arbitrary upload.
 export const MAX_BODY = 16 * 1024;
+// The most a command's body may hold. It stays under Linux's 128 KiB limit on
+// one argument, which the command becomes. Agents write files through the
+// file route, but nothing is gained by shrinking it, and a short heredoc
+// still fits.
+export const MAX_COMMAND_BODY = 64 * 1024;
+// The longest path the file route takes, in bytes. Linux's own is 4096.
+export const MAX_PATH = 4096;
+// A command's timeout when the body names none, in seconds.
+const DEFAULT_TIMEOUT = 120;
 
 export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOptions): http.Server {
   const owner = digest(`Bearer ${ownerToken}`);
@@ -36,16 +47,64 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   }
 
   async function spawn(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
-    const body = await readBody(req);
-    if (body === undefined) return tooLarge(res);
+    const body = await readBody(req, MAX_BODY);
+    if (body === undefined) return tooLarge(res, MAX_BODY);
     let grant: unknown;
     try {
       grant = JSON.parse(body)?.grant;
     } catch {
       return json(res, 400, { error: "the body is not JSON" });
     }
-    if (!isGrant(grant)) return json(res, 400, { error: 'grant must be {"spawn": <boolean>}' });
+    if (!isGrant(grant)) return json(res, 400, { error: 'grant must be an object of "spawn" and "workspace", each a boolean, such as {"spawn": true}' });
     json(res, 201, await runtime.spawn(caller, grant));
+  }
+
+  // Runs a command in the caller's own workspace. A caller that hangs up
+  // before the answer kills it: that's the response closing unfinished, not
+  // the request closing, which happens as soon as the body has been read.
+  async function command(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
+    const hangUp = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) hangUp.abort();
+    });
+    const body = await readBody(req, MAX_COMMAND_BODY);
+    if (body === undefined) return tooLarge(res, MAX_COMMAND_BODY);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return json(res, 400, { error: "the body is not JSON" });
+    }
+    const { command, timeout = DEFAULT_TIMEOUT } = (typeof parsed === "object" && parsed !== null ? parsed : {}) as { command?: unknown; timeout?: unknown };
+    if (typeof command !== "string") return json(res, 400, { error: "command must be a string" });
+    if (typeof timeout !== "number" || !(timeout >= 1 && timeout <= MAX_TIMEOUT)) return json(res, 400, { error: `timeout must be a number of seconds from 1 to ${MAX_TIMEOUT}` });
+    // A caller that hung up while its body arrived gets nothing run.
+    if (hangUp.signal.aborted) return;
+    const { exitCode, output, timedOut, cut } = await runtime.runCommand(caller, command, timeout, hangUp.signal);
+    json(res, 200, cut === undefined ? { exitCode, output, timedOut } : { exitCode, output, timedOut, cut });
+  }
+
+  // Reads or writes a file in the caller's own workspace, as raw bytes. A
+  // caller that hangs up before the answer aborts the call, as for commands.
+  async function file(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller, query: string) {
+    const hangUp = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) hangUp.abort();
+    });
+    const path = new URLSearchParams(query).get("path");
+    if (path === null || path === "") return json(res, 400, { error: "path is required, as /workspace/files?path=<path>" });
+    if (path.includes("\0")) return json(res, 400, { error: "path must not hold a NUL" });
+    if (Buffer.byteLength(path) > MAX_PATH) return json(res, 400, { error: `path must be at most ${MAX_PATH} bytes` });
+    if (req.method === "GET") {
+      const bytes = await runtime.readFile(caller, path, hangUp.signal);
+      return void res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": bytes.length }).end(bytes);
+    }
+    const body = await readBytes(req, MAX_FILE);
+    if (body === undefined) return tooLarge(res, MAX_FILE);
+    // A caller that hung up while its body arrived gets nothing written.
+    if (hangUp.signal.aborted) return;
+    await runtime.writeFile(caller, path, body, hangUp.signal);
+    res.writeHead(204).end();
   }
 
   // Relays a message or an event stream. A message carries its true sender,
@@ -88,9 +147,11 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     if (caller === undefined) throw new RuntimeError(401, "a valid bearer token is required");
     // The path is the request target up to its query. Parsing it as a URL
     // would read a target such as "//" as a host, and throw.
-    const path = (req.url ?? "/").split("?")[0];
+    const [path, query = ""] = (req.url ?? "/").split(/\?(.*)/s);
     const [empty, agents, id, action, ...rest] = path.split("/");
     const method = req.method;
+    if (path === "/workspace/commands" && method === "POST") return command(req, res, caller);
+    if (path === "/workspace/files" && (method === "GET" || method === "PUT")) return file(req, res, caller, query);
     if (empty === "" && agents === "agents" && rest.length === 0) {
       if (id === undefined) {
         if (method === "POST") return spawn(req, res, caller);
@@ -124,12 +185,12 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   });
 }
 
-// Exactly {"spawn": <boolean>}. Unknown capabilities are refused, so nothing
-// unchecked is stored as a grant.
-function isGrant(value: unknown): value is Grant {
+// An object of known capabilities with boolean values, any of them missing,
+// which the runtime reads as false. Unknown capabilities are refused, so
+// nothing unchecked is stored as a grant.
+function isGrant(value: unknown): value is Partial<Grant> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "spawn" && typeof (value as Grant).spawn === "boolean";
+  return Object.entries(value).every(([key, granted]) => (key === "spawn" || key === "workspace") && typeof granted === "boolean");
 }
 
 // Hashing both sides gives them equal lengths for timingSafeEqual.
@@ -137,32 +198,37 @@ function digest(value: string): Buffer {
   return createHash("sha256").update(value).digest();
 }
 
-// The body, or undefined once it would pass MAX_BODY: a declared length is
+// The body as text, or undefined once it would pass bound.
+async function readBody(req: http.IncomingMessage, bound: number): Promise<string | undefined> {
+  return (await readBytes(req, bound))?.toString("utf8");
+}
+
+// The body, or undefined once it would pass bound: a declared length is
 // refused unread, and a chunked one stops being read where it crosses.
-function readBody(req: http.IncomingMessage): Promise<string | undefined> {
-  if (Number(req.headers["content-length"] ?? 0) > MAX_BODY) return Promise.resolve(undefined);
+function readBytes(req: http.IncomingMessage, bound: number): Promise<Buffer | undefined> {
+  if (Number(req.headers["content-length"] ?? 0) > bound) return Promise.resolve(undefined);
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
-    const done = (body: string | undefined) => {
+    const done = (body: Buffer | undefined) => {
       req.off("data", data).off("end", end).off("error", reject);
       resolve(body);
     };
     const data = (chunk: Buffer) => {
       size += chunk.length;
-      if (size <= MAX_BODY) return void chunks.push(chunk);
+      if (size <= bound) return void chunks.push(chunk);
       req.pause();
       done(undefined);
     };
-    const end = () => done(Buffer.concat(chunks).toString("utf8"));
+    const end = () => done(Buffer.concat(chunks));
     req.on("data", data).on("end", end).on("error", reject);
   });
 }
 
 // Closing the connection leaves the rest of the upload unread.
-function tooLarge(res: http.ServerResponse) {
+function tooLarge(res: http.ServerResponse, bound: number) {
   res.setHeader("Connection", "close");
-  json(res, 413, { error: `the body is larger than ${MAX_BODY} bytes` });
+  json(res, 413, { error: `the body is larger than ${bound} bytes` });
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown) {

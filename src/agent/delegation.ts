@@ -7,9 +7,11 @@ import http from "node:http";
 import type { Json } from "./model/port.ts";
 import type { Tool } from "./loop.ts";
 import type { Store } from "./store.ts";
+import { workspaceTools } from "./workspace.ts";
 
 export interface Grant {
   spawn: boolean;
+  workspace: boolean;
 }
 
 export interface Identity {
@@ -33,15 +35,15 @@ export function readIdentity(env: NodeJS.ProcessEnv): Identity {
   } catch {
     // Reported below, as any other text that isn't a grant.
   }
-  if (!isGrant(grant)) throw new Error('JEN_GRANT must be a grant, such as {"spawn":false}');
+  if (!isGrant(grant)) throw new Error('JEN_GRANT must be a grant, such as {"spawn":false,"workspace":true}');
   if (env.JEN_WAKE === "") throw new Error("JEN_WAKE is set but empty");
-  return { id: env.JEN_AGENT_ID!, parent: env.JEN_PARENT!, grant: { spawn: grant.spawn }, wake: env.JEN_WAKE };
+  return { id: env.JEN_AGENT_ID!, parent: env.JEN_PARENT!, grant: { spawn: grant.spawn === true, workspace: grant.workspace === true }, wake: env.JEN_WAKE };
 }
 
-function isGrant(value: unknown): value is Grant {
+// Known capabilities with boolean values. One that's missing is false.
+function isGrant(value: unknown): value is Partial<Grant> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  return keys.length === 1 && keys[0] === "spawn" && typeof (value as Grant).spawn === "boolean";
+  return Object.entries(value).every(([key, granted]) => (key === "spawn" || key === "workspace") && typeof granted === "boolean");
 }
 
 export const DELIVERED = "delivered. The reply will come to you. Call wait when you have nothing else to do.";
@@ -71,38 +73,67 @@ export class RuntimeClient {
   }
 
   // The answer's body, parsed when it's JSON.
-  request(method: string, path: string, body?: Json, signal?: AbortSignal): Promise<Json | undefined> {
-    const payload = body === undefined ? undefined : JSON.stringify(body);
+  async request(method: string, path: string, body?: Json, signal?: AbortSignal): Promise<Json | undefined> {
+    const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
+    return parse(await this.#send(method, path, payload && { type: "application/json", bytes: payload }, signal));
+  }
+
+  // The exact bytes of the file at path in the agent's own workspace.
+  readFile(path: string, signal?: AbortSignal): Promise<Buffer> {
+    return this.#send("GET", filePath(path), undefined, signal);
+  }
+
+  // Writes bytes as the whole file at path in the agent's own workspace.
+  async writeFile(path: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    await this.#send("PUT", filePath(path), { type: "application/octet-stream", bytes }, signal);
+  }
+
+  // The answer's body as sent, or a RuntimeRefusal for a refusal.
+  #send(method: string, path: string, body: { type: string; bytes: Buffer } | undefined, signal?: AbortSignal): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${this.#token}` };
-      if (payload !== undefined) Object.assign(headers, { "content-type": "application/json", "content-length": Buffer.byteLength(payload) });
+      if (body !== undefined) Object.assign(headers, { "content-type": body.type, "content-length": body.bytes.length });
       const req = http.request(new URL(path, this.#url), { method, headers, signal }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("error", reject);
         res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          let parsed: Json | undefined;
-          try {
-            parsed = text === "" ? undefined : JSON.parse(text);
-          } catch {
-            parsed = text;
-          }
+          const answer = Buffer.concat(chunks);
           const status = res.statusCode ?? 0;
-          if (status < 400) return resolve(parsed);
+          if (status < 400) return resolve(answer);
+          const parsed = parse(answer);
           const message = typeof parsed === "object" && parsed !== null && "error" in parsed ? parsed.error : parsed;
           reject(new RuntimeRefusal(status, typeof message === "string" ? message : JSON.stringify(message)));
         });
       });
       req.on("error", reject);
-      req.end(payload);
+      req.end(body?.bytes);
     });
   }
 }
 
-// The tools the agent's grant allows: with spawn, message_sub_agent and the
-// tools that manage sub-agents, and without it none, since it has no one to
-// send to. debts is the record of which sub-agents owe a reply. No result
+const filePath = (path: string) => `/workspace/files?path=${encodeURIComponent(path)}`;
+
+// A body parsed as JSON, or its text when it isn't, or undefined when empty.
+function parse(body: Buffer): Json | undefined {
+  const text = body.toString("utf8");
+  if (text === "") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+// Every tool the agent's grant allows: the delegation tools with spawn, and
+// the workspace tools with workspace.
+export function toolsFor(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
+  return [...delegationTools(identity, runtime, debts), ...workspaceTools(identity, runtime)];
+}
+
+// The delegation tools: with spawn, message_sub_agent and the tools that
+// manage sub-agents, and without it none, since it has no one to send to.
+// debts is the record of which sub-agents owe a reply. No result
 // shows the model an ID it can't message, such as a sub-agent's parent, which
 // is the agent itself.
 export function delegationTools(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
@@ -170,7 +201,7 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
         "Start a new sub-agent of your own, and get its ID. With spawn true in its grant it may start sub-agents of its own; it can't have more than you. It starts with an empty conversation, so send it its task.",
       inputSchema: {
         type: "object",
-        properties: { grant: { type: "object", properties: { spawn: { type: "boolean" } }, required: ["spawn"] } },
+        properties: { grant: { type: "object", properties: { spawn: { type: "boolean" }, workspace: { type: "boolean" } }, required: ["spawn"] } },
         required: ["grant"],
       },
       run: async (input, signal) => answer(withoutParent(await runtime.request("POST", "/agents", { grant: field(input, "grant") ?? null }, signal))),
