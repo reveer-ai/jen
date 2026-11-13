@@ -16,10 +16,9 @@
   - the token from the fragment, kept in `sessionStorage`, with the fragment removed
   - `ui` and `events` fetched with the token, and events parsed from the body, reconnecting with `Last-Event-ID` and a backoff up to 30 seconds
   - the frame built as the design gives it
-  - items, errors and parsed actions passed in
   - the swap on a `publish_ui` result, with one fetch of `ui` in flight
   - actions checked for source, version, `navigator.userActivation.isActive` and the 1 MiB bound, then posted to `messages` in the given format
-  - the failure bar
+  - the failure bar, which also shows the agent's error events
 
   Verify in the sandbox check (5.1).
 - [ ] 3.3 Add `GET /page` (with the design's CSP and `Cache-Control: no-store`) and `GET /ui` to `src/agent/server.ts`, and update its header comment. Verify with `server.test.ts`: both need the token, `/ui` gives version 0 and the textbox before a publish and the latest after, and `/page` carries the policy.

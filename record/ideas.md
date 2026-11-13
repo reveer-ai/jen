@@ -15,6 +15,8 @@ Ideas the maintainer wants kept, not yet planned or decided. An idea isn't a com
 - **Agents that know their device and situation.** *Raised 2026-11-10, in [JEN-3](https://linear.app/reveer/issue/JEN-3).* An agent writes the best UI for where it's shown, such as a phone, a TV or a laptop, and for the user's situation. The page would send the agent what it knows when the UI is opened and with each action, and the model decides what to do with it. This raises one agent open on several devices at once, and a saved UI for each kind of device.
 - **One agent's UI showing its sub-agents'.** *Raised 2026-11-10, in JEN-3.* A project manager's dashboard could embed or link to its engineer sub-agent's display. The sandbox has no network, so embedding needs a way for the page to fetch a sub-agent's UI with the viewer's access.
 - **Streaming a UI as it's written**, so the first parts appear while the model is still writing. *Raised 2026-11-10, in JEN-3.*
+- **Live progress in a UI.** *Raised 2026-11-13, in [JEN-18](https://linear.app/reveer/issue/JEN-18).* From JEN-18 on, a UI shows only what the agent publishes, so while the agent works the user sees the last version and nothing else. A way to show progress, drawn by jen's page or sent to the frame as data, is needed once real tasks run long.
+- **A conversation pane drawn by jen.** *Raised 2026-11-13, in JEN-18.* A fixed pane beside the agent's UI, plain HTML in jen's page, showing at least what the user said. It would give the user the transcript without generated code, which is why JEN-18 gives a UI no access to the conversation.
 
 ## Workflow
 

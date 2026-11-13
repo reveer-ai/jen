@@ -45,7 +45,7 @@ An agent that has published nothing SHALL serve the textbox shipped in its image
 - **THEN** it shows the textbox, version 0
 
 ### Requirement: The page connects as the viewer
-`GET /page` SHALL serve jen's fixed page. It SHALL read the viewer's token from the URL's fragment, keep it in `sessionStorage` and remove the fragment. It SHALL load the latest UI from `ui` and stream `events` with the token, reconnecting after a drop with `Last-Event-ID`. It SHALL draw nothing but the UI's frame and a bar for its own failures.
+`GET /page` SHALL serve jen's fixed page. It SHALL read the viewer's token from the URL's fragment, keep it in `sessionStorage` and remove the fragment. It SHALL load the latest UI from `ui` and stream `events` with the token, reconnecting after a drop with `Last-Event-ID`. It SHALL pass the frame nothing from the stream. It SHALL draw nothing but the UI's frame and a bar for its own failures and the agent's error events.
 
 #### Scenario: Opened with a token
 - **WHEN** the owner opens a root's page with `#token=<owner token>`
@@ -67,18 +67,11 @@ The page SHALL run the UI in an `<iframe sandbox="allow-scripts">` whose documen
 - **THEN** each read throws
 
 ### Requirement: The page swaps in a new version when one is published
-When the stream carries the result of a `publish_ui` call, the page SHALL fetch `ui`, and if its version differs from the one showing, SHALL replace the frame with one running the new version and replay the conversation into it. It SHALL have at most one fetch of `ui` in flight.
+When the stream carries the result of a `publish_ui` call, the page SHALL fetch `ui`, and if its version differs from the one showing, SHALL replace the frame with one running the new version It SHALL have at most one fetch of `ui` in flight.
 
 #### Scenario: The agent publishes while the page is open
 - **WHEN** the agent publishes version 2 while the page shows version 1
-- **THEN** the page shows version 2, with the conversation passed in
-
-### Requirement: The bridge gives a UI the conversation
-The frame SHALL have `window.jen` with `version` and `subscribe(fn)`, which calls `fn` with every item so far and each new one. Items SHALL be as `/events` sends them, plus `{"type": "error", "message"}` for each error event. A user message that is an action SHALL carry `action: {version, context, inputs}`.
-
-#### Scenario: Subscribing after items arrived
-- **WHEN** a UI calls `jen.subscribe(fn)` after the page passed in three items
-- **THEN** `fn` is called with those three, in order, and then with each later one
+- **THEN** the page shows version 2
 
 ### Requirement: The bridge hands the page actions with the UI's inputs
 `jen.act(context)` SHALL hand the page `context`, any JSON value, with `inputs`: the value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. Checkboxes that share a name SHALL give the array of their checked values.
@@ -110,7 +103,7 @@ The instructions of a root agent whose grant has `workspace` SHALL also say that
 - **THEN** its instructions don't mention `publish_ui` or a UI
 
 ### Requirement: A root with workspace is told its UI is its own
-The instructions of a root agent whose grant has `workspace` SHALL say that until it publishes, its page is a plain textbox showing nothing of the conversation, so it answers a UI action by publishing a UI with `publish_ui`. They SHALL say that what its UI shows is its choice, and that every UI it publishes must give the user a way to keep talking to it.
+The instructions of a root agent whose grant has `workspace` SHALL say that until it publishes, its page is a plain textbox showing nothing of the conversation, and that the user never sees its text replies there, so it answers each UI action by publishing a UI with `publish_ui`. They SHALL say that what its UI shows is its choice, and that every UI it publishes must give the user a way to keep talking to it.
 
 #### Scenario: A root's instructions
 - **WHEN** a root agent with `workspace` calls the model

@@ -19,7 +19,8 @@ See proposal.md for what this change builds and why, and `record/decisions.md` (
 
 - Sub-agents' UIs. Only a root is offered `publish_ui`, and the runtime relays the UI routes only for a root (see decisions.md, 2026-11-10).
 - Real auth, TLS, and reaching a UI from anywhere but the owner's machine. They belong to [JEN-4](https://linear.app/reveer/issue/JEN-4).
-- A data channel from the agent to its UI other than its conversation and the files it publishes (see "How the agent updates its UI").
+- Any way for a UI to read the conversation, and any data channel from the agent to its UI other than the files it publishes (see "How the agent updates its UI").
+- Showing the agent's progress while it works. Until it publishes, the user sees the last version and nothing else.
 - Reporting a UI's runtime errors to the agent (see Risks).
 - Keeping old versions. Only the latest is kept, as decided on 2026-11-10.
 
@@ -68,11 +69,11 @@ From there, everything the user sees is the agent's. The textbox doesn't show th
 1. Reads the viewer's token from the URL's fragment (`#token=…`), which never reaches a server. It keeps the token in `sessionStorage`, so a reload keeps working, and removes the fragment from the address bar.
 2. Fetches `ui` (relative to its own path), `{"version", "document"}`, with the token.
 3. Opens `events` with `fetch`, not `EventSource`, because `EventSource` can't send an `Authorization` header. It reads Server-Sent Events from the body, and reconnects with `Last-Event-ID` after a drop, waiting longer after each failure, up to 30 seconds.
-4. Runs the document in a frame (below) that fills the page, and passes it every item and error event.
-5. When an item is a `tool_result` for a `publish_ui` call, which it matches by the call's ID, it fetches `ui` again. If the version is new, it swaps the frame for the new one and replays the conversation into it. Replayed old publishes each fetch `ui` too, but no more than one fetch is in flight, and an unchanged version changes nothing.
+4. Runs the document in a frame (below) that fills the page. It passes the frame nothing from the stream.
+5. When an item is a `tool_result` for a `publish_ui` call, which it matches by the call's ID, it fetches `ui` again. If the version is new, it swaps the frame for the new one. Old publishes in the stream each fetch `ui` too, but no more than one fetch is in flight, and an unchanged version changes nothing.
 6. Posts each action the frame hands it (below) to `messages`, as the viewer.
 
-The page draws nothing of its own except a thin bar for its own failures: no token, `401`, a refused action or a dropped connection.
+The page draws nothing of its own except a thin bar for failures: no token, `401`, a refused action, a dropped connection, or an error event from the agent, such as a failed model call. The bar shows the agent's errors because nothing else on the page would.
 
 The page's own response carries `Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`. `frame-ancestors 'none'` stops another site framing the page to steer clicks. `frame-src 'none'` refuses a navigation of the frame away from its document, in a browser that lets a sandboxed frame navigate itself. Chromium 156 refused it from the sandbox alone, even with no policy on the page (below), so the directive's own effect is unmeasured. A srcdoc frame inherits the page's policy, so the page's policy allows whatever the frame needs except network access.
 
@@ -103,7 +104,6 @@ One exit got through: WebRTC (see Risks).
 
 The bridge is jen's script, run in the frame before the document. It defines `window.jen`:
 - `jen.version`: the version this frame shows.
-- `jen.subscribe(fn)`: calls `fn` with every conversation item so far, then with each new one. Items are as `/events` sends them, plus `{"type": "error", "message"}` for an error event. A user message that is an action also gets an `action` field, `{version, context, inputs}`, parsed by the page, so a UI can show what the user did without parsing the text.
 - `jen.act(context)`: hands the page an action. `context` is any JSON value the agent chose for the control: a phrase, or structured data. With it, the bridge collects `inputs`, the current value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. A checkbox gives a boolean, unless other checkboxes share its name, and then the group gives the array of its checked values, as a form would submit them. A radio group gives the checked value, a multiple `select` an array, and a file input nothing. An input with neither a `name` nor an `id` is left out, since it has no key the agent could act on, and the tool's description tells the agent to name its inputs.
 
 The page sends an action as a message whose text is:
@@ -127,15 +127,17 @@ The page accepts an action only:
 
 ### How the agent updates its UI
 
-What the UI shows comes from two places: the files the agent publishes, and the conversation, which the UI reads through `jen.subscribe`. To change the UI, or the data baked into it, the agent edits `ui/` and publishes. A reply reaches the user only if the UI showing shows the conversation. So the agent either answers by publishing, or writes a UI that shows its replies and then answers in replies. Which one is the agent's choice.
+What the UI shows is what the agent publishes, and nothing else. To answer the user, or to change anything they see, the agent edits `ui/index.html` and publishes. Its text replies aren't shown on the page. `edit_file` keeps an update small, since the agent changes only the part that changes. A swap loses what the user typed after their last action, but every action carries the inputs, so the agent can write them back into the next version.
 
-*Considered:* a channel for structured data from the agent to its open UI, such as a tool that pushes JSON to the frame. It's a second way to update the UI, and nothing in this milestone needs one that a publish doesn't cover. It can come later without changing anything here.
+*Why:* set by the maintainer in the design review. The agent communicates through its UI, and a UI that draws a transcript duplicates what a conversation pane drawn by jen, outside the frame, could show later (see `record/ideas.md`). *Rejected for now:* `jen.subscribe(fn)`, which gave a UI every conversation item, live, so an agent could write a chat-like UI once and answer in replies. It cost the page passing items in, replaying them on a swap, and parsing actions back out of messages. It can come later without changing anything here.
+
+*Considered:* a channel for structured data from the agent to its open UI, such as a tool that pushes JSON to the frame, which would also carry progress while the agent works. Nothing in this milestone needs one that a publish doesn't cover, and it can come later without changing anything here.
 
 ### The instructions and the tool's description
 
 For a root with `workspace`, the instructions gain one paragraph:
 
-> The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it's the user acting on your UI. Act on it as on any message from the user. On that page the user sees only what your UI shows. Until you publish one, it's a plain textbox that shows nothing of your conversation, so answer it by writing a UI in ui/ in your workspace and publishing it with publish_ui. What the UI shows is up to you: your replies, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. A message without that start came from an application, which reads your replies, so answer it with a reply as usual.
+> The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it's the user acting on your UI. Act on it as on any message from the user. On that page the user sees only what your UI shows, never your text replies. Until you publish one, it's a plain textbox, so answer it by writing a UI in ui/index.html in your workspace and publishing it with publish_ui, and answer each later action by publishing again. What the UI shows is up to you: an answer, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. A message without that start came from an application, which reads your replies, so answer it with a reply as usual.
 
 Every root with `workspace` gets this paragraph, whether or not its page is ever opened, and tells the two kinds of message apart one at a time. It can't know ahead of time which it'll get: any root can be reached both ways, even in one conversation. *Considered:* adding the paragraph only once a first UI action arrives. The instructions would change partway through a conversation, which breaks prompt caching, for a paragraph of a few hundred tokens. The behavior check shows whether the paragraph steers an agent that only an application reaches.
 
@@ -143,9 +145,9 @@ Every root with `workspace` gets this paragraph, whether or not its page is ever
 - `ui/index.html` is the entry
 - that `ui/index.html` must stand alone: scripts and styles inline, images and fonts as `data:` URLs
 - that `fetch`, references to other files and links to other pages don't work
-- `jen.subscribe` and `jen.act`, that actions must come from the user's clicks or keys, and to give each input a `name`
+- `jen.act` and `jen.version`, that actions must come from the user's clicks or keys, and to give each input a `name`
 - to make each action's context say everything the agent will need to act on it, since nothing else on the page is sent with it, such as a heading beside the button
-- that the user sees only what the UI shows, so it shows the agent's replies only if the agent wants them seen, and must always give the user a way to act or type
+- that the user sees only what the UI shows, not the agent's replies, so each answer is a publish, and that every UI must give the user a way to act or type
 - the 4 MiB bound
 
 These are behavior, so the behavior check runs again (see Checks).
@@ -190,7 +192,7 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
 
 ## Risks / Trade-offs
 
-- **WebRTC leaves the frame.** Measured on 2026-11-13: an `RTCPeerConnection` in the frame sent STUN packets over UDP to a host it named, with `webrtc 'block'` in the frame's policy or the page's. Chromium 156 doesn't enforce that directive. So a UI can send data out over UDP. Today that adds nothing: the agent that wrote the UI reaches the internet itself, and the frame holds only the conversation, which the agent already has. Once [JEN-21](https://linear.app/reveer/issue/JEN-21) cuts the agent off, the frame becomes the one way out, so JEN-21 must close it or record why not. Deleting `RTCPeerConnection` in the bridge doesn't close it: a nested `about:blank` frame has a fresh one.
+- **WebRTC leaves the frame.** Measured on 2026-11-13: an `RTCPeerConnection` in the frame sent STUN packets over UDP to a host it named, with `webrtc 'block'` in the frame's policy or the page's. Chromium 156 doesn't enforce that directive. So a UI can send data out over UDP. Today that adds nothing: the agent that wrote the UI reaches the internet itself, and the frame holds only what the agent published and what the user types into it, which reaches the agent anyway. Once [JEN-21](https://linear.app/reveer/issue/JEN-21) cuts the agent off, the frame becomes the one way out, so JEN-21 must close it or record why not. Deleting `RTCPeerConnection` in the bridge doesn't close it: a nested `about:blank` frame has a fresh one.
 - **The owner's token is in the URL they open**, so it can land in browser history before the page removes it. It's local, it's the owner's own browser, and JEN-4 replaces it.
 - **A UI that breaks at runtime is invisible to the agent.** A reference to another file, a `fetch` or a plain bug shows only in the browser's console, and the user tells the agent. Reporting errors automatically would send messages the user didn't make.
 - **Swapping versions loses what the user typed** in the old frame. The agent decides when to publish.
