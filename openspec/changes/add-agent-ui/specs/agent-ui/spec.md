@@ -103,15 +103,18 @@ The page SHALL post an action to `messages`, as the viewer, with the text `UI ac
 - **THEN** no message is sent
 
 ### Requirement: A root with workspace is told about its UI
-The instructions of a root agent whose grant has `workspace` SHALL also say:
-- that a message starting "UI action on version" is the user acting on its UI, on a page where they see only what its UI shows
-- that until it publishes, that page is a plain textbox showing nothing of the conversation, so it answers such a message by publishing a UI with `publish_ui`
-- that what its UI shows is its choice, and every UI it publishes must give the user a way to keep talking to it
-- that a message without that start came from an application, which reads its replies
+The instructions of a root agent whose grant has `workspace` SHALL also say that a message starting "UI action on version" is the user acting on its UI, on a page where they see only what its UI shows, and that a message without that start came from an application, which reads its replies.
 
 #### Scenario: A sub-agent's instructions
 - **WHEN** a sub-agent with `workspace` calls the model
 - **THEN** its instructions don't mention `publish_ui` or a UI
+
+### Requirement: A root with workspace is told its UI is its own
+The instructions of a root agent whose grant has `workspace` SHALL say that until it publishes, its page is a plain textbox showing nothing of the conversation, so it answers a UI action by publishing a UI with `publish_ui`. They SHALL say that what its UI shows is its choice, and that every UI it publishes must give the user a way to keep talking to it.
+
+#### Scenario: A root's instructions
+- **WHEN** a root agent with `workspace` calls the model
+- **THEN** its instructions say to answer the textbox by publishing a UI, and to give the user a way to keep talking in every UI
 
 ### Requirement: The whole path works live
 With Docker running and model credentials configured, a UI live check SHALL start its own runtime on `openai/gpt-6-sol`, spawn a root with `workspace`, open its page in a headless browser, ask in the textbox for a UI with a button that asks the agent for a number and shows the latest one, click the button once a version above 0 shows, and pass when the frame shows the agent's new number. Without credentials or Docker it SHALL behave as the existing live checks do.
