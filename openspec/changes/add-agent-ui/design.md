@@ -137,6 +137,8 @@ For a root with `workspace`, the instructions gain one paragraph:
 
 > The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it's the user acting on your UI. Act on it as on any message from the user. On that page the user sees only what your UI shows. Until you publish one, it's a plain textbox that shows nothing of your conversation, so answer it by writing a UI in ui/ in your workspace and publishing it with publish_ui. What the UI shows is up to you: your replies, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. A message without that start came from an application, which reads your replies, so answer it with a reply as usual.
 
+Every root with `workspace` gets this paragraph, whether or not its page is ever opened, and tells the two kinds of message apart one at a time. It can't know ahead of time which it'll get: any root can be reached both ways, even in one conversation. *Considered:* adding the paragraph only once a first UI action arrives. The instructions would change partway through a conversation, which breaks prompt caching, for a paragraph of a few hundred tokens. The behavior check shows whether the paragraph steers an agent that only an application reaches.
+
 `publish_ui` takes no input. Its description gives the contract:
 - `ui/index.html` is the entry
 - that `ui/index.html` must stand alone: scripts and styles inline, images and fonts as `data:` URLs
