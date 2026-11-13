@@ -17,7 +17,7 @@ See proposal.md for what this change builds and why, and `record/decisions.md` (
 
 **Non-Goals:**
 
-- Sub-agents' UIs. Only a root is offered `publish_ui`, and the runtime relays the UI routes only for a root (see decisions.md, 2026-11-10).
+- Sub-agents' UIs, and a UI for a root without `workspace`. Only a root with `workspace` is offered `publish_ui`, and the runtime relays the UI routes only for one (see decisions.md, 2026-11-10).
 - Real auth, TLS, and reaching a UI from anywhere but the owner's machine. They belong to [JEN-4](https://linear.app/reveer/issue/JEN-4).
 - Any way for a UI to read the conversation, and any data channel from the agent to its UI other than the files it publishes (see "How the agent updates its UI").
 - Showing the agent's progress while it works. Until it publishes, the user sees the last version and nothing else.
@@ -30,7 +30,7 @@ See proposal.md for what this change builds and why, and `record/decisions.md` (
 
 The UI is the file `ui/index.html` in the agent's workspace, `/home/agent/ui/index.html`. The agent writes it with `write_file` and `edit_file`, and may keep anything else it likes beside it. Nothing reads the file until the agent calls `publish_ui`.
 
-`publish_ui` is offered to an agent that is a root (its parent is `owner`) and has `workspace`. A root without `workspace` keeps the textbox, version 0, for good. A sub-agent isn't offered the tool, since nobody can open its UI.
+`publish_ui` is offered to an agent that is a root (its parent is `owner`) and has `workspace`. A root without `workspace` has no UI: it can't publish, and the page never shows its replies, so a message sent from its textbox could never be answered where the user would see it. The runtime refuses its page (see "The routes"), and it's reached through `/messages` and `/events` as before. A sub-agent isn't offered the tool, since nobody can open its UI.
 
 *Why tie it to `workspace`:* the UI is files, and files live in the workspace. Granting a UI without a workspace would need a second place to write files.
 
@@ -159,8 +159,8 @@ On the agent, both behind its bearer token like every route:
 - `GET /ui`: `{"version": <n>, "document": "<html>"}` as `application/json`, the latest version or the textbox. JSON keeps the document from being rendered at the runtime's origin by any route.
 
 On the runtime:
-- **`GET /agents/:id/page` is relayed without a credential**, only to a running root agent. Anything else, whether a stopped agent, a sub-agent or an unknown ID, gets one `404`: `no running root agent <id>`. It's the one route without a token, because a browser opening a URL can't send a header. It serves jen's fixed code, the same for every agent of an image. The cost is that anyone who can reach the runtime's port can learn whether a 12-hex-digit ID belongs to a running root. The runtime is published only on `127.0.0.1`.
-- **`GET /agents/:id/ui` is relayed like `/events`**: the caller must reach the agent, and it must be running. It's refused with `403` unless the agent is a root.
+- **`GET /agents/:id/page` is relayed without a credential**, only to a running root agent with `workspace`. Anything else, whether a stopped agent, a sub-agent, a root without `workspace` or an unknown ID, gets one `404`: `no UI for agent <id>`. It's the one route without a token, because a browser opening a URL can't send a header. It serves jen's fixed code, the same for every agent of an image. The cost is that anyone who can reach the runtime's port can learn whether a 12-hex-digit ID belongs to a running root with `workspace`. The runtime is published only on `127.0.0.1`.
+- **`GET /agents/:id/ui` is relayed like `/events`**: the caller must reach the agent, and it must be running. It's refused with `403` unless the agent is a root with `workspace`.
 - The page's messages and events use the existing `/messages` and `/events` routes, unchanged.
 
 The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<owner token>`.
@@ -169,6 +169,7 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
 - **The token in the query string.** It reaches the server, its logs and every relay. A fragment stays in the browser.
 - **A cookie set by the runtime.** That's a login, which is JEN-4's.
 - **The runtime serving the page from its own image.** The page and its bridge belong to the agent's version, and the runtime has no UI role (decisions.md, 2026-11-10).
+- **Serving a root without `workspace` the textbox anyway.** It accepts messages it can never answer on the page. *Also considered:* showing its replies there, which would bring back, for one case, the conversation access the maintainer removed on 2026-11-13.
 - **Starting a stopped root for the page.** An unauthenticated request would then start agents. The owner starts it, or messages it, which starts it.
 
 ## Checks

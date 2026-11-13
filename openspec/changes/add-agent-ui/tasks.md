@@ -25,10 +25,10 @@
 
 ## 4. The runtime
 
-- [ ] 4.1 In `src/runtime/server.ts`, route `GET /agents/:id/page` before authentication to a new `Runtime.pageTarget(id)`. It returns the address of a running root, and otherwise throws one `404`, `no running root agent <id>`, starting nothing. Relay `GET /agents/:id/ui` as `/events` is relayed, refused with `403` for a sub-agent. Update the header comment. Verify with `server.test.ts` and `runtime.test.ts` against `fake-docker.ts`:
+- [ ] 4.1 In `src/runtime/server.ts`, route `GET /agents/:id/page` before authentication to a new `Runtime.pageTarget(id)`. It returns the address of a running root with `workspace`, and otherwise throws one `404`, `no UI for agent <id>`, starting nothing. Relay `GET /agents/:id/ui` as `/events` is relayed, refused with `403` unless the agent is a root with `workspace`. Update the header comment. Verify with `server.test.ts` and `runtime.test.ts` against `fake-docker.ts`:
   - the page relays with no token
-  - a stopped root, a sub-agent and an unknown ID all get the same `404` and nothing starts
-  - `/ui` needs a token that reaches the agent, and gets `403` for a sub-agent
+  - a stopped root, a sub-agent, a root without `workspace` and an unknown ID all get the same `404` and nothing starts
+  - `/ui` needs a token that reaches the agent, and gets `403` for a sub-agent and for a root without `workspace`
 
 ## 5. Checks
 
