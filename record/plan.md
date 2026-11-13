@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-12.
+Last updated 2026-11-13.
 
 ## Current project: Agent harness & UI engine
 
@@ -43,7 +43,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. Its proposal, `add-agent-ui`, is aligned and pushed on branch `jen-18-let-agents-present-themselves-through-ui-they-write`, with no pull request yet. Its design, which waited on JEN-19, can start.
+Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. Its change, `add-agent-ui`, is on draft [#16](https://github.com/reveer-ai/jen/pull/16): proposal, design, specs and tasks written and through the agent's design review on 2026-11-13, waiting on the maintainer's design review before implementation.
 
 ## Open questions, held for their tasks
 
