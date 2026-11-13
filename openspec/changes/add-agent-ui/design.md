@@ -150,6 +150,7 @@ For a root with `workspace`, the instructions gain one paragraph:
 - what is inlined, and that network references are refused
 - that `fetch`, imports between files and links to other pages don't work
 - `jen.subscribe` and `jen.act`, that actions must come from the user's clicks or keys, and to give each input a `name`
+- to make each action's context say everything the agent will need to act on it, since nothing else on the page is sent with it, such as a heading beside the button
 - to show replies
 - the 4 MB bound
 
