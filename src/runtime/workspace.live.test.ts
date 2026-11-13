@@ -1,8 +1,9 @@
 // The workspace's boundary, checked from a real workspace container. Starts a
 // runtime under a runtime name of its own, with placeholder model settings,
 // since no model is called, spawns an agent with the workspace grant, and runs
-// commands as that agent through POST /workspace/commands. Each test is one
-// probe, so a failure names the one that didn't hold.
+// commands as that agent through POST /workspace/commands, and reads and
+// writes files through /workspace/files. Each test is one probe, so a failure
+// names the one that didn't hold.
 //
 // It needs Docker and no credentials, so it never skips: without Docker it
 // fails. CI runs it on every push, on a plain Linux kernel.
@@ -14,6 +15,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { WRITE_SCRIPT } from "./runtime.ts";
 
 const name = `jen-live-${randomBytes(4).toString("hex")}`;
 const ownerToken = randomBytes(32).toString("hex");
@@ -47,6 +49,18 @@ async function output(command: string): Promise<string> {
   const answer = await run(command);
   expect(answer, command).toMatchObject({ status: 200, body: { exitCode: 0, timedOut: false } });
   return answer.body.output;
+}
+
+// Reads or writes a file as the agent, with its current token.
+async function file(path: string, body?: Buffer | string): Promise<{ status: number; bytes: Buffer; error?: string }> {
+  const res = await fetch(`${base}/workspace/files?path=${encodeURIComponent(path)}`, {
+    method: body === undefined ? "GET" : "PUT",
+    headers: { Authorization: `Bearer ${tokenOf(agentContainer())}` },
+    body: typeof body === "string" ? body : body && new Uint8Array(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return { status: res.status, bytes, ...(res.status >= 400 ? { error: JSON.parse(bytes.toString("utf8")).error } : {}) };
 }
 
 const call = (path: string, init: RequestInit = {}) => fetch(`${base}${path}`, { ...init, headers: owner, signal: AbortSignal.timeout(120_000) });
@@ -239,6 +253,101 @@ describe("commands", () => {
     expect(answer.seconds).toBeLessThan(8);
     await until(async () => (await output("ps -eo args | grep -cx 'sleep 102'; true")) === "0\n", "the stopped command to be killed");
   }, 60_000);
+});
+
+describe("files", () => {
+  test("all 256 byte values written to a new folder come back unchanged, in a file owned by agent", async () => {
+    const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+    expect((await file("data/new/bytes.bin", bytes)).status).toBe(204);
+    const read = await file("data/new/bytes.bin");
+    expect(read.status).toBe(200);
+    expect(read.bytes).toEqual(bytes);
+    expect(await output("stat -c '%U %s' /home/agent/data/new/bytes.bin")).toBe("agent 256\n");
+  });
+
+  test("a relative path is relative to the home directory", async () => {
+    expect((await file("notes.txt", "hello\n")).status).toBe(204);
+    expect(await output("cat /home/agent/notes.txt")).toBe("hello\n");
+  });
+
+  test("an executable keeps its mode across a write", async () => {
+    await output("printf '#!/bin/sh\\necho old\\n' > tool.sh && chmod 755 tool.sh");
+    expect((await file("tool.sh", "#!/bin/sh\necho new\n")).status).toBe(204);
+    expect(await output("stat -c %a tool.sh; ./tool.sh")).toBe("755\nnew\n");
+  });
+
+  test("a write over a file with mode 444 is refused, and leaves it unchanged", async () => {
+    await output("echo old > ro.txt && chmod 444 ro.txt");
+    const write = await file("ro.txt", "new\n");
+    expect([write.status, write.error]).toEqual([400, "Permission denied"]);
+    expect(await output("cat ro.txt; stat -c %a ro.txt")).toBe("old\n444\n");
+  });
+
+  test("a pseudo-file whose size reads as 0 is read with its content", async () => {
+    expect(await output("stat -c %s /proc/self/status")).toBe("0\n");
+    const read = await file("/proc/self/status");
+    expect(read.status).toBe(200);
+    expect(read.bytes.toString("utf8")).toMatch(/^Name:/);
+    expect(read.bytes.toString("utf8")).toMatch(/\nUid:\s+1000\s/);
+  });
+
+  test("writes outside what a command can write are refused, through a symlink too, and change nothing", async () => {
+    const passwd = await output("cat /etc/passwd");
+    await output("ln -sf /etc/passwd passwd-link");
+    for (const path of ["/etc/jen-probe", "/usr/local/bin/jen-probe", "passwd-link"]) {
+      const write = await file(path, "jen-probe\n");
+      expect(write.status, path).toBe(400);
+      expect(write.error, path).toMatch(/^(Read-only file system|Permission denied)$/);
+    }
+    expect(await output("cat /etc/passwd")).toBe(passwd);
+    expect(await output("ls /etc/jen-probe /usr/local/bin/jen-probe 2>&1; true")).toMatch(/No such file or directory[\s\S]*No such file or directory/);
+  });
+
+  test("jen's state isn't there, and a folder is refused", async () => {
+    expect((await file("/state/agent.db")).status).toBe(404);
+    const folder = await file("/home/agent");
+    expect([folder.status, folder.error]).toEqual([400, "Is a directory"]);
+    expect((await file("/home/agent", "x")).status).toBe(400);
+  });
+
+  test("a path naming a folder is refused as a redirect would refuse it, and writes nothing", async () => {
+    for (const path of ["slash/", "slash/.", "."]) {
+      const write = await file(path, "x");
+      expect([write.status, write.error], path).toEqual([400, "Is a directory"]);
+    }
+    expect(await output("ls -d slash 2>&1; true")).toMatch(/No such file or directory/);
+  });
+
+  test("a read or write of a pipe nothing uses is answered within 30 seconds, and leaves nothing running", async () => {
+    await output("mkfifo read-pipe write-pipe");
+    const started = Date.now();
+    const [read, write] = await Promise.all([file("read-pipe"), file("write-pipe", "x")]);
+    expect((Date.now() - started) / 1000).toBeLessThan(30);
+    expect([read.status, read.error]).toEqual([400, "the read didn't finish within 25 seconds, as when the file is a pipe nothing writes to"]);
+    expect([write.status, write.error]).toEqual([400, "the write didn't finish within 25 seconds, as when the file is a pipe nothing reads from"]);
+    // Anchored to the scripts' last arguments, so the pattern can't match this command's own wrapper.
+    expect(await output("ps -eo args | grep -cE '[j]en (read-pipe 16777216|write-pipe 1)$|^[h]ead -c 16777217'; ls -A /tmp | grep -c jen-read; ls -A | grep -c jen-; true")).toBe(
+      "0\n0\n0\n",
+    );
+  }, 60_000);
+
+  test("a 17 MiB file gets 413", async () => {
+    await output("head -c 17825792 /dev/zero > big.bin");
+    expect((await file("big.bin")).status).toBe(413);
+    await output("rm big.bin");
+  }, 60_000);
+
+  test("a write cut short leaves the file as it was, and no temporary file", async () => {
+    await output("echo old > cut.txt");
+    // The write script as the runtime sends it, given 3 of 10 declared bytes.
+    const cut = spawnSync("docker", ["exec", "-i", "-u", "agent", "-w", "/home/agent", workspace(), "bash", "-c", WRITE_SCRIPT, "jen", "cut.txt", "10"], {
+      input: "new",
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expect(cut.stdout).toBe("error the write was cut short: 3 of 10 bytes arrived\n");
+    expect(await output("cat cut.txt; ls -a | grep -c jen-; true")).toBe("old\n0\n");
+  });
 });
 
 describe("the workspace follows its agent", () => {

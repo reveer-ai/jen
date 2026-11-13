@@ -1,5 +1,5 @@
 // Holds agents to how they should behave on owner tasks, against a runtime of
-// its own: seven tasks, three runs each, in parallel, each with its own root.
+// its own: eight tasks, three runs each, in parallel, each with its own root.
 // A run settles after 30 seconds with no new event on any of its agents'
 // streams. A failing run prints its transcript. Uses the same JEN_LIVE_*
 // variables as the other live checks. Skipped when the key or model is
@@ -47,6 +47,22 @@ const command =
   'echo run >> ~/runs.txt; for i in $(seq 1 4000); do echo "worker[$i]: step complete, status ok"; ' +
   `if [ "$i" -eq 2000 ]; then echo "KEY: $(printf %s ${seed} | sha256sum | cut -c1-16)"; fi; done`;
 
+// The file task's files. settings.conf is about 35 KB, written by a command,
+// with the line to change in its middle; release.md's text holds what breaks
+// a heredoc or shell quoting.
+const settingsCommand =
+  'for i in $(seq 1 600); do echo "option_$i = value_$i  # how the service handles case $i"; if [ "$i" -eq 300 ]; then echo "cache_ttl = 300"; fi; done > ~/settings.conf';
+const settings = (ttl: number) =>
+  Array.from({ length: 600 }, (_, i) => `option_${i + 1} = value_${i + 1}  # how the service handles case ${i + 1}\n${i + 1 === 300 ? `cache_ttl = ${ttl}\n` : ""}`).join("");
+const release = [
+  "# Release 2.4",
+  "",
+  "- Paths under `$HOME` now expand, so \"~/.config\" works.",
+  "- The 'quiet' flag is kept when `--verbose` is set.",
+  "EOF",
+  "Windows paths end in a backslash, such as C:\\",
+].join("\n");
+
 const tasks: Task[] = [
   { name: "delegation", steps: ["Spawn a sub-agent to write a haiku about herons, then send me its haiku."], replies: 1 },
   { name: "direct", steps: ["What's the capital of Australia?"], replies: 1 },
@@ -77,6 +93,31 @@ const tasks: Task[] = [
       if (!replies.some((text) => text.includes(key))) faults.push(`the reply lacks "${key}"`);
       const runs = spawnSync("docker", ["exec", workspace, "cat", "/home/agent/runs.txt"], { encoding: "utf8", timeout: 30_000 }).stdout.split("\n").filter(Boolean).length;
       if (runs > 1) faults.push(`the command ran ${runs} times`);
+      return faults;
+    },
+  },
+  {
+    // An edit in the middle of a file far over a command's output cap, and a
+    // file whose text would break a heredoc. Judged by the files, not by the
+    // tools that wrote them.
+    name: "files",
+    steps: [
+      `In your workspace, run this command once, which writes settings.conf:\n\n${settingsCommand}\n\n` +
+        "Then change the line `cache_ttl = 300` in settings.conf to `cache_ttl = 900`, and change nothing else in the file. " +
+        "Then create notes/release.md holding exactly the text between the BEGIN and END lines below, not including them. Reply when you're done.\n\n" +
+        `BEGIN\n${release}\nEND`,
+    ],
+    replies: 1,
+    grant: { workspace: true },
+    check: ({ workspace }) => {
+      const read = (path: string) => spawnSync("docker", ["exec", workspace, "cat", path], { encoding: "utf8", timeout: 30_000 });
+      const faults: string[] = [];
+      const conf = read("/home/agent/settings.conf");
+      if (conf.status !== 0) faults.push("settings.conf can't be read");
+      else if (conf.stdout !== settings(900)) faults.push(conf.stdout === settings(300) ? "settings.conf is unchanged" : "settings.conf differs from the expected bytes");
+      const notes = read("/home/agent/notes/release.md");
+      if (notes.status !== 0) faults.push("notes/release.md can't be read");
+      else if (notes.stdout !== release && notes.stdout !== `${release}\n`) faults.push(`notes/release.md holds ${JSON.stringify(notes.stdout)}`);
       return faults;
     },
   },
@@ -120,6 +161,8 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
     const runs = tasks.flatMap((task) => Array.from({ length: RUNS }, (_, i) => runTask(api, base, owner, name, task, `${task.name}-${i + 1}`)));
     const results = await Promise.all(runs);
     if (process.env.JEN_LIVE_RECORD) record(results);
+    // Which tools each run's agents called, passing or not.
+    for (const run of results) console.log(`${run.label}: ${run.tools || "no tools"}`);
     const failed = results.filter((run) => run.faults.length > 0);
     for (const run of failed) console.log(`${run.label}: ${run.faults.join("; ")}\n${run.transcript}\n`);
     expect(failed.map((run) => `${run.label}: ${run.faults.join("; ")}`)).toEqual([]);
@@ -219,7 +262,12 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   const calls = items.flatMap(({ agent, item }) => (item.type === "tool_call" ? [{ agent, item }] : []));
   const polls = calls.filter(({ item }) => item.name === "list_agents").length;
   if (polls > 0) faults.push(`${polls} list_agents calls`);
-  const errors = items.filter(({ item }) => item.type === "tool_result" && item.output.startsWith("Error")).length;
+  // A read_file of a file that doesn't exist isn't a fault: checking whether
+  // a file exists before creating it is ordinary.
+  const named = new Map(calls.map(({ item }) => [item.id, item.name]));
+  const errors = items.filter(
+    ({ item }) => item.type === "tool_result" && item.output.startsWith("Error") && !(named.get(item.callId) === "read_file" && item.output.startsWith("Error: there's no file at ")),
+  ).length;
   if (errors > 0) faults.push(`${errors} refused or failed tool calls`);
   const sends = calls.filter(({ item }) => item.name === "message_sub_agent").map(({ agent, item }) => `${agent} ${JSON.stringify(item.input)}`);
   const repeats = sends.length - new Set(sends).size;
@@ -228,7 +276,10 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   if (filler.length > 0) faults.push(`filler replies: ${filler.map((text) => JSON.stringify(text)).join(", ")}`);
   const modelErrors = events.filter((e) => e.kind === "error").length;
   if (modelErrors > 0) faults.push(`${modelErrors} model error events`);
-  return { label, faults, transcript: transcript(events, ids), recording: recording(task, events, ids, parents) };
+  const counts = new Map<string, number>();
+  for (const { item } of calls) counts.set(item.name, (counts.get(item.name) ?? 0) + 1);
+  const tools = [...counts].map(([tool, n]) => `${tool} ×${n}`).join(", ");
+  return { label, faults, tools, transcript: transcript(events, ids), recording: recording(task, events, ids, parents) };
 }
 
 // The run as docs/interactions.html replays it, with every agent ID replaced

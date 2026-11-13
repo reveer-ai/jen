@@ -73,37 +73,60 @@ export class RuntimeClient {
   }
 
   // The answer's body, parsed when it's JSON.
-  request(method: string, path: string, body?: Json, signal?: AbortSignal): Promise<Json | undefined> {
-    const payload = body === undefined ? undefined : JSON.stringify(body);
+  async request(method: string, path: string, body?: Json, signal?: AbortSignal): Promise<Json | undefined> {
+    const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
+    return parse(await this.#send(method, path, payload && { type: "application/json", bytes: payload }, signal));
+  }
+
+  // The exact bytes of the file at path in the agent's own workspace.
+  readFile(path: string, signal?: AbortSignal): Promise<Buffer> {
+    return this.#send("GET", filePath(path), undefined, signal);
+  }
+
+  // Writes bytes as the whole file at path in the agent's own workspace.
+  async writeFile(path: string, bytes: Buffer, signal?: AbortSignal): Promise<void> {
+    await this.#send("PUT", filePath(path), { type: "application/octet-stream", bytes }, signal);
+  }
+
+  // The answer's body as sent, or a RuntimeRefusal for a refusal.
+  #send(method: string, path: string, body: { type: string; bytes: Buffer } | undefined, signal?: AbortSignal): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${this.#token}` };
-      if (payload !== undefined) Object.assign(headers, { "content-type": "application/json", "content-length": Buffer.byteLength(payload) });
+      if (body !== undefined) Object.assign(headers, { "content-type": body.type, "content-length": body.bytes.length });
       const req = http.request(new URL(path, this.#url), { method, headers, signal }, (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("error", reject);
         res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          let parsed: Json | undefined;
-          try {
-            parsed = text === "" ? undefined : JSON.parse(text);
-          } catch {
-            parsed = text;
-          }
+          const answer = Buffer.concat(chunks);
           const status = res.statusCode ?? 0;
-          if (status < 400) return resolve(parsed);
+          if (status < 400) return resolve(answer);
+          const parsed = parse(answer);
           const message = typeof parsed === "object" && parsed !== null && "error" in parsed ? parsed.error : parsed;
           reject(new RuntimeRefusal(status, typeof message === "string" ? message : JSON.stringify(message)));
         });
       });
       req.on("error", reject);
-      req.end(payload);
+      req.end(body?.bytes);
     });
   }
 }
 
+const filePath = (path: string) => `/workspace/files?path=${encodeURIComponent(path)}`;
+
+// A body parsed as JSON, or its text when it isn't, or undefined when empty.
+function parse(body: Buffer): Json | undefined {
+  const text = body.toString("utf8");
+  if (text === "") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 // Every tool the agent's grant allows: the delegation tools with spawn, and
-// run_command with workspace.
+// the workspace tools with workspace.
 export function toolsFor(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
   return [...delegationTools(identity, runtime, debts), ...workspaceTools(identity, runtime)];
 }

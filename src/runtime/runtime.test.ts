@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { DockerError } from "./docker.ts";
 import { FakeDocker, type FakeExec } from "./fake-docker.ts";
-import { postMessage, Runtime, RuntimeError, waitForConnection, type CommandResult, type RuntimeOptions } from "./runtime.ts";
+import { MAX_FILE, postMessage, READ_SCRIPT, Runtime, RuntimeError, waitForConnection, WRITE_SCRIPT, type CommandResult, type RuntimeOptions } from "./runtime.ts";
 
 const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
 
@@ -1337,6 +1337,184 @@ describe("running a command", () => {
       expect(result).toEqual({ exitCode: null, output: "", timedOut: true });
       expect(kills).toEqual([["-15"], ["7"]]);
       expect(commands()[0]!.stopped).toBe("aborted");
+    });
+  });
+});
+
+describe("reading and writing a file", () => {
+  // A runtime with a root agent that has a workspace. Each file exec is
+  // driven by script.run.
+  async function workspace() {
+    const s = await setup();
+    const agent = await s.runtime.spawn(null, { workspace: true });
+    const script = { run: (exec: FakeExec) => exec.end() };
+    s.docker.onExec = (exec) => script.run(exec);
+    return { ...s, agent, caller: s.as(agent.id), script };
+  }
+  const never = new AbortController().signal;
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+
+  test("a read runs the read script as agent in its home, with the path and the bound as arguments, never spliced in", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("ok 0\n"), exec.end());
+    const path = `notes/"$HOME" '; rm -rf ~'.md`;
+    await runtime.readFile(caller, path, never);
+    const [exec] = docker.execs;
+    expect(exec!.container).toMatch(/^jen-workspace-[0-9a-f]{12}$/);
+    expect(exec!.spec).toEqual({ user: "agent", workdir: "/home/agent", cmd: ["bash", "-c", READ_SCRIPT, "jen", path, String(MAX_FILE)] });
+    expect(exec!.input).toBeUndefined();
+    expect(READ_SCRIPT).not.toContain(path);
+  });
+
+  test("a write runs the write script with the path and the size as arguments, and sends the bytes as input", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("ok\n"), exec.end());
+    await runtime.writeFile(caller, "data/bytes.bin", bytes, never);
+    const [exec] = docker.execs;
+    expect(exec!.spec).toEqual({ user: "agent", workdir: "/home/agent", cmd: ["bash", "-c", WRITE_SCRIPT, "jen", "data/bytes.bin", "256"] });
+    expect(exec!.input).toEqual(bytes);
+  });
+
+  test("a read answers with exactly the bytes reported, across chunks", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => {
+      const stream = Buffer.concat([Buffer.from("ok 256\n"), bytes]);
+      const cuts = [0, 3, 9, 100, stream.length];
+      for (let i = 1; i < cuts.length; i++) setTimeout(() => exec.write(stream.subarray(cuts[i - 1], cuts[i])), 1);
+      setTimeout(() => exec.end(), 5);
+    };
+    expect(await runtime.readFile(caller, "data/bytes.bin", never)).toEqual(bytes);
+  });
+
+  test("an empty file reads as no bytes", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("ok 0\n"), exec.end());
+    expect(await runtime.readFile(caller, "empty", never)).toEqual(Buffer.alloc(0));
+  });
+
+  test("missing is 404, large 413, and error 400 with the workspace's message", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("missing\n"), exec.end());
+    expect((await refused(runtime.readFile(caller, "notes/release.md", never), 404)).message).toBe("no file at notes/release.md");
+    script.run = (exec) => (exec.write(`large ${17 * 2 ** 20}\n`), exec.end());
+    expect((await refused(runtime.readFile(caller, "big.bin", never), 413)).message).toContain(String(17 * 2 ** 20));
+    script.run = (exec) => (exec.write("error Is a directory\n"), exec.end());
+    expect((await refused(runtime.readFile(caller, "/home/agent", never), 400)).message).toBe("Is a directory");
+    script.run = (exec) => (exec.write("error Read-only file system\n"), exec.end());
+    expect((await refused(runtime.writeFile(caller, "/etc/jen-probe", bytes, never), 400)).message).toBe("Read-only file system");
+  });
+
+  test("a write answers once its status is ok, and closes the stream", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = (exec) => exec.write("ok\n");
+    await runtime.writeFile(caller, "a.txt", bytes, never);
+    expect(docker.execs[0]!.stopped).toBe("aborted");
+  });
+
+  test("a status line that doesn't parse gets 502", async () => {
+    for (const line of ["garbage\n", "ok\n", "ok -1\n", `ok ${MAX_FILE + 1}\n`, "large\n", "x".repeat(5000)]) {
+      const { runtime, caller, script } = await workspace();
+      script.run = (exec) => (exec.write(line), exec.end());
+      await refused(runtime.readFile(caller, "a", never), 502);
+    }
+    for (const line of ["ok 3\n", "missing\n", "garbage\n"]) {
+      const { runtime, caller, script } = await workspace();
+      script.run = (exec) => (exec.write(line), exec.end());
+      await refused(runtime.writeFile(caller, "a", bytes, never), 502);
+    }
+  });
+
+  test("a status line that never ends is refused once it passes 4 KiB, without waiting for the stream", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = (exec) => exec.write("error " + "x".repeat(5000));
+    await refused(runtime.readFile(caller, "a", never), 502);
+    expect(docker.execs[0]!.stopped).toBe("aborted");
+  });
+
+  test("content longer than reported gets 502 at once, and closes the stream", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("ok 3\nabc"), exec.write("d"));
+    expect((await refused(runtime.readFile(caller, "a", never), 502)).message).toContain("more than");
+    expect(docker.execs[0]!.stopped).toBe("aborted");
+  });
+
+  test("content shorter than reported gets 502 while the workspace runs", async () => {
+    const { runtime, caller, script } = await workspace();
+    script.run = (exec) => (exec.write("ok 10\nabc"), exec.end());
+    expect((await refused(runtime.readFile(caller, "a", never), 502)).message).toContain("3 bytes of the 10-byte file");
+  });
+
+  test("the runtime reads no more than the file bound plus 64 KiB", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    const exec = vi.spyOn(docker, "exec");
+    script.run = (e) => (e.write("ok 0\n"), e.end());
+    await runtime.readFile(caller, "a", never);
+    expect(exec.mock.calls[0]![2].bound).toBe(MAX_FILE + 64 * 1024);
+    script.run = (e) => e.write(Buffer.alloc(MAX_FILE + 64 * 1024 + 1));
+    await refused(runtime.readFile(caller, "a", never), 502);
+  });
+
+  test("a write over 16 MiB gets 413 and nothing runs", async () => {
+    const { docker, runtime, caller } = await workspace();
+    await refused(runtime.writeFile(caller, "big", Buffer.alloc(MAX_FILE + 1), never), 413);
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("a workspace that stops during the call gets 409, and one that isn't running gets 409", async () => {
+    const { docker, runtime, caller, script, agent } = await workspace();
+    script.run = () => {};
+    const reading = runtime.readFile(caller, "a", never);
+    const writing = runtime.writeFile(caller, "a", bytes, never);
+    await vi.waitFor(() => expect(docker.execs).toHaveLength(2));
+    docker.exit(`jen-workspace-${agent.id}`, { restart: true });
+    docker.restarted(`jen-workspace-${agent.id}`);
+    expect((await refused(reading, 409)).message).toBe("the workspace stopped during the read");
+    expect((await refused(writing, 409)).message).toBe("the workspace stopped during the write");
+    await docker.removeContainer(`jen-workspace-${agent.id}`);
+    expect((await refused(runtime.readFile(caller, "a", never), 409)).message).toBe("the workspace isn't running");
+  });
+
+  test("an exec the engine refuses because the workspace is gone gets 409", async () => {
+    const { docker, runtime, caller } = await workspace();
+    vi.spyOn(docker, "exec").mockRejectedValue(new DockerError(409, "container is not running"));
+    expect((await refused(runtime.writeFile(caller, "a", bytes, never), 409)).message).toBe("the workspace isn't running");
+  });
+
+  test("the owner gets 404 and an agent without workspace 403, and nothing runs", async () => {
+    const { docker, runtime, as } = await workspace();
+    const plain = await runtime.spawn(null, { spawn: true });
+    await refused(runtime.readFile(null, "a", never), 404);
+    await refused(runtime.writeFile(null, "a", bytes, never), 404);
+    await refused(runtime.readFile(as(plain.id), "a", never), 403);
+    await refused(runtime.writeFile(as(plain.id), "a", bytes, never), 403);
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("a caller that hangs up gets 499, and the stream closes", async () => {
+    const { docker, runtime, caller, script } = await workspace();
+    script.run = () => {};
+    const abort = new AbortController();
+    const writing = runtime.writeFile(caller, "a", bytes, abort.signal);
+    await vi.waitFor(() => expect(docker.execs).toHaveLength(1));
+    abort.abort();
+    await refused(writing, 499);
+    expect(docker.execs[0]!.stopped).toBe("aborted");
+  });
+
+  describe("the deadline", () => {
+    afterEach(() => vi.useRealTimers());
+
+    test("a stream that never ends is answered 502 at 30 seconds, and closed", async () => {
+      vi.useFakeTimers();
+      const { docker, runtime, caller, script } = await workspace();
+      script.run = (exec) => exec.write("ok 10\nabc");
+      let error: RuntimeError | undefined;
+      void runtime.readFile(caller, "a", never).catch((e) => (error = e));
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(error).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(error).toMatchObject({ status: 502, message: "the workspace didn't finish the read within 30 seconds" });
+      expect(docker.execs[0]!.stopped).toBe("aborted");
     });
   });
 });

@@ -606,3 +606,117 @@ describe("POST /workspace/commands", () => {
     expect(docker.execs).toEqual([]);
   });
 });
+
+describe("GET and PUT /workspace/files", () => {
+  // An agent with a workspace, whose file execs script answers. By default a
+  // read answers with the bytes last written, and a write keeps its input.
+  async function workspace() {
+    const { body: agent } = await spawn({ workspace: true });
+    let stored: Buffer = Buffer.alloc(0);
+    const script = {
+      run: (exec: FakeExec) => {
+        if (exec.input !== undefined) {
+          stored = exec.input;
+          exec.write("ok\n");
+        } else exec.write(Buffer.concat([Buffer.from(`ok ${stored.length}\n`), stored]));
+        exec.end();
+      },
+    };
+    docker.onExec = (exec) => script.run(exec);
+    const url = (path: string) => `${base}/workspace/files?path=${encodeURIComponent(path)}`;
+    const headers = as(tokenOf(agent.id));
+    return { agent, script, url, headers };
+  }
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+
+  test("a binary body passes through unchanged both ways", async () => {
+    const { url, headers } = await workspace();
+    const put = await fetch(url("data/bytes.bin"), { method: "PUT", headers, body: bytes });
+    expect(put.status).toBe(204);
+    expect(docker.execs[0]!.spec.cmd.slice(4)).toEqual(["data/bytes.bin", "256"]);
+    const get = await fetch(url("data/bytes.bin"), { headers });
+    expect(get.status).toBe(200);
+    expect(get.headers.get("content-type")).toBe("application/octet-stream");
+    expect(Buffer.from(await get.arrayBuffer())).toEqual(bytes);
+    expect(docker.execs[1]!.spec.cmd[4]).toBe("data/bytes.bin");
+  });
+
+  test("the path is read from the query, decoded, with any other fields ignored", async () => {
+    const { headers } = await workspace();
+    await fetch(`${base}/workspace/files?x=1&path=${encodeURIComponent("a b/ü?&=.txt")}&y=2`, { method: "PUT", headers, body: "hi" });
+    expect(docker.execs[0]!.spec.cmd[4]).toBe("a b/ü?&=.txt");
+  });
+
+  test("a missing, empty, NUL-holding or over-4-KiB path gets 400, and nothing runs", async () => {
+    const { url, headers } = await workspace();
+    for (const target of [`${base}/workspace/files`, `${base}/workspace/files?path=`, url("a\0b"), url("a".repeat(4097)), url("é".repeat(2049))]) {
+      expect((await fetch(target, { headers })).status, target.slice(0, 80)).toBe(400);
+      expect((await fetch(target, { method: "PUT", headers, body: "x" })).status).toBe(400);
+    }
+    expect((await fetch(url("a".repeat(4096)), { headers })).status).toBe(200);
+    expect(docker.execs).toHaveLength(1);
+  });
+
+  test("the owner gets 404 and an agent without workspace 403", async () => {
+    const { url } = await workspace();
+    const { body: plain } = await spawn({ spawn: true });
+    expect((await call("/workspace/files?path=a")).status).toBe(404);
+    expect((await fetch(url("a"), { method: "PUT", headers: as(tokenOf(plain.id)), body: "x" })).status).toBe(403);
+    expect((await fetch(url("a"))).status).toBe(401);
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("the workspace's refusals keep their status and message", async () => {
+    const { url, headers, script } = await workspace();
+    script.run = (exec) => (exec.write("missing\n"), exec.end());
+    expect([(await fetch(url("nope"), { headers })).status]).toEqual([404]);
+    script.run = (exec) => (exec.write("error Permission denied\n"), exec.end());
+    const res = await fetch(url("ro.txt"), { method: "PUT", headers, body: "x" });
+    expect([res.status, await res.json()]).toEqual([400, { error: "Permission denied" }]);
+  });
+
+  test("a body declaring 17 MiB gets 413 unread and closes the connection, and nothing runs", async () => {
+    const { agent } = await workspace();
+    const { port } = new URL(base);
+    const answer = await new Promise<{ status?: number; connection?: string }>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "PUT", path: "/workspace/files?path=big", headers: { ...as(tokenOf(agent.id)), "Content-Length": String(17 * 2 ** 20) } });
+      req.on("error", () => {});
+      req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
+      req.write("x");
+    });
+    expect(answer).toEqual({ status: 413, connection: "close" });
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("a chunked body over 16 MiB gets 413, and nothing runs", async () => {
+    const { agent } = await workspace();
+    const { port } = new URL(base);
+    const status = await new Promise<number | undefined>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "PUT", path: "/workspace/files?path=big", headers: as(tokenOf(agent.id)) });
+      let status: number | undefined;
+      req.on("error", () => {});
+      req.on("response", (res) => ((status = res.statusCode), res.resume()));
+      req.on("close", () => resolve(status));
+      req.write(Buffer.alloc(16 * 2 ** 20 + 1));
+    });
+    expect(status).toBe(413);
+    expect(docker.execs).toEqual([]);
+  });
+
+  test("a caller that hangs up aborts the call", async () => {
+    const { url, headers, script } = await workspace();
+    script.run = () => {};
+    const abort = new AbortController();
+    const res = fetch(url("a"), { headers, signal: abort.signal }).catch(() => undefined);
+    await vi.waitFor(() => expect(docker.execs).toHaveLength(1));
+    abort.abort();
+    await res;
+    await vi.waitFor(() => expect(docker.execs[0]!.stopped).toBe("aborted"));
+  });
+
+  test("other methods have no route", async () => {
+    const { url, headers } = await workspace();
+    expect((await fetch(url("a"), { method: "POST", headers, body: "x" })).status).toBe(404);
+    expect((await fetch(url("a"), { method: "DELETE", headers })).status).toBe(404);
+  });
+});
