@@ -55,7 +55,11 @@ The publish is saved before `publish_ui`'s result. If the agent stops between th
 
 ### The textbox, version 0
 
-The image ships `src/agent/ui/textbox.html`, one self-contained document. It shows the conversation's messages and errors, and has a box to type in. Sending calls `jen.act(text)`, the same call any UI makes, so the textbox exercises the whole path: frame, bridge, page and message.
+The image ships `src/agent/ui/textbox.html`, one self-contained document: a box to type in and a send button, and nothing else. It shows no conversation. Sending calls `jen.act(text)`, the same call any UI makes, so the textbox exercises the whole path: frame, bridge, page and message. After a send, the box clears and says the message was sent.
+
+From there, everything the user sees is the agent's. The textbox doesn't show the agent's reply, so the agent answers the textbox by publishing a UI, and each UI it publishes must give the user a way to keep talking to it.
+
+*Why:* set by the maintainer in the design review. The conversation isn't always what the user needs to see, and the agent decides what is. *Alternative:* **the agent writing its first UI itself.** An agent runs a turn only when a message arrives, so that needs either a turn on first start, a model call for every root including those only an application reaches, or a message sent when the page opens, which the user didn't make. Either way the agent doesn't know the task yet, the user waits, and a broken first UI leaves no way in. The shipped textbox opens at once and always works.
 
 ### The page
 
@@ -123,7 +127,7 @@ The page accepts an action only:
 
 ### How the agent updates its UI
 
-What the UI shows comes from two places: the files the agent publishes, and the conversation, which the UI reads through `jen.subscribe`. To change the UI, or the data baked into it, the agent edits `ui/` and publishes. To answer the user, it replies, and a UI that shows the conversation shows the reply. The tool's description tells the agent to show its replies in any UI it writes, since otherwise the user never sees them.
+What the UI shows comes from two places: the files the agent publishes, and the conversation, which the UI reads through `jen.subscribe`. To change the UI, or the data baked into it, the agent edits `ui/` and publishes. A reply reaches the user only if the UI showing shows the conversation. So the agent either answers by publishing, or writes a UI that shows its replies and then answers in replies. Which one is the agent's choice.
 
 *Considered:* a channel for structured data from the agent to its open UI, such as a tool that pushes JSON to the frame. It's a second way to update the UI, and nothing in this milestone needs one that a publish doesn't cover. It can come later without changing anything here.
 
@@ -131,7 +135,7 @@ What the UI shows comes from two places: the files the agent publishes, and the 
 
 For a root with `workspace`, the instructions gain one paragraph:
 
-> The user sees you through a page in their browser that shows your UI. Until you publish one, it's a plain textbox showing your conversation. When a task would be easier for the user with a UI of its own, such as a form to fill in, options to choose from or results to look over, write one in ui/ in your workspace and publish it with publish_ui. When a reply is enough, don't write one. A message that starts with "UI action on version" is the user acting on your UI. Act on it as on any message from the user.
+> The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it's the user acting on your UI. Act on it as on any message from the user. On that page the user sees only what your UI shows. Until you publish one, it's a plain textbox that shows nothing of your conversation, so answer it by writing a UI in ui/ in your workspace and publishing it with publish_ui. What the UI shows is up to you: your replies, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. A message without that start came from an application, which reads your replies, so answer it with a reply as usual.
 
 `publish_ui` takes no input. Its description gives the contract:
 - `ui/index.html` is the entry
@@ -139,7 +143,7 @@ For a root with `workspace`, the instructions gain one paragraph:
 - that `fetch`, references to other files and links to other pages don't work
 - `jen.subscribe` and `jen.act`, that actions must come from the user's clicks or keys, and to give each input a `name`
 - to make each action's context say everything the agent will need to act on it, since nothing else on the page is sent with it, such as a heading beside the button
-- to show replies
+- that the user sees only what the UI shows, so it shows the agent's replies only if the agent wants them seen, and must always give the user a way to act or type
 - the 4 MiB bound
 
 These are behavior, so the behavior check runs again (see Checks).

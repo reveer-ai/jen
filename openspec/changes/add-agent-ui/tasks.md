@@ -11,7 +11,7 @@
 
 ## 3. The page, the bridge and the textbox
 
-- [ ] 3.1 Write `src/agent/ui/textbox.html`: the conversation's messages and errors, and a box whose send calls `jen.act(text)`. Use the `action` field to show a user's action as what they typed.
+- [ ] 3.1 Write `src/agent/ui/textbox.html`: a box whose send calls `jen.act(text)`, then clears it and says the message was sent. It shows nothing of the conversation.
 - [ ] 3.2 Write `src/agent/ui/page.html`, holding the bridge:
   - the token from the fragment, kept in `sessionStorage`, with the fragment removed
   - `ui` and `events` fetched with the token, and events parsed from the body, reconnecting with `Last-Event-ID` and a backoff up to 30 seconds

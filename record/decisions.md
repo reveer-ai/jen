@@ -7,6 +7,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 Made in [JEN-18](https://linear.app/reveer/issue/JEN-18), reviewing its design. The proposal and design are in `openspec/changes/add-agent-ui/`:
 
 - **An agent publishes its UI as one file, `ui/index.html`, sent as it is, which must stand alone.** Scripts and styles are inline, images and fonts are `data:` URLs, and nothing is fetched. The agent can keep and do whatever it likes in its workspace before it publishes. `publish_ui` refuses only a missing file, one that isn't UTF-8, or one over 4 MiB. *Why:* set by the maintainer, to keep the task simple. Models write self-contained pages well, and jen keeps no bundler. *Rejected:* jen bundling `ui/` with `parse5` and a hand-kept list of the HTML and CSS that loads files. A check that refuses a published file's URLs can come later if the UI check on Sol shows models breaking the rule.
+- **Every agent starts with a shipped textbox that shows nothing of the conversation, and from there its UI is all the agent's.** The agent answers the textbox by publishing a UI, decides what each UI shows, and must give the user a way to keep talking to it. Its UIs still read the conversation through `jen.subscribe` when it wants them to. Its instructions say all this. *Why:* set by the maintainer. The conversation isn't always what the user needs to see. *Rejected:* a starting UI that shows the thread, and the agent writing its own first UI, which needs a turn no message started and leaves no way in if that UI is broken.
 
 ## 2026-11-12
 

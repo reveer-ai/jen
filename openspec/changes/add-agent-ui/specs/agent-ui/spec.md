@@ -38,7 +38,7 @@ The agent SHALL offer `publish_ui`, taking no input, only when it is a root (its
 - **THEN** the call fails giving its size and the bound, and the latest version is unchanged
 
 ### Requirement: Every agent starts with a textbox
-An agent that has published nothing SHALL serve the textbox shipped in its image as version 0. The textbox SHALL show the conversation's messages and errors and send what the user types through `jen.act`, as any UI does.
+An agent that has published nothing SHALL serve the textbox shipped in its image as version 0. The textbox SHALL hold only a box to type in, send what the user types through `jen.act`, as any UI does, and show nothing of the conversation.
 
 #### Scenario: A new root
 - **WHEN** the owner opens a new root agent's page
@@ -104,9 +104,10 @@ The page SHALL post an action to `messages`, as the viewer, with the text `UI ac
 
 ### Requirement: A root with workspace is told about its UI
 The instructions of a root agent whose grant has `workspace` SHALL also say:
-- that the user sees it through a page showing its UI, a plain textbox until it publishes one
-- to write a UI in `ui/` and publish it with `publish_ui` when the task would be easier for the user with one, and not when a reply is enough
-- that a message starting "UI action on version" is the user acting on its UI
+- that a message starting "UI action on version" is the user acting on its UI, on a page where they see only what its UI shows
+- that until it publishes, that page is a plain textbox showing nothing of the conversation, so it answers such a message by publishing a UI with `publish_ui`
+- that what its UI shows is its choice, and every UI it publishes must give the user a way to keep talking to it
+- that a message without that start came from an application, which reads its replies
 
 #### Scenario: A sub-agent's instructions
 - **WHEN** a sub-agent with `workspace` calls the model
