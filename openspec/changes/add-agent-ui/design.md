@@ -82,7 +82,7 @@ The image ships `src/agent/ui/textbox.html`, one self-contained document. It sho
 
 The page draws nothing of its own except a thin bar for its own failures: no token, `401`, a refused action or a dropped connection.
 
-The page's own response carries `Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`. `frame-ancestors 'none'` stops another site framing the page to steer clicks. `frame-src 'none'` refuses any navigation of the frame away from its document. A srcdoc frame inherits the page's policy, so the page's policy allows whatever the frame needs except network access.
+The page's own response carries `Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`. `frame-ancestors 'none'` stops another site framing the page to steer clicks. `frame-src 'none'` refuses a navigation of the frame away from its document, in a browser that lets a sandboxed frame navigate itself. Chromium 156 refused it from the sandbox alone, even with no policy on the page (below), so the directive's own effect is unmeasured. A srcdoc frame inherits the page's policy, so the page's policy allows whatever the frame needs except network access.
 
 ### The frame
 
@@ -103,7 +103,7 @@ The frame is `<iframe sandbox="allow-scripts">` whose `srcdoc` the page builds a
 Measured on 2026-11-13 in Chromium 156, the desktop app's built-in browser, with a probe server logging every request it got. A frame built as above:
 - ran inline scripts, classic and module scripts from `data:` URLs, a `data:` stylesheet and a `data:` image
 - got a `SecurityError` reading `parent.document`, `document.cookie` and `localStorage`, and its origin was `null`
-- sent nothing to the server from any of these: `fetch` (same host and external), an image, CSS `@import` and `url()`, `<link rel=prefetch>`, `sendBeacon`, a WebSocket, a form `submit()`, `window.open`, a click on a `target=_top` link, or setting `location.href`
+- sent nothing to the server from any of these: `fetch` (same host and external), an image, CSS `@import` and `url()`, `<link rel=prefetch>`, `sendBeacon`, a WebSocket, a form `submit()`, `window.open`, a click on a `target=_top` link, or setting `location.href`. The last two sent nothing even with no policy on the page, while an unsandboxed frame's navigation reached the server.
 
 One exit got through: WebRTC (see Risks).
 
@@ -112,7 +112,7 @@ One exit got through: WebRTC (see Risks).
 The bridge is jen's script, run in the frame before the document. It defines `window.jen`:
 - `jen.version`: the version this frame shows.
 - `jen.subscribe(fn)`: calls `fn` with every conversation item so far, then with each new one. Items are as `/events` sends them, plus `{"type": "error", "message"}` for an error event. A user message that is an action also gets an `action` field, `{version, context, inputs}`, parsed by the page, so a UI can show what the user did without parsing the text.
-- `jen.act(context)`: hands the page an action. `context` is any JSON value the agent chose for the control: a phrase, or structured data. With it, the bridge collects `inputs`, the current value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. A checkbox gives a boolean, a radio group the checked value, a multiple `select` an array, and a file input nothing.
+- `jen.act(context)`: hands the page an action. `context` is any JSON value the agent chose for the control: a phrase, or structured data. With it, the bridge collects `inputs`, the current value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. A checkbox gives a boolean, unless other checkboxes share its name, and then the group gives the array of its checked values, as a form would submit them. A radio group gives the checked value, a multiple `select` an array, and a file input nothing. An input with neither a `name` nor an `id` is left out, since it has no key the agent could act on, and the tool's description tells the agent to name its inputs.
 
 The page sends an action as a message whose text is:
 
@@ -149,7 +149,7 @@ For a root with `workspace`, the instructions gain one paragraph:
 - `ui/index.html` is the entry
 - what is inlined, and that network references are refused
 - that `fetch`, imports between files and links to other pages don't work
-- `jen.subscribe` and `jen.act`, and that actions must come from the user's clicks or keys
+- `jen.subscribe` and `jen.act`, that actions must come from the user's clicks or keys, and to give each input a `name`
 - to show replies
 - the 4 MB bound
 

@@ -88,12 +88,23 @@ When the stream carries the result of a `publish_ui` call, the page SHALL fetch 
 - **WHEN** the agent publishes version 2 while the page shows version 1
 - **THEN** the page shows version 2, with the conversation passed in
 
-### Requirement: The bridge gives a UI the conversation and actions
-The frame SHALL have `window.jen` with `version`, `subscribe(fn)`, which calls `fn` with every item so far and each new one, and `act(context)`. Items SHALL be as `/events` sends them, plus `{"type": "error", "message"}` for each error event. A user message that is an action SHALL carry `action: {version, context, inputs}`. `act` SHALL hand the page `context`, any JSON value, with `inputs`: the value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it.
+### Requirement: The bridge gives a UI the conversation
+The frame SHALL have `window.jen` with `version` and `subscribe(fn)`, which calls `fn` with every item so far and each new one. Items SHALL be as `/events` sends them, plus `{"type": "error", "message"}` for each error event. A user message that is an action SHALL carry `action: {version, context, inputs}`.
+
+#### Scenario: Subscribing after items arrived
+- **WHEN** a UI calls `jen.subscribe(fn)` after the page passed in three items
+- **THEN** `fn` is called with those three, in order, and then with each later one
+
+### Requirement: The bridge hands the page actions with the UI's inputs
+`jen.act(context)` SHALL hand the page `context`, any JSON value, with `inputs`: the value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. Checkboxes that share a name SHALL give the array of their checked values.
 
 #### Scenario: Inputs with an action
 - **WHEN** a UI with a text input named `note` holding "Looks good" and a checked checkbox `urgent` calls `jen.act("approve")` from a click
 - **THEN** the page receives context `"approve"` and inputs `{"note": "Looks good", "urgent": true}`
+
+#### Scenario: A group of checkboxes
+- **WHEN** three checkboxes named `t` with values `a`, `b` and `c` have `a` and `b` checked, and the UI calls `jen.act("pick")` from a click
+- **THEN** the page receives inputs `{"t": ["a", "b"]}`
 
 ### Requirement: An action becomes a message only when the user made it
 The page SHALL post an action to `messages`, as the viewer, with the text `UI action on version <n>:`, a newline, and `{"context": …, "inputs": …}` as JSON. It SHALL drop an action that doesn't come from the current frame or names another version, one that arrives when `navigator.userActivation.isActive` is false, and one whose message would be over 1 MiB, showing each refusal in its bar.
