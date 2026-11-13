@@ -1518,3 +1518,39 @@ describe("reading and writing a file", () => {
     });
   });
 });
+
+describe("only a running root with workspace has a page and a UI", () => {
+  test("pageTarget gives a running root with workspace's address, and one 404 for anything else, starting nothing", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    expect(await runtime.pageTarget(root.id)).toEqual({ url: `http://jen-agent-${root.id}:8080`, token: tokenOf(docker, root.id) });
+
+    const sub = await runtime.spawn(as(root.id), { spawn: false, workspace: true });
+    const bare = await runtime.spawn(null, { spawn: false });
+    const stopped = await runtime.spawn(null, { spawn: false, workspace: true });
+    await runtime.stop(null, stopped.id);
+    const containers = docker.containers.size;
+    for (const id of [sub.id, bare.id, stopped.id, "0123456789ab", "owner", "runtime"]) {
+      const error = (await runtime.pageTarget(id).catch((e) => e)) as RuntimeError;
+      expect(error, id).toBeInstanceOf(RuntimeError);
+      expect(error).toMatchObject({ status: 404, message: `no UI for agent ${id}` });
+    }
+    expect(docker.containers.size).toBe(containers);
+    expect((await runtime.get(null, stopped.id)).state).toBe("stopped");
+  });
+
+  test("uiTarget needs a caller that reaches the agent, and refuses a sub-agent and a root without workspace with 403", async () => {
+    const { docker, runtime, as } = await setup();
+    const root = await runtime.spawn(null, { spawn: true, workspace: true });
+    const other = await runtime.spawn(null, { spawn: false, workspace: true });
+    const sub = await runtime.spawn(as(root.id), { spawn: false, workspace: true });
+    const bare = await runtime.spawn(null, { spawn: false });
+    expect(await runtime.uiTarget(null, root.id)).toEqual({ url: `http://jen-agent-${root.id}:8080`, token: tokenOf(docker, root.id) });
+    await refused(runtime.uiTarget(as(other.id), root.id), 404);
+    await refused(runtime.uiTarget(null, sub.id), 403);
+    await refused(runtime.uiTarget(as(root.id), sub.id), 403);
+    await refused(runtime.uiTarget(null, bare.id), 403);
+    await runtime.stop(null, root.id);
+    await refused(runtime.uiTarget(null, root.id), 409);
+  });
+});

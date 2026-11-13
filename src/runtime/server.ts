@@ -8,6 +8,11 @@
 // runtime, and a message with its sender in Jen-From. POST /workspace/commands
 // runs a command in the caller's own workspace, and in no other, and GET and
 // PUT /workspace/files?path=<path> read and write a file's raw bytes there.
+// GET /agents/:id/ui is relayed like /events, only for a root with
+// workspace. GET /agents/:id/page is the one request with no token, since a
+// browser opening a URL can't send a header: it's relayed only to a running
+// root with workspace, and serves jen's fixed page, which then reads the
+// viewer's token from its URL's fragment and sends it with every request.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
@@ -107,17 +112,24 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     res.writeHead(204).end();
   }
 
-  // Relays a message or an event stream. A message carries its true sender,
-  // and a stopped agent is started for it, then sent the runtime's notice, if
-  // any, once the message is saved.
-  async function relay(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller, id: string, path: "/messages" | "/events") {
-    const target: Address & { notice?: string } = path === "/messages" ? await runtime.messageTarget(caller, id) : await runtime.target(caller, id);
+  // Relays a message, an event stream, a UI or a page. A message carries its
+  // true sender, and a stopped agent is started for it, then sent the
+  // runtime's notice, if any, once the message is saved. A page has no caller.
+  async function relay(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller | undefined, id: string, path: "/messages" | "/events" | "/ui" | "/page") {
+    const target: Address & { notice?: string } =
+      path === "/messages"
+        ? await runtime.messageTarget(caller!, id)
+        : path === "/ui"
+          ? await runtime.uiTarget(caller!, id)
+          : path === "/page"
+            ? await runtime.pageTarget(id)
+            : await runtime.target(caller!, id);
     // A caller that hung up while the target was looked up gets nothing opened
     // for it. From here on, its close handler is in place before any wait.
     if (res.destroyed) return;
     const headers: http.OutgoingHttpHeaders = { authorization: `Bearer ${target.token}` };
     for (const name of FORWARDED) if (req.headers[name] !== undefined) headers[name] = req.headers[name];
-    if (path === "/messages") headers["jen-from"] = caller === null ? "owner" : caller.id;
+    if (path === "/messages") headers["jen-from"] = caller === null ? "owner" : caller!.id;
     const upstream = http.request(new URL(path, target.url), { method: req.method, headers });
     upstream.on("response", (answer) => {
       const { notice } = target;
@@ -143,6 +155,8 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
   }
 
   async function route(req: http.IncomingMessage, res: http.ServerResponse) {
+    const page = req.method === "GET" ? (req.url ?? "").match(/^\/agents\/([^/?]+)\/page(?:\?.*)?$/s) : null;
+    if (page) return relay(req, res, undefined, page[1]!, "/page");
     const caller = await authenticate(req.headers.authorization);
     if (caller === undefined) throw new RuntimeError(401, "a valid bearer token is required");
     // The path is the request target up to its query. Parsing it as a URL
@@ -167,6 +181,7 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
         if (method === "POST" && action === "start") return json(res, 200, await runtime.start(caller, id));
         if (method === "POST" && action === "messages") return relay(req, res, caller, id, "/messages");
         if (method === "GET" && action === "events") return relay(req, res, caller, id, "/events");
+        if (method === "GET" && action === "ui") return relay(req, res, caller, id, "/ui");
       }
     }
     json(res, 404, { error: `no route for ${method} ${path}` });

@@ -1,0 +1,309 @@
+<!doctype html>
+<!-- jen's fixed page, served at GET /page, the same for every agent of an
+     image. It holds the viewer's token and the connection to the agent, and
+     runs the agent's published UI in a sandboxed frame that has no network
+     and an opaque origin. The frame's only way out is an action handed to
+     this page through window.jen, which the page posts to messages as the
+     viewer, only when the user just interacted with the frame. The page
+     passes the frame nothing from the event stream: it reads the stream only
+     to learn of a publish and of the agent's errors. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jen</title>
+<style>
+  html, body { margin: 0; height: 100%; background: Canvas; color-scheme: light dark; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1; display: none; gap: 1rem; align-items: center; justify-content: space-between;
+    padding: 0.5rem 1rem; font: 14px/1.4 system-ui, sans-serif; background: #8b1a1a; color: #fff; }
+  #bar.shown { display: flex; }
+  #bar button { font: inherit; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 0.25rem; padding: 0 0.5rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="bar" role="alert"><span id="bar-text"></span><button id="bar-close" type="button" aria-label="Dismiss">×</button></div>
+<script>
+"use strict";
+
+// The bound on a message, as the agent's protocol sets it.
+const MAX_MESSAGE = 1024 * 1024;
+// The longest wait between attempts to reconnect the event stream.
+const MAX_BACKOFF_MS = 30_000;
+const TOKEN_KEY = "jen-token";
+// The frame's own policy. With no connect-src, default-src 'none' blocks
+// every fetch, XHR, WebSocket, beacon and prefetch. It comes first, so it
+// applies before any of the UI's code runs.
+const FRAME_POLICY =
+  "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; img-src data: blob:; " +
+  "font-src data:; media-src data: blob:; form-action 'none'; base-uri 'none'";
+
+// The bridge: jen's script, run in the frame before the published document.
+// It's stringified into the frame, so it uses nothing from this page.
+function bridge(version) {
+  // Kept now, so a UI that reassigns window.parent can't redirect actions.
+  const page = window.parent;
+  // An input's key: its name, or its id.
+  const keyOf = (el) => el.getAttribute("name") || el.id;
+  const BUTTONS = new Set(["button", "submit", "reset", "image"]);
+  function inputs() {
+    const fields = [...document.querySelectorAll("input, select, textarea")].filter((el) => keyOf(el));
+    // Checkboxes that share a key give the array of their checked values.
+    const boxes = {};
+    for (const el of fields) if (el.type === "checkbox") boxes[keyOf(el)] = (boxes[keyOf(el)] || 0) + 1;
+    const values = {};
+    for (const el of fields) {
+      const key = keyOf(el);
+      if (el.tagName === "INPUT") {
+        if (el.type === "file" || BUTTONS.has(el.type)) continue;
+        if (el.type === "checkbox") {
+          if (boxes[key] > 1) {
+            if (!Array.isArray(values[key])) values[key] = [];
+            if (el.checked) values[key].push(el.value);
+          } else values[key] = el.checked;
+          continue;
+        }
+        if (el.type === "radio") {
+          if (el.checked) values[key] = el.value;
+          else if (!(key in values)) values[key] = null;
+          continue;
+        }
+        values[key] = el.value;
+      } else if (el.tagName === "SELECT" && el.multiple) {
+        values[key] = [...el.selectedOptions].map((option) => option.value);
+      } else {
+        values[key] = el.value;
+      }
+    }
+    return values;
+  }
+  const jen = Object.freeze({
+    version,
+    // Hands the page an action. context is any JSON value; the page sends it
+    // only if the user just clicked or typed in the frame.
+    act(context) {
+      const body = JSON.stringify({ context: context === undefined ? null : context, inputs: inputs() });
+      page.postMessage({ jen: "act", version, body }, "*");
+    },
+  });
+  Object.defineProperty(window, "jen", { value: jen, enumerable: true });
+}
+
+const bar = document.getElementById("bar");
+const barText = document.getElementById("bar-text");
+// What the bar shows, and whether it's about the connection, which a
+// reconnect clears.
+let barKind;
+function fail(text, kind = "other") {
+  barText.textContent = text;
+  barKind = kind;
+  bar.classList.add("shown");
+}
+function clearConnectionFailure() {
+  if (barKind === "connection") bar.classList.remove("shown");
+}
+document.getElementById("bar-close").addEventListener("click", () => bar.classList.remove("shown"));
+
+// The token from the fragment, which never reaches a server, or from this
+// tab's session, so a reload keeps working. The fragment is then removed
+// from the address bar.
+function readToken() {
+  const fragment = new URLSearchParams(location.hash.slice(1)).get("token");
+  let token = fragment || null;
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else token = sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    // Without storage, a reload needs the token again.
+  }
+  if (location.hash !== "") history.replaceState(null, "", location.pathname + location.search);
+  return token;
+}
+
+const token = readToken();
+let frame;
+let shown;
+// Set once the token is refused, which stops every request.
+let refused = false;
+
+function refuse() {
+  refused = true;
+  fail("The agent refused this page's token (401). Open the page again with a valid token, as …/page#token=<token>.");
+}
+
+function request(path, init = {}) {
+  return fetch(path, { ...init, cache: "no-store", headers: { ...init.headers, Authorization: `Bearer ${token}` } });
+}
+
+// The frame's document: the doctype, so it renders in standards mode, the
+// frame's policy, the bridge, then the published document as it is.
+function frameDocument(version, document) {
+  return `<!doctype html>\n<meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">\n<script>(${bridge.toString()})(${JSON.stringify(version)});<\/script>\n${document}`;
+}
+
+function show(version, document) {
+  const next = window.document.createElement("iframe");
+  next.setAttribute("sandbox", "allow-scripts");
+  next.setAttribute("title", `UI, version ${version}`);
+  next.srcdoc = frameDocument(version, document);
+  if (frame) frame.replaceWith(next);
+  else window.document.body.prepend(next);
+  frame = next;
+  shown = version;
+}
+
+// Fetches the latest UI and swaps it in if its version is new. At most one
+// fetch is in flight; a call made during one runs once it's done.
+let fetching = false;
+let again = false;
+async function refresh() {
+  if (refused) return;
+  if (fetching) return void (again = true);
+  fetching = true;
+  try {
+    const answer = await request("ui");
+    if (answer.status === 401) return refuse();
+    if (!answer.ok) return fail(`The UI couldn't be loaded: the agent answered ${answer.status}. ${await reason(answer)}`, "connection");
+    const { version, document } = await answer.json();
+    if (version !== shown) show(version, document);
+  } catch (error) {
+    fail(`The UI couldn't be loaded: ${error.message}`, "connection");
+  } finally {
+    fetching = false;
+    if (again) {
+      again = false;
+      refresh();
+    }
+  }
+}
+
+async function reason(answer) {
+  try {
+    const body = await answer.json();
+    return typeof body?.error === "string" ? body.error : "";
+  } catch {
+    return "";
+  }
+}
+
+// The IDs of publish_ui calls seen on the stream, so their results can be
+// matched.
+const publishes = new Set();
+function onItem(item) {
+  if (item?.type === "tool_call" && item.name === "publish_ui") publishes.add(item.id);
+  else if (item?.type === "tool_result" && publishes.has(item.callId)) {
+    publishes.delete(item.callId);
+    refresh();
+  }
+}
+
+// Streams events with fetch, since EventSource can't send a header, and
+// reconnects after a drop with Last-Event-ID, waiting longer after each
+// failure, up to MAX_BACKOFF_MS.
+let lastEventId;
+async function stream() {
+  let backoff = 1000;
+  while (!refused) {
+    try {
+      const headers = lastEventId === undefined ? {} : { "Last-Event-ID": lastEventId };
+      const answer = await request("events", { headers });
+      if (answer.status === 401) return refuse();
+      if (!answer.ok) throw new Error(`the agent answered ${answer.status}. ${await reason(answer)}`);
+      backoff = 1000;
+      clearConnectionFailure();
+      if (shown === undefined) refresh();
+      await readEvents(answer.body);
+      throw new Error("the connection closed");
+    } catch (error) {
+      fail(`The connection to the agent dropped: ${error.message} Reconnecting…`, "connection");
+    }
+    await new Promise((resolve) => setTimeout(resolve, backoff));
+    backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+  }
+}
+
+// Reads Server-Sent Events from a body until it ends.
+async function readEvents(body) {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  let event = { type: "message", data: [] };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += value;
+    const lines = buffer.split(/\r\n|\r|\n/);
+    // The last piece may be a line still arriving. A lone \r at the end is
+    // held too, in case its \n follows.
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line === "") {
+        if (event.data.length > 0) dispatch(event.type, event.data.join("\n"));
+        event = { type: "message", data: [] };
+        continue;
+      }
+      if (line.startsWith(":")) continue;
+      const colon = line.indexOf(":");
+      const field = colon === -1 ? line : line.slice(0, colon);
+      let data = colon === -1 ? "" : line.slice(colon + 1);
+      if (data.startsWith(" ")) data = data.slice(1);
+      if (field === "id") lastEventId = data;
+      else if (field === "event") event.type = data;
+      else if (field === "data") event.data.push(data);
+    }
+  }
+}
+
+function dispatch(type, data) {
+  let parsed;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return;
+  }
+  if (type === "item") onItem(parsed);
+  else if (type === "error") fail(`The agent reported an error: ${parsed?.message ?? data}`);
+}
+
+// An action from the frame, posted to messages as the viewer if it came from
+// the frame showing, names its version, follows the user's interaction and
+// fits the protocol's bound.
+window.addEventListener("message", async (event) => {
+  const data = event.data;
+  if (typeof data !== "object" || data === null || data.jen !== "act") return;
+  if (!frame || event.source !== frame.contentWindow || data.version !== shown) {
+    return fail("An action from a UI that's no longer showing was dropped.");
+  }
+  // Activation in the frame activates this page too, so this reads a click
+  // or key press made in the frame.
+  if (!navigator.userActivation.isActive) {
+    return fail("The UI sent an action without a click or key press, so it was dropped.");
+  }
+  let action;
+  try {
+    action = JSON.parse(data.body);
+  } catch {
+    return fail("The UI sent an action that isn't JSON, so it was dropped.");
+  }
+  const text = `UI action on version ${shown}:\n${JSON.stringify({ context: action?.context ?? null, inputs: action?.inputs ?? {} })}`;
+  const body = JSON.stringify({ text });
+  if (new TextEncoder().encode(body).length > MAX_MESSAGE) {
+    return fail("The action is over the 1 MB bound on a message, so it was dropped.");
+  }
+  try {
+    const answer = await request("messages", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (answer.status === 401) return refuse();
+    if (!answer.ok) fail(`The action was refused: the agent answered ${answer.status}. ${await reason(answer)}`);
+  } catch (error) {
+    fail(`The action couldn't be sent: ${error.message}`);
+  }
+});
+
+if (!token) {
+  fail("This page needs a token. Open it as …/page#token=<token>.");
+} else {
+  refresh();
+  stream();
+}
+</script>
+</body>
+</html>

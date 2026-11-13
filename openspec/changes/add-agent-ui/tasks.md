@@ -2,17 +2,17 @@
 
 ## 1. Versions in the store
 
-- [ ] 1.1 Add a one-row `ui` table to `src/agent/store.ts`, with `publish(document)`, which saves the next version from 1 in one transaction and returns its number, and `latestUi()`, which returns `{version, document}` or `undefined`. Verify with `store.test.ts`: none before a publish, two publishes and a reopen give version 2 and the second document.
+- [x] 1.1 Add a one-row `ui` table to `src/agent/store.ts`, with `publish(document)`, which saves the next version from 1 in one transaction and returns its number, and `latestUi()`, which returns `{version, document}` or `undefined`. Verify with `store.test.ts`: none before a publish, two publishes and a reopen give version 2 and the second document.
 
 ## 2. Publishing
 
-- [ ] 2.1 Write `publish_ui` in `src/agent/ui.ts`, with the description the design gives. It reads `ui/index.html` through `RuntimeClient.readFile`, refuses it if missing, not UTF-8 or over 4 MiB, and otherwise saves it unchanged through `store.publish` and returns the version and size. Verify with `ui.test.ts` against a fake `RuntimeClient`: a file saved byte for byte, each refusal, and a refused publish leaving the version unchanged.
-- [ ] 2.2 Offer `publish_ui` from `toolsFor` in `src/agent/delegation.ts` only to a root with `workspace`, and add the UI paragraph to `instructions` for a root with `workspace`. Verify with `delegation.test.ts` that the tool and the paragraph appear only for a root with `workspace`.
+- [x] 2.1 Write `publish_ui` in `src/agent/ui.ts`, with the description the design gives. It reads `ui/index.html` through `RuntimeClient.readFile`, refuses it if missing, not UTF-8 or over 4 MiB, and otherwise saves it unchanged through `store.publish` and returns the version and size. Verify with `ui.test.ts` against a fake `RuntimeClient`: a file saved byte for byte, each refusal, and a refused publish leaving the version unchanged.
+- [x] 2.2 Offer `publish_ui` from `toolsFor` in `src/agent/delegation.ts` only to a root with `workspace`, and add the UI paragraph to `instructions` for a root with `workspace`. Verify with `delegation.test.ts` that the tool and the paragraph appear only for a root with `workspace`.
 
 ## 3. The page, the bridge and the textbox
 
-- [ ] 3.1 Write `src/agent/ui/textbox.html`: a box whose send calls `jen.act(text)`, then clears it and says the message was sent. It shows nothing of the conversation.
-- [ ] 3.2 Write `src/agent/ui/page.html`, holding the bridge:
+- [x] 3.1 Write `src/agent/ui/textbox.html`: a box whose send calls `jen.act(text)`, then clears it and says the message was sent. It shows nothing of the conversation.
+- [x] 3.2 Write `src/agent/ui/page.html`, holding the bridge:
   - the token from the fragment, kept in `sessionStorage`, with the fragment removed
   - `ui` and `events` fetched with the token, and events parsed from the body, reconnecting with `Last-Event-ID` and a backoff up to 30 seconds
   - the frame built as the design gives it
@@ -21,11 +21,11 @@
   - the failure bar, which also shows the agent's error events
 
   Verify in the sandbox check (5.1).
-- [ ] 3.3 Add `GET /page` (with the design's CSP and `Cache-Control: no-store`) and `GET /ui` to `src/agent/server.ts`, and update its header comment. Verify with `server.test.ts`: both need the token, `/ui` gives version 0 and the textbox before a publish and the latest after, and `/page` carries the policy.
+- [x] 3.3 Add `GET /page` (with the design's CSP and `Cache-Control: no-store`) and `GET /ui` to `src/agent/server.ts`, and update its header comment. Verify with `server.test.ts`: both need the token, `/ui` gives version 0 and the textbox before a publish and the latest after, and `/page` carries the policy.
 
 ## 4. The runtime
 
-- [ ] 4.1 In `src/runtime/server.ts`, route `GET /agents/:id/page` before authentication to a new `Runtime.pageTarget(id)`. It returns the address of a running root with `workspace`, and otherwise throws one `404`, `no UI for agent <id>`, starting nothing. Relay `GET /agents/:id/ui` as `/events` is relayed, refused with `403` unless the agent is a root with `workspace`. Update the header comment. Verify with `server.test.ts` and `runtime.test.ts` against `fake-docker.ts`:
+- [x] 4.1 In `src/runtime/server.ts`, route `GET /agents/:id/page` before authentication to a new `Runtime.pageTarget(id)`. It returns the address of a running root with `workspace`, and otherwise throws one `404`, `no UI for agent <id>`, starting nothing. Relay `GET /agents/:id/ui` as `/events` is relayed, refused with `403` unless the agent is a root with `workspace`. Update the header comment. Verify with `server.test.ts` and `runtime.test.ts` against `fake-docker.ts`:
   - the page relays with no token
   - a stopped root, a sub-agent, a root without `workspace` and an unknown ID all get the same `404` and nothing starts
   - `/ui` needs a token that reaches the agent, and gets `403` for a sub-agent and for a root without `workspace`

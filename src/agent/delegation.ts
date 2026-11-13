@@ -7,6 +7,7 @@ import http from "node:http";
 import type { Json } from "./model/port.ts";
 import type { Tool } from "./loop.ts";
 import type { Store } from "./store.ts";
+import { uiTools } from "./ui.ts";
 import { workspaceTools } from "./workspace.ts";
 
 export interface Grant {
@@ -125,10 +126,10 @@ function parse(body: Buffer): Json | undefined {
   }
 }
 
-// Every tool the agent's grant allows: the delegation tools with spawn, and
-// the workspace tools with workspace.
-export function toolsFor(identity: Identity, runtime: RuntimeClient, debts: Pick<Store, "owe" | "clear">): Tool[] {
-  return [...delegationTools(identity, runtime, debts), ...workspaceTools(identity, runtime)];
+// Every tool the agent's grant allows: the delegation tools with spawn, the
+// workspace tools with workspace, and publish_ui for a root with workspace.
+export function toolsFor(identity: Identity, runtime: RuntimeClient, store: Pick<Store, "owe" | "clear" | "publish">): Tool[] {
+  return [...delegationTools(identity, runtime, store), ...workspaceTools(identity, runtime), ...uiTools(identity, runtime, store)];
 }
 
 // The delegation tools: with spawn, message_sub_agent and the tools that
@@ -237,7 +238,8 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
   ];
 }
 
-// The system instructions: how agents work together. They name no agent ID,
+// The system instructions: how agents work together, and for a root with
+// workspace, how the user reaches it through its UI. They name no agent ID,
 // so the only IDs the model knows are its sub-agents'.
 export function instructions({ parent, grant }: Identity): string {
   const them = parent === "owner" ? "the user" : "your parent";
@@ -258,8 +260,18 @@ export function instructions({ parent, grant }: Identity): string {
   if (grant.spawn) {
     lines.push("A plain message reaches a busy sub-agent after its current batch of work. An urgent one cancels its work in flight and makes it re-plan, so mark a message urgent only when waiting would cause harm or waste, such as a call that must be stopped.");
   }
+  if (parent === "owner" && grant.workspace) lines.push(UI_PARAGRAPH);
   return lines.join("\n\n");
 }
+
+// What a root with workspace is told about its UI. Every such root gets it,
+// since any root can be reached both through its page and by an application.
+export const UI_PARAGRAPH =
+  'The user may reach you through a page in their browser that shows your UI. A message that starts with "UI action on version" came from that page: it\'s the user acting on your UI. ' +
+  "Act on it as on any message from the user. On that page the user sees only what your UI shows, never your text replies. " +
+  "Until you publish one, it's a plain textbox, so answer it by writing a UI in ui/index.html in your workspace and publishing it with publish_ui, and answer each later action by publishing again. " +
+  "What the UI shows is up to you: an answer, a form to fill in, options to choose from, results to look over. Every UI you publish must give the user a way to keep talking to you. " +
+  "A message without that start came from an application, which reads your replies, so answer it with a reply as usual.";
 
 // An agent's record from the runtime, without its parent.
 function withoutParent(agent: Json | undefined): Json {

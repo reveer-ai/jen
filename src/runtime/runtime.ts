@@ -684,6 +684,33 @@ export class Runtime {
     return this.#address(id);
   }
 
+  // Where to relay a request for the UI of an agent the caller can reach: only
+  // a running root with workspace has one.
+  async uiTarget(caller: Caller, id: string): Promise<Address> {
+    const { nodes } = await this.#read();
+    const node = reach(nodes, caller, id);
+    if (!hasUi(node)) throw new RuntimeError(403, `agent ${id} has no UI: only a root agent with workspace has one`);
+    if (!running(node)) throw new RuntimeError(409, `agent ${id} is stopped`);
+    return this.#address(id);
+  }
+
+  // Where to relay a request for an agent's page, which needs no caller: only
+  // a running root with workspace has one. Anything else, including an ID
+  // that doesn't exist, gets the same 404, so the route tells no more than
+  // whether a running root with workspace has this ID, and it starts nothing.
+  async pageTarget(id: string): Promise<Address> {
+    const none = new RuntimeError(404, `no UI for agent ${id}`);
+    const { nodes } = await this.#read();
+    const node = nodes.get(id);
+    if (RESERVED.has(id) || !node || !hasUi(node) || !running(node)) throw none;
+    try {
+      return await this.#address(id);
+    } catch {
+      // It stopped since the tree was read.
+      throw none;
+    }
+  }
+
   // Where to relay a message to an agent the caller may message: a descendant
   // or its parent. A stopped one is started first, holding its loop until the
   // message arrives, and notice is what the runtime sends it after the message.
@@ -956,6 +983,9 @@ function current(node: Node, credential: string): boolean {
 
 // The node, if the caller may act on it. Anything else is not found, so a
 // caller can't probe for agents outside its subtree.
+// Whether the agent has a UI: only a root with workspace does.
+const hasUi = (node: Node) => node.parent === null && node.grant.workspace;
+
 function reach(nodes: Map<string, Node>, caller: Caller, id: string): Node {
   if (RESERVED.has(id) || !reaches(nodes, authorize(nodes, caller), id)) throw new RuntimeError(404, `no agent ${id}`);
   return nodes.get(id)!;

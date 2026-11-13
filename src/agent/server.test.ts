@@ -8,7 +8,8 @@ import { openStore, type Store } from "./store.ts";
 import type { Item, Json, Model } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
 import { Agent, type AgentOptions, type Tool } from "./loop.ts";
-import { createServer, MAX_MESSAGE } from "./server.ts";
+import { createServer, MAX_MESSAGE, PAGE_POLICY } from "./server.ts";
+import { PAGE, TEXTBOX } from "./ui.ts";
 
 const user = (text: string, from = "owner"): Item => ({ type: "message", role: "user", from, text });
 const assistant = (text: string): Item => ({ type: "message", role: "assistant", text });
@@ -486,5 +487,38 @@ describe("unknown routes are not found", () => {
     const res = await fetch(`${base}/status`, { headers: auth });
     expect(res.status).toBe(404);
     expect(await res.json()).toHaveProperty("error");
+  });
+});
+
+describe("the agent serves its page and its UI", () => {
+  test.each(["/page", "/ui"])("%s needs the token", async (path) => {
+    await serve(new ScriptedModel([]));
+    const answer = await fetch(`${base}${path}`);
+    expect(answer.status).toBe(401);
+    expect(answer.headers.get("www-authenticate")).toBe("Bearer");
+    expect((await fetch(`${base}${path}`, { headers: { Authorization: "Bearer wrong" } })).status).toBe(401);
+  });
+
+  test("/ui gives version 0 and the textbox before a publish, and the latest after", async () => {
+    await serve(new ScriptedModel([]));
+    const before = await fetch(`${base}/ui`, { headers: auth });
+    expect(before.status).toBe(200);
+    expect(before.headers.get("content-type")).toBe("application/json");
+    expect(await before.json()).toEqual({ version: 0, document: TEXTBOX });
+    store.publish("<p>one</p>");
+    store.publish("<p>two</p>");
+    expect(await (await fetch(`${base}/ui`, { headers: auth })).json()).toEqual({ version: 2, document: "<p>two</p>" });
+  });
+
+  test("/page is jen's fixed page, with its policy and no caching", async () => {
+    await serve(new ScriptedModel([]));
+    const answer = await fetch(`${base}/page`, { headers: auth });
+    expect(answer.status).toBe(200);
+    expect(answer.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(answer.headers.get("cache-control")).toBe("no-store");
+    const policy = answer.headers.get("content-security-policy");
+    expect(policy).toBe(PAGE_POLICY);
+    for (const directive of ["default-src 'none'", "connect-src 'self'", "frame-src 'none'", "frame-ancestors 'none'"]) expect(policy).toContain(directive);
+    expect(await answer.text()).toBe(PAGE);
   });
 });

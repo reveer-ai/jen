@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, type Identity } from "./delegation.ts";
+import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, UI_PARAGRAPH, type Identity } from "./delegation.ts";
 import { Agent, INTERRUPTED } from "./loop.ts";
 import type { Item, Json } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
@@ -88,7 +88,7 @@ const signal = new AbortController().signal;
 // A record of debts kept in memory, as the store keeps them.
 function ledger() {
   const owed = new Set<string>();
-  return { owed, owe: (id: string) => !owed.has(id) && Boolean(owed.add(id)), clear: (id: string) => void owed.delete(id) };
+  return { owed, owe: (id: string) => !owed.has(id) && Boolean(owed.add(id)), clear: (id: string) => void owed.delete(id), publish: () => 1 };
 }
 let debts: ReturnType<typeof ledger>;
 beforeEach(() => (debts = ledger()));
@@ -233,11 +233,19 @@ describe("delegation tools follow the grant", () => {
   const workspace = ["run_command", "read_file", "write_file", "edit_file"];
   test.each([
     [{ spawn: true, workspace: false }, delegation],
+    [{ spawn: false, workspace: true }, [...workspace, "publish_ui"]],
+    [{ spawn: true, workspace: true }, [...delegation, ...workspace, "publish_ui"]],
+    [{ spawn: false, workspace: false }, []],
+  ])("a root with %j is offered its grant's tools", (grant, names) => {
+    expect(toolsFor({ ...root, grant }, client, debts).map((t) => t.name)).toEqual(names);
+  });
+
+  test.each([
+    [{ spawn: true, workspace: false }, delegation],
     [{ spawn: false, workspace: true }, workspace],
     [{ spawn: true, workspace: true }, [...delegation, ...workspace]],
-    [{ spawn: false, workspace: false }, []],
-  ])("an agent with %j is offered its grant's tools", (grant, names) => {
-    expect(toolsFor({ ...root, grant }, client, debts).map((t) => t.name)).toEqual(names);
+  ])("a sub-agent with %j is offered its grant's tools, never publish_ui", (grant, names) => {
+    expect(toolsFor({ ...child, grant }, client, debts).map((t) => t.name)).toEqual(names);
   });
 
   test("spawn_agent can pass workspace on", () => {
@@ -381,5 +389,19 @@ describe("the agent is told how to work in a tree", () => {
     expect(text).toMatch(/Your parent is the agent that started you\./);
     expect(text).toMatch(/That reply goes to your parent/);
     expect(text).not.toMatch(/message_sub_agent|wait/);
+  });
+
+  test("a root with workspace is told about its UI, and any other agent isn't", () => {
+    const text = instructions({ ...root, grant: { spawn: true, workspace: true } });
+    expect(text).toContain(UI_PARAGRAPH);
+    expect(text).toMatch(/starts with "UI action on version"/);
+    expect(text).toMatch(/never your text replies/);
+    expect(text).toMatch(/plain textbox, so answer it by writing a UI in ui\/index\.html/);
+    expect(text).toMatch(/publish_ui/);
+    expect(text).toMatch(/must give the user a way to keep talking to you/);
+    expect(text).toMatch(/came from an application, which reads your replies/);
+    for (const identity of [root, { ...child, grant: { spawn: false, workspace: true } }, { ...lead, grant: { spawn: true, workspace: true } }]) {
+      expect(instructions(identity)).not.toMatch(/publish_ui|UI/);
+    }
   });
 });

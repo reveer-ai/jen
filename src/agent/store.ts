@@ -14,9 +14,16 @@ export interface Outgoing {
   text: string;
 }
 
+// A published UI: its version, from 1, and its document as published.
+export interface Ui {
+  version: number;
+  document: string;
+}
+
 // The conversation, kept in SQLite as one JSON row per item, beside the inbox
 // of messages waiting to join it, the outbox of replies waiting to reach the
-// parent, and the sub-agents that owe the agent a reply.
+// parent, the sub-agents that owe the agent a reply, and the latest UI the
+// agent published.
 export interface Store {
   load(): Item[];
   // Returns the items saved after position seq, in order, each with its
@@ -65,6 +72,11 @@ export interface Store {
   owed(): string[];
   // Whether a message was saved with this wake ID.
   woken(wake: string): boolean;
+  // Saves document as the next UI version, counting from 1, in one
+  // transaction, and returns its number. Only the latest is kept.
+  publish(document: string): number;
+  // The latest published UI, or undefined when none has been published.
+  latestUi(): Ui | undefined;
   close(): void;
 }
 
@@ -78,6 +90,7 @@ export function openStore(path: string): Store {
     CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY, text TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS owed (seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE);
     CREATE TABLE IF NOT EXISTS reply_owed (one INTEGER PRIMARY KEY CHECK (one = 1));
+    CREATE TABLE IF NOT EXISTS ui (one INTEGER PRIMARY KEY CHECK (one = 1), version INTEGER NOT NULL, document TEXT NOT NULL);
   `);
   const select = db.prepare("SELECT item FROM items ORDER BY seq");
   const selectAfter = db.prepare("SELECT seq, item FROM items WHERE seq > ? ORDER BY seq LIMIT ?");
@@ -98,6 +111,10 @@ export function openStore(path: string): Store {
   const selectReplyOwed = db.prepare("SELECT 1 FROM reply_owed");
   const insertWake = db.prepare("INSERT OR IGNORE INTO wakes (id) VALUES (?)");
   const selectWake = db.prepare("SELECT 1 FROM wakes WHERE id = ?");
+  const selectUi = db.prepare("SELECT version, document FROM ui");
+  const upsertUi = db.prepare(
+    "INSERT INTO ui (one, version, document) VALUES (1, 1, ?) ON CONFLICT (one) DO UPDATE SET version = version + 1, document = excluded.document",
+  );
 
   function transaction<T>(body: () => T): T {
     db.exec("BEGIN");
@@ -170,6 +187,16 @@ export function openStore(path: string): Store {
     clear: (id) => void deleteOwed.run(id),
     owed: () => selectOwed.all().map((row) => row.id as string),
     woken: (wake) => selectWake.get(wake) !== undefined,
+    publish(document) {
+      return transaction(() => {
+        upsertUi.run(document);
+        return (selectUi.get() as { version: number }).version;
+      });
+    },
+    latestUi() {
+      const row = selectUi.get();
+      return row === undefined ? undefined : { version: row.version as number, document: row.document as string };
+    },
     close: () => db.close(),
   };
 }
