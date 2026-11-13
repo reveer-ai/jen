@@ -45,4 +45,4 @@
   - describe the sandbox and UI checks under the commands
 
   Verify each claim against the code.
-- [ ] 6.3 Add the WebRTC exit to [JEN-21](https://linear.app/reveer/issue/JEN-21)'s description in Linear, as something it must close or record why not.
+- [x] 6.3 Add the WebRTC exit to [JEN-21](https://linear.app/reveer/issue/JEN-21)'s description in Linear, as something it must close or record why not.
