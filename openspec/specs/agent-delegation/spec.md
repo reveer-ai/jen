@@ -17,7 +17,7 @@ The agent SHALL read its own ID from `JEN_AGENT_ID`, its parent's ID from `JEN_P
 - **THEN** it exits non-zero and its error names `JEN_GRANT`
 
 ### Requirement: Delegation tools follow the grant
-The agent SHALL offer `message_sub_agent`, `spawn_agent` (taking a grant), `list_agents`, `stop_agent`, `start_agent` and `delete_agent` (each taking an ID), and `wait`, only when its grant has `spawn`. It SHALL offer `run_command`, `read_file`, `write_file` and `edit_file`, the workspace tools, only when its grant has `workspace`. An agent with neither SHALL be offered no tools. Each tool other than `message_sub_agent` and `wait` SHALL call the matching runtime route with the agent's own token and return the runtime's answer.
+The agent SHALL offer `message_sub_agent`, `spawn_agent` (taking a grant), `list_agents`, `stop_agent`, `start_agent` and `delete_agent` (each taking an ID), and `wait`, only when its grant has `spawn`. It SHALL offer `run_command`, `read_file`, `write_file` and `edit_file`, the workspace tools, only when its grant has `workspace`, and `publish_ui` as `agent-ui` gives it. An agent with neither SHALL be offered no tools. Each tool other than `message_sub_agent` and `wait` SHALL call the matching runtime route with the agent's own token and return the runtime's answer.
 
 #### Scenario: Agent with spawn
 - **WHEN** an agent whose grant has `spawn` and not `workspace` calls the model
@@ -25,11 +25,11 @@ The agent SHALL offer `message_sub_agent`, `spawn_agent` (taking a grant), `list
 
 #### Scenario: Agent with workspace only
 - **WHEN** an agent whose grant has `workspace` and not `spawn` calls the model
-- **THEN** the model is offered the workspace tools and no other tool
+- **THEN** the model is offered the workspace tools, and `publish_ui` if it's a root, and no other tool
 
 #### Scenario: Agent with both
 - **WHEN** an agent whose grant has `spawn` and `workspace` calls the model
-- **THEN** the model is offered the delegation tools and the workspace tools
+- **THEN** the model is offered the delegation tools and the workspace tools, and `publish_ui` if it's a root
 
 #### Scenario: Agent without spawn
 - **WHEN** an agent whose grant has neither `spawn` nor `workspace` calls the model
@@ -164,7 +164,7 @@ With Docker running and model credentials configured, a behavior live check SHAL
 - **THEN** all 24 runs settle, and each gets its task's expected number of owner replies with none of the faults
 
 ### Requirement: The behavior live check fails on any fault
-A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call other than a `read_file` of a file that doesn't exist, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, or model error event. A command task's run SHALL also fail if its reply lacks the line, or its workspace file shows the command ran more than once. A file task's run SHALL also fail unless the changed file matches the expected bytes exactly and the created file matches the given text, with or without a final newline. Replies SHALL be read as in the delegation live check. A failure SHALL print the run's transcript.
+A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if the owner gets a number of replies other than the task's expected number, or on any `list_agents` call, refused or failed tool call other than a `read_file` of a file that doesn't exist, message sent twice to the same receiver with the same text, sub-agent reply of 1 to 9 characters, model error event, or `publish_ui` call. A command task's run SHALL also fail if its reply lacks the line, or its workspace file shows the command ran more than once. A file task's run SHALL also fail unless the changed file matches the expected bytes exactly and the created file matches the given text, with or without a final newline. Replies SHALL be read as in the delegation live check. A failure SHALL print the run's transcript.
 
 #### Scenario: A faulty run
 - **WHEN** a run's root calls `list_agents`
@@ -185,3 +185,7 @@ A behavior live check run SHALL fail if it doesn't settle within 6 minutes, if t
 #### Scenario: An edit that doesn't match
 - **WHEN** the file task's root calls `edit_file` with an `old_string` the file doesn't hold
 - **THEN** the check fails on the failed tool call, even if a later call succeeds
+
+#### Scenario: An unasked-for UI
+- **WHEN** a root publishes a UI in a run whose task asked for none
+- **THEN** the check fails and prints that run's transcript

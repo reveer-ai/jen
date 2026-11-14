@@ -13,10 +13,10 @@ The runtime SHALL read the owner's token from `JEN_OWNER_TOKEN` and the model se
 - **THEN** it exits non-zero and its error names `JEN_OWNER_TOKEN`
 
 ### Requirement: Every request carries a credential
-The runtime SHALL serve its API on port 8080, and every request SHALL carry `Authorization: Bearer <token>`, where the token is either the owner's token or the current token of a running agent. Any other request SHALL get `401` with `WWW-Authenticate: Bearer`, and its body SHALL NOT be read. The caller is the principal the token belongs to: the owner, or that agent.
+The runtime SHALL serve its API on port 8080, and every request but `GET /agents/:id/page` SHALL carry `Authorization: Bearer <token>`, where the token is either the owner's token or the current token of a running agent. Any other request SHALL get `401` with `WWW-Authenticate: Bearer`, and its body SHALL NOT be read. The caller is the principal the token belongs to: the owner, or that agent.
 
 #### Scenario: No token
-- **WHEN** a request arrives without a bearer token
+- **WHEN** a request other than for an agent's page arrives without a bearer token
 - **THEN** it gets `401` and nothing changes
 
 #### Scenario: A stopped agent's token
@@ -140,7 +140,7 @@ When an agent's process exits unexpectedly, the runtime's engine SHALL restart i
 - **THEN** the agent comes back on its own with its conversation, and the child keeps running throughout
 
 ### Requirement: Requests to an agent are relayed
-`POST /agents/:id/messages` and `GET /agents/:id/events` SHALL be relayed to that agent's `agent-protocol` `/messages` and `/events`, passing the body and `Last-Event-ID` through and streaming the agent's response back unchanged. The caller SHALL NOT need, or ever receive, the agent's token. If the agent's response breaks off, the caller's response SHALL end too.
+`POST /agents/:id/messages`, `GET /agents/:id/events` and `GET /agents/:id/ui` SHALL be relayed to that agent's `agent-protocol` `/messages`, `/events` and `/ui`, passing the body and `Last-Event-ID` through and streaming the agent's response back unchanged. The caller SHALL NOT need, or ever receive, the agent's token. If the agent's response breaks off, the caller's response SHALL end too. `GET /agents/:id/ui` SHALL be refused with `403` unless the agent is a root whose grant has `workspace`.
 
 #### Scenario: The owner talks to a root agent
 - **WHEN** the owner posts a message to `/agents/:id/messages` for a running root agent
@@ -153,6 +153,14 @@ When an agent's process exits unexpectedly, the runtime's engine SHALL restart i
 #### Scenario: An agent stops while its events stream
 - **WHEN** a caller is reading `/agents/:id/events` and the agent stops or crashes
 - **THEN** the caller's stream ends, so it can reconnect
+
+#### Scenario: A sub-agent's UI
+- **WHEN** the owner requests `/agents/:id/ui` for a sub-agent
+- **THEN** it gets `403`
+
+#### Scenario: The UI of a root without workspace
+- **WHEN** the owner requests `/agents/:id/ui` for a root whose grant has no `workspace`
+- **THEN** it gets `403`
 
 ### Requirement: A relay ends with its caller
 When the caller hangs up, the runtime SHALL end the relayed request. If the caller hangs up before the relay reaches the agent, the runtime SHALL open no connection to the agent.
@@ -357,3 +365,18 @@ A workspace container exiting, restarting or being removed SHALL NOT be reported
 #### Scenario: A workspace container dies
 - **WHEN** a sub-agent's workspace container exits
 - **THEN** the sub-agent's parent receives nothing from `runtime`, and the sub-agent is still `running`
+
+### Requirement: A root agent's page is relayed without a credential
+`GET /agents/:id/page` SHALL be relayed to the agent's `/page` without a credential, only when the agent is a running root whose grant has `workspace`. For any other ID, whether a stopped agent, a sub-agent, a root without `workspace` or one that doesn't exist, it SHALL answer one `404`, `no UI for agent <id>`, and start nothing.
+
+#### Scenario: The owner opens a root's page
+- **WHEN** a browser requests `/agents/:id/page` for a running root agent with `workspace` and no `Authorization` header
+- **THEN** it gets the agent's page
+
+#### Scenario: A sub-agent's page
+- **WHEN** a request without a credential asks for a running sub-agent's page
+- **THEN** it gets the same `404` as for an ID that doesn't exist
+
+#### Scenario: The page of a root without workspace
+- **WHEN** a request without a credential asks for the page of a running root whose grant has no `workspace`
+- **THEN** it gets the same `404` as for an ID that doesn't exist
