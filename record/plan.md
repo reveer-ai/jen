@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-13.
+Last updated 2026-11-14.
 
 ## Current project: Agent harness & UI engine
 
@@ -18,7 +18,7 @@ This project builds the first working jen, end to end. Agents run in containers,
 
 Cycle 5 (Nov 23 – 29) is slack.
 
-**After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped.
+**After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped. So is the UI work after JEN-18, a data layer for agents' apps and jen's shell (see [ideas.md](ideas.md) and [decisions.md](decisions.md), 2026-11-14), which likely needs a project of its own.
 
 Each opening issue is done when its decisions are written down and every remaining issue in its milestone has been created and scoped. See "Planning" in [conventions.md](conventions.md).
 
