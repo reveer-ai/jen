@@ -7,8 +7,8 @@
 // agent receives the ask from that version. It doesn't check what the agent
 // does with it. Uses JEN_LIVE_API_KEY
 // and JEN_LIVE_BASE_URL, and the model is always Sol. Skipped when the key is
-// missing; with it set, a missing Docker fails the check. It prints what the
-// agent did and each version it published.
+// missing; with it set, a missing Docker fails the check. It prints the UI the
+// agent published and its transcript.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
