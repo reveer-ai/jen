@@ -6,6 +6,8 @@ An agent is reached only through its protocol, `POST /messages` and `GET /events
 
 See proposal.md for what this change builds and why, and `record/decisions.md` (2026-11-10) for the decisions it builds on: agents write their UI as code, the UI runs in a sandboxed frame inside a fixed page the agent serves, interfaces are dumb, and only a root agent's UI is opened, only locally.
 
+Three pieces are provisional, kept until the data layer for agents' apps replaces them (see `record/decisions.md` and `record/ideas.md`, 2026-11-14): the `UI action on version` text an action arrives as, which becomes a typed event; answering by publishing, which becomes the agent writing data into a running app; and the textbox, which becomes a first screen in stock jen's look. The page, the frame, the bridge, publishing and versions, and the routes are the foundation that work builds on.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -104,13 +106,13 @@ One exit got through: WebRTC (see Risks).
 
 The bridge is jen's script, run in the frame before the document. It defines `window.jen`:
 - `jen.version`: the version this frame shows.
-- `jen.act(context)`: hands the page an action. `context` is any JSON value the agent chose for the control: a phrase, or structured data. With it, the bridge collects `inputs`, the current value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. A checkbox gives a boolean, unless other checkboxes share its name, and then the group gives the array of its checked values, as a form would submit them. A radio group gives the checked value, a multiple `select` an array, and a file input nothing. An input with neither a `name` nor an `id` is left out, since it has no key the agent could act on, and the tool's description tells the agent to name its inputs.
+- `jen.act(context)`: hands the page an action. `context` is any JSON value the agent's code chose: a phrase, or structured data such as what the user typed. It's all the action carries. *Why:* collecting the page's `input`, `select` and `textarea` values would put the browser's form controls into the message the agent reads, and an app on another surface has none (see `record/decisions.md`, 2026-11-14). The app knows what it means to send.
 
 The page sends an action as a message whose text is:
 
 ```
 UI action on version 3:
-{"context":"approve","inputs":{"note":"Looks good"}}
+{"choice":"approve","note":"Looks good"}
 ```
 
 It's an ordinary message from the viewer. The runtime stamps the sender from the token, so it's `owner`, the root's parent. It reaches the agent like any message from the user, wakes it, and is owed a reply.
@@ -127,7 +129,7 @@ The page accepts an action only:
 
 ### How the agent updates its UI
 
-What the UI shows is what the agent publishes, and nothing else. To answer the user, or to change anything they see, the agent edits `ui/index.html` and publishes. Its text replies aren't shown on the page. `edit_file` keeps an update small, since the agent changes only the part that changes. A swap loses what the user typed after their last action, but every action carries the inputs, so the agent can write them back into the next version.
+What the UI shows is what the agent publishes, and nothing else. To answer the user, or to change anything they see, the agent edits `ui/index.html` and publishes. Its text replies aren't shown on the page. `edit_file` keeps an update small, since the agent changes only the part that changes. A swap loses what the user typed after their last action, but a UI can put them in each action's context, so the agent can write them back into the next version.
 
 *Why:* set by the maintainer in the design review. The agent communicates through its UI, and a UI that draws a transcript duplicates what a conversation pane drawn by jen, outside the frame, could show later (see `record/ideas.md`). *Rejected for now:* `jen.subscribe(fn)`, which gave a UI every conversation item, live, so an agent could write a chat-like UI once and answer in replies. It cost the page passing items in, replaying them on a swap, and parsing actions back out of messages. It can come later without changing anything here.
 
@@ -145,8 +147,8 @@ Every root with `workspace` gets this paragraph, whether or not its page is ever
 - `ui/index.html` is the entry
 - that `ui/index.html` must stand alone: scripts and styles inline, images and fonts as `data:` URLs
 - that `fetch`, references to other files and links to other pages don't work
-- `jen.act` and `jen.version`, that actions must come from click or keydown handlers, that forms never submit, and to give each input a `name`
-- to make each action's context say everything the agent will need to act on it, since nothing else on the page is sent with it, such as a heading beside the button
+- `jen.act` and `jen.version`, that actions must come from click or keydown handlers, that forms never submit
+- to make each action's context say everything the agent will need to act on it, such as what the user typed, since nothing else on the page is sent with it
 - that the user sees only what the UI shows, not the agent's replies, so each answer is a publish, and that every UI must give the user a way to act or type
 - the 4 MiB bound
 
@@ -188,10 +190,10 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
   3. Once a version above 0 is up, the check clicks the button.
   4. It passes when the frame then shows the agent's new number.
 
-  Run on 2026-11-13, it passed 3 runs of 3, each in under 25 seconds. Run 1's output wasn't kept. In runs 2 and 3, Sol wrote a self-contained page with a "New number" button calling `jen.act({action: "new_number"})` and a message box, published it as version 1, then answered the click by picking the number with `python3` in its workspace, writing it in with one `edit_file`, and publishing version 2. Run 2 showed a fault the check doesn't catch: Sol's message box was a `<form>` with a submit handler, and in a frame without `allow-forms` Chromium 158 fires no submit event, from a click or from Enter (measured), so the user's way to keep talking was dead. `publish_ui`'s description now says forms never submit and to act from click or keydown handlers. In run 3, after that change, both of Sol's controls used them. Run 4, after the trim below, passed with `onclick` and `onkeydown` handlers and no form.
+  Run on 2026-11-13, it passed 3 runs of 3, each in under 25 seconds. Run 1's output wasn't kept. In runs 2 and 3, Sol wrote a self-contained page with a "New number" button calling `jen.act({action: "new_number"})` and a message box, published it as version 1, then answered the click by picking the number with `python3` in its workspace, writing it in with one `edit_file`, and publishing version 2. Run 2 showed a fault the check doesn't catch: Sol's message box was a `<form>` with a submit handler, and in a frame without `allow-forms` Chromium 158 fires no submit event, from a click or from Enter (measured), so the user's way to keep talking was dead. `publish_ui`'s description now says forms never submit and to act from click or keydown handlers. In run 3, after that change, both of Sol's controls used them. Run 4, after the trim below, passed with `onclick` and `onkeydown` handlers and no form. Run 5, on 2026-11-14 after an action stopped carrying `inputs`, passed in 19 seconds; Sol's UI had only a button, so it didn't exercise typed text in a context.
 - **The behavior check** runs again on `openai/gpt-6-luna`, since its command and file tasks' roots now see the UI paragraph and `publish_ui`. A run that calls `publish_ui` is a fault: none of its tasks asks for a UI. It's held to the bar set on 2026-11-11.
 
-  Run on 2026-11-13, with the paragraph and description first written, the files task failed 6 of 9 runs in three passes, 5 of them by a `release.md` cut short at its `EOF` line, written with a shell heredoc instead of `write_file`. On `main` the same day it failed 1 of 6 runs in two passes, on a refused `timeout`, and wrote both files right every time. Both texts were then trimmed to what this design requires. With the trimmed texts, three passes had no `publish_ui` call. The files task failed 4 of 9 runs: 3 on a `run_command` timeout outside 1 to 600 seconds, the fault `main` also showed, and 1 on a cut `release.md`. The delegation tasks failed 3 of 54 runs on known flakes, and the command task passed 9 of 9.
+  Run on 2026-11-13, with the paragraph and description first written, the files task failed 6 of 9 runs in three passes, 5 of them by a `release.md` cut short at its `EOF` line, written with a shell heredoc instead of `write_file`. On `main` the same day it failed 1 of 6 runs in two passes, on a refused `timeout`, and wrote both files right every time. Both texts were then trimmed to what this design requires. With the trimmed texts, three passes had no `publish_ui` call. The files task failed 4 of 9 runs: 3 on a `run_command` timeout outside 1 to 600 seconds, the fault `main` also showed, and 1 on a cut `release.md`. The delegation tasks failed 3 of 54 runs on known flakes, and the command task passed 9 of 9. Run again on 2026-11-14, after an action stopped carrying `inputs`, three passes again had no `publish_ui` call. The files task failed 5 of 9 runs, 4 on a `release.md` cut short by a heredoc and 1 on an out-of-range `timeout`, against 1 of 6 on `main`. The delegation tasks failed 1 of 54, and the command task passed 9 of 9.
 
 *Why Playwright:* it drives a real Chromium in CI and in the frame, with trusted clicks that give user activation. It's a dev dependency only. *Alternative:* driving Chrome over the DevTools protocol by hand with Node's WebSocket, which still needs a browser binary and rebuilds what Playwright gives.
 

@@ -43,46 +43,12 @@ const FRAME_POLICY =
 function bridge(version) {
   // Kept now, so a UI that reassigns window.parent can't redirect actions.
   const page = window.parent;
-  // An input's key: its name, or its id.
-  const keyOf = (el) => el.getAttribute("name") || el.id;
-  const BUTTONS = new Set(["button", "submit", "reset", "image"]);
-  function inputs() {
-    const fields = [...document.querySelectorAll("input, select, textarea")].filter((el) => keyOf(el));
-    // Checkboxes that share a key give the array of their checked values.
-    const boxes = {};
-    for (const el of fields) if (el.type === "checkbox") boxes[keyOf(el)] = (boxes[keyOf(el)] || 0) + 1;
-    const values = {};
-    for (const el of fields) {
-      const key = keyOf(el);
-      if (el.tagName === "INPUT") {
-        if (el.type === "file" || BUTTONS.has(el.type)) continue;
-        if (el.type === "checkbox") {
-          if (boxes[key] > 1) {
-            if (!Array.isArray(values[key])) values[key] = [];
-            if (el.checked) values[key].push(el.value);
-          } else values[key] = el.checked;
-          continue;
-        }
-        if (el.type === "radio") {
-          if (el.checked) values[key] = el.value;
-          else if (!(key in values)) values[key] = null;
-          continue;
-        }
-        values[key] = el.value;
-      } else if (el.tagName === "SELECT" && el.multiple) {
-        values[key] = [...el.selectedOptions].map((option) => option.value);
-      } else {
-        values[key] = el.value;
-      }
-    }
-    return values;
-  }
   const jen = Object.freeze({
     version,
-    // Hands the page an action. context is any JSON value; the page sends it
-    // only if the user just clicked or typed in the frame.
+    // Hands the page an action. context is any JSON value, and all the action
+    // carries; the page sends it only if the user just clicked or typed in the frame.
     act(context) {
-      const body = JSON.stringify({ context: context === undefined ? null : context, inputs: inputs() });
+      const body = JSON.stringify(context === undefined ? null : context);
       page.postMessage({ jen: "act", version, body }, "*");
     },
   });
@@ -297,13 +263,13 @@ window.addEventListener("message", async (event) => {
   if (!navigator.userActivation.isActive) {
     return fail("The UI sent an action without a click or key press, so it was dropped.");
   }
-  let action;
+  let context;
   try {
-    action = JSON.parse(data.body);
+    context = JSON.parse(data.body);
   } catch {
     return fail("The UI sent an action that isn't JSON, so it was dropped.");
   }
-  const text = `UI action on version ${shown}:\n${JSON.stringify({ context: action?.context ?? null, inputs: action?.inputs ?? {} })}`;
+  const text = `UI action on version ${shown}:\n${JSON.stringify(context)}`;
   const body = JSON.stringify({ text });
   if (new TextEncoder().encode(body).length > MAX_MESSAGE) {
     return fail("The action is over the 1 MB bound on a message, so it was dropped.");

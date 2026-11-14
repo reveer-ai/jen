@@ -73,19 +73,15 @@ When the stream carries the result of a `publish_ui` call, the page SHALL fetch 
 - **WHEN** the agent publishes version 2 while the page shows version 1
 - **THEN** the page shows version 2
 
-### Requirement: The bridge hands the page actions with the UI's inputs
-`jen.act(context)` SHALL hand the page `context`, any JSON value, with `inputs`: the value of every `input`, `select` and `textarea` that has a `name` or `id`, keyed by it. Checkboxes that share a name SHALL give the array of their checked values.
+### Requirement: The bridge hands the page an action's context
+`jen.act(context)` SHALL hand the page `context`, any JSON value, and nothing else from the UI.
 
-#### Scenario: Inputs with an action
-- **WHEN** a UI with a text input named `note` holding "Looks good" and a checked checkbox `urgent` calls `jen.act("approve")` from a click
-- **THEN** the page receives context `"approve"` and inputs `{"note": "Looks good", "urgent": true}`
-
-#### Scenario: A group of checkboxes
-- **WHEN** three checkboxes named `t` with values `a`, `b` and `c` have `a` and `b` checked, and the UI calls `jen.act("pick")` from a click
-- **THEN** the page receives inputs `{"t": ["a", "b"]}`
+#### Scenario: Structured context
+- **WHEN** a UI calls `jen.act({"choice": "approve", "note": "Looks good"})` from a click
+- **THEN** the page receives `{"choice": "approve", "note": "Looks good"}`, and no value of the UI's inputs that the context doesn't hold
 
 ### Requirement: An action becomes a message only when the user made it
-The page SHALL post an action to `messages`, as the viewer, with the text `UI action on version <n>:`, a newline, and `{"context": …, "inputs": …}` as JSON. It SHALL drop an action that doesn't come from the current frame or names another version, one that arrives when `navigator.userActivation.isActive` is false, and one whose message would be over 1 MiB, showing each refusal in its bar.
+The page SHALL post an action to `messages`, as the viewer, with the text `UI action on version <n>:`, a newline, and the context as JSON. It SHALL drop an action that doesn't come from the current frame or names another version, one that arrives when `navigator.userActivation.isActive` is false, and one whose message would be over 1 MiB, showing each refusal in its bar.
 
 #### Scenario: A click
 - **WHEN** the user clicks a button whose handler calls `jen.act({"choice": "b"})` in version 3

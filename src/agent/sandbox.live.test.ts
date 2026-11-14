@@ -36,12 +36,6 @@ function hostile(probe: string): string {
 <link rel="stylesheet" href="${probe}/stylesheet">
 <script src="${probe}/script"></script>
 </head><body>
-<input name="note" value="Looks good">
-<input type="checkbox" name="urgent" checked>
-<input type="checkbox" name="t" value="a" checked>
-<input type="checkbox" name="t" value="b" checked>
-<input type="checkbox" name="t" value="c">
-<input value="unnamed">
 <button id="act">Act</button>
 <button id="escape">Escape</button>
 <a id="top" href="${probe}/top-link" target="_top">top</a>
@@ -80,7 +74,7 @@ function hostile(probe: string): string {
   jen.act("loaded");
   setTimeout(() => jen.act("timer"), 200);
   // A forged action naming another version.
-  parent.postMessage({ jen: "act", version: 7, body: '{"context":"forged","inputs":{}}' }, "*");
+  parent.postMessage({ jen: "act", version: 7, body: '"forged"' }, "*");
   document.getElementById("results").textContent = JSON.stringify(results);
   document.getElementById("act").addEventListener("click", () => jen.act({ choice: "b" }));
   // Tries to leave the frame, which the sandbox refuses.
@@ -198,7 +192,7 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
       type: "message",
       role: "user",
       from: "owner",
-      text: 'UI action on version 1:\n{"context":{"choice":"b"},"inputs":{"note":"Looks good","urgent":true,"t":["a","b"],"x":"1"}}',
+      text: 'UI action on version 1:\n{"choice":"b"}',
     },
   ]);
 
