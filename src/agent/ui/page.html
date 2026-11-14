@@ -208,11 +208,13 @@ async function stream() {
   }
 }
 
-// Reads Server-Sent Events from a body until it ends.
+// Reads Server-Sent Events from a body until it ends. An event's ID becomes
+// the reconnect cursor only once the whole event has arrived, so a drop
+// partway through an event resumes before it, not after it.
 async function readEvents(body) {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
-  let event = { type: "message", data: [] };
+  let event = { type: "message", data: [], id: undefined };
   for (;;) {
     const { value, done } = await reader.read();
     if (done) return;
@@ -223,8 +225,9 @@ async function readEvents(body) {
     buffer = lines.pop();
     for (const line of lines) {
       if (line === "") {
+        if (event.id !== undefined) lastEventId = event.id;
         if (event.data.length > 0) dispatch(event.type, event.data.join("\n"));
-        event = { type: "message", data: [] };
+        event = { type: "message", data: [], id: undefined };
         continue;
       }
       if (line.startsWith(":")) continue;
@@ -232,7 +235,7 @@ async function readEvents(body) {
       const field = colon === -1 ? line : line.slice(0, colon);
       let data = colon === -1 ? "" : line.slice(colon + 1);
       if (data.startsWith(" ")) data = data.slice(1);
-      if (field === "id") lastEventId = data;
+      if (field === "id") event.id = data;
       else if (field === "event") event.type = data;
       else if (field === "data") event.data.push(data);
     }

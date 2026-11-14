@@ -91,6 +91,10 @@ When the stream carries the result of a `publish_ui` call, the page SHALL fetch 
 - **WHEN** the agent publishes version 2 while the page shows version 1
 - **THEN** the page shows version 2
 
+#### Scenario: The stream drops partway through a publish's event
+- **WHEN** the page shows version 1, the agent publishes version 2, and the stream drops after the result's `id:` line but before the event ends
+- **THEN** the page reconnects from the event before it, and shows version 2 with no other publish or reload
+
 ### Requirement: The bridge is the frame's only way out
 The bridge SHALL define `window.jen` with `jen.version`, the version the frame shows, and `jen.ask(context)`, which hands the page `context`, any JSON value, and nothing else from the UI.
 

@@ -231,3 +231,41 @@ test("a publish whose UI fails to load once still shows, with no other publish o
   await expect.poll(title, { timeout: 20_000 }).toBe(`UI, version ${version}`);
   await context.close();
 }, 60_000);
+
+test("a drop partway through a publish's event still shows the new version, with no other publish or reload", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route(`${base}/page`, (route) => route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${token}` } }));
+  // The first stream waits for the publish below, then carries its call
+  // whole and its result only as far as its ID, and closes. Later streams
+  // reach the agent, which resumes after the Last-Event-ID they send.
+  let release!: (body: string) => void;
+  const cut = new Promise<string>((resolve) => (release = resolve));
+  const resumedFrom: (string | undefined)[] = [];
+  let first = true;
+  await page.route(`${base}/events`, async (route) => {
+    if (!first) {
+      resumedFrom.push(route.request().headers()["last-event-id"]);
+      return route.continue();
+    }
+    first = false;
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body: await cut });
+  });
+  await page.goto(`${base}/page#token=${token}`);
+  const title = () => page.locator("iframe").getAttribute("title");
+  const before = (await store.latestUi())!.version;
+  await expect.poll(title).toBe(`UI, version ${before}`);
+
+  const start = store.after(0).at(-1)?.seq ?? 0;
+  const version = store.publish("<p>after the drop</p>");
+  store.save([
+    { type: "tool_call", id: "publish-cut", name: "publish_ui", input: {} },
+    { type: "tool_result", callId: "publish-cut", output: `Published ui/index.html as version ${version}.` },
+  ]);
+  const [call, result] = store.after(start);
+  release(`id: ${call.seq}\nevent: item\ndata: ${JSON.stringify(call.item)}\n\nid: ${result.seq}\nevent: item\n`);
+
+  await expect.poll(title, { timeout: 20_000 }).toBe(`UI, version ${version}`);
+  expect(resumedFrom[0]).toBe(String(call.seq));
+  await context.close();
+}, 60_000);

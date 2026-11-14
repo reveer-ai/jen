@@ -83,7 +83,7 @@ The publish is saved before `publish_ui`'s result. If the agent stops between th
 
 1. Reads the viewer's token from the URL's fragment (`#token=…`), which never reaches a server. It keeps the token in `sessionStorage`, so a reload keeps working, and removes the fragment from the address bar.
 2. Fetches `ui` (relative to its own path), `{"version", "document"}`, with the token.
-3. Opens `events` with `fetch`, not `EventSource`, because `EventSource` can't send an `Authorization` header. It reads Server-Sent Events from the body. After a drop it reconnects with `Last-Event-ID`, waiting longer after each failure, up to 30 seconds.
+3. Opens `events` with `fetch`, not `EventSource`, because `EventSource` can't send an `Authorization` header. It reads Server-Sent Events from the body. After a drop it reconnects with `Last-Event-ID`, waiting longer after each failure, up to 30 seconds. An event's ID becomes that cursor only once the whole event has arrived, so a drop partway through an event resumes before it.
 4. Runs the document in a frame (below) that fills the page. It passes the frame nothing from the stream.
 5. Fetches `ui` again when an item is a `tool_result` for a `publish_ui` call, matched by the call's ID. If the version is new, it swaps the frame for the new one.
    - Old publishes in the stream each fetch `ui` too, but at most one fetch is in flight, and an unchanged version changes nothing.
@@ -261,4 +261,4 @@ The owner opens a root's UI at `http://127.0.0.1:8080/agents/<id>/page#token=<ow
 - **A UI that breaks at runtime is invisible to the agent.** A reference to another file, a `fetch` or a plain bug shows only in the browser's console, and the user tells the agent. Reporting errors automatically would send messages the user didn't make.
 - **Swapping versions loses what the user typed** in the old frame.
 - **Activation lasts a few seconds**, so a click's handler can send several asks, or one on a short timer. It can't send any without the user.
-- **Only Chromium is checked.** Safari and Firefox implement the same sandbox, CSP and user-activation rules, but no check runs on them.
+- **Only Chromium is checked, and Safari drops asks.** No check runs on Safari or Firefox. On 2026-11-14 the maintainer tried a root's UI in Safari: a click on a button whose handler called `jen.ask` at once showed "The UI asked the agent without a click or key press", and nothing reached the agent. The same document's click and Enter asks got through in headless Chromium. The textbox's ask from the same session did reach the agent, so whether Safari passes a key press up but not a click, or what else differs, is unmeasured.
