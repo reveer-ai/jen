@@ -25,8 +25,8 @@ const token = "sandbox-check-token-0123456789abcdef";
 // A UI that tries to reach the probe at probe, and the agent's own routes at
 // its page's host, in every way the design measured, and to read the page's
 // token. It writes what it saw into #results, which the check reads. One
-// button acts from a click. Another tries to leave the frame from a click,
-// apart from the action, since a popup attempt can consume the click's
+// button asks the agent from a click. Another tries to leave the frame from a
+// click, apart from the ask, since a popup attempt can consume the click's
 // activation before the page reads it.
 function hostile(probe: string): string {
   return `<!doctype html>
@@ -36,7 +36,7 @@ function hostile(probe: string): string {
 <link rel="stylesheet" href="${probe}/stylesheet">
 <script src="${probe}/script"></script>
 </head><body>
-<button id="act">Act</button>
+<button id="ask">Ask</button>
 <button id="escape">Escape</button>
 <a id="top" href="${probe}/top-link" target="_top">top</a>
 <img src="${probe}/img">
@@ -70,13 +70,13 @@ function hostile(probe: string): string {
   try { new EventSource("${probe}/event-source"); } catch {}
   try { document.getElementById("form").submit(); } catch {}
   try { window.open("${probe}/window-open"); } catch {}
-  // Actions with no user input, which the page must drop.
-  jen.act("loaded");
-  setTimeout(() => jen.act("timer"), 200);
-  // A forged action naming another version.
-  parent.postMessage({ jen: "act", version: 7, body: '"forged"' }, "*");
+  // Asks with no user input, which the page must drop.
+  jen.ask("loaded");
+  setTimeout(() => jen.ask("timer"), 200);
+  // A forged ask naming another version.
+  parent.postMessage({ jen: "ask", version: 7, body: '"forged"' }, "*");
   document.getElementById("results").textContent = JSON.stringify(results);
-  document.getElementById("act").addEventListener("click", () => jen.act({ choice: "b" }));
+  document.getElementById("ask").addEventListener("click", () => jen.ask({ choice: "b" }));
   // Tries to leave the frame, which the sandbox refuses.
   document.getElementById("escape").addEventListener("click", () => {
     try { window.open("${probe}/window-open-click"); } catch {}
@@ -149,7 +149,7 @@ async function until<T>(check: () => T | undefined | Promise<T | undefined>, wha
 
 const messages = () => store.load().filter((item) => item.type === "message" && item.role === "user");
 
-test("a hostile UI reaches no server, can't read the token, and acts only from a click", async () => {
+test("a hostile UI reaches no server, can't read the token, and asks only from a click", async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   // The runtime's relay, as far as the page needs it.
@@ -161,7 +161,7 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
   expect(page.url()).toBe(`${base}/page`);
 
   const frame = await until(() => page.frames().find((f) => f !== page.mainFrame()), "the UI's frame");
-  // The actions sent without user input, and the forged one, are dropped.
+  // The asks sent without user input, and the forged one, are dropped.
   // Nothing reads either frame's DOM until then: Playwright evaluates with a
   // user gesture, which would activate the page for a few seconds.
   await sleep(1500);
@@ -180,21 +180,14 @@ test("a hostile UI reaches no server, can't read the token, and acts only from a
   expect(results.version).toBe(1);
   expect(await frame.evaluate(() => document.documentElement.outerHTML)).not.toContain(token);
 
-  // A click's action reaches the inbox, in the given format.
-  await page.frameLocator("iframe").locator("#act").click();
-  await until(() => (messages().length > 0 ? true : undefined), "the clicked action to reach the inbox", 20_000).catch(async (error) => {
+  // A click's ask reaches the inbox, in the given format.
+  await page.frameLocator("iframe").locator("#ask").click();
+  await until(() => (messages().length > 0 ? true : undefined), "the clicked ask to reach the inbox", 20_000).catch(async (error) => {
     const bar = await page.locator("#bar-text").textContent();
     throw new Error(`${error.message}. The page's bar says ${JSON.stringify(bar)}, and the agent served ${JSON.stringify(served)}`);
   });
   await agent.idle();
-  expect(messages()).toEqual([
-    {
-      type: "message",
-      role: "user",
-      from: "owner",
-      text: 'UI action on version 1:\n{"choice":"b"}',
-    },
-  ]);
+  expect(messages()).toEqual([{ type: "message", role: "user", from: "owner", text: 'Asked from your UI, version 1:\n{"choice":"b"}' }]);
 
   // A click's popup and navigations don't leave the frame, and nothing
   // reached any server but the page's own requests.

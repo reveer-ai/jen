@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, UI_PARAGRAPH, type Identity } from "./delegation.ts";
+import { DELIVERED, delegationTools, instructions, readIdentity, RuntimeClient, RuntimeRefusal, toolsFor, type Identity } from "./delegation.ts";
 import { Agent, INTERRUPTED } from "./loop.ts";
 import type { Item, Json } from "./model/port.ts";
 import { ScriptedModel } from "./model/scripted.ts";
@@ -391,16 +391,10 @@ describe("the agent is told how to work in a tree", () => {
     expect(text).not.toMatch(/message_sub_agent|wait/);
   });
 
-  test("a root with workspace is told about its UI, and any other agent isn't", () => {
-    const text = instructions({ ...root, grant: { spawn: true, workspace: true } });
-    expect(text).toContain(UI_PARAGRAPH);
-    expect(text).toMatch(/starts with "UI action on version"/);
-    expect(text).toMatch(/never your text replies/);
-    expect(text).toMatch(/plain textbox\. So answer each UI action by publishing: write ui\/index\.html/);
-    expect(text).toMatch(/publish_ui/);
-    expect(text).toMatch(/must give the user a way to keep talking to you/);
-    expect(text).toMatch(/came from an application, which reads your replies/);
-    for (const identity of [root, { ...child, grant: { spawn: false, workspace: true } }, { ...lead, grant: { spawn: true, workspace: true } }]) {
+  // publish_ui's description says what the agent needs (see ui.ts), so a
+  // root only an application reaches is told nothing of a UI.
+  test("no agent's instructions mention a UI, a root with workspace included", () => {
+    for (const identity of [root, { ...root, grant: { spawn: true, workspace: true } }, { ...child, grant: { spawn: false, workspace: true } }, { ...lead, grant: { spawn: true, workspace: true } }]) {
       expect(instructions(identity)).not.toMatch(/publish_ui|UI/);
     }
   });

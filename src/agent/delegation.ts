@@ -238,9 +238,9 @@ export function delegationTools(identity: Identity, runtime: RuntimeClient, debt
   ];
 }
 
-// The system instructions: how agents work together, and for a root with
-// workspace, how the user reaches it through its UI. They name no agent ID,
-// so the only IDs the model knows are its sub-agents'.
+// The system instructions: how agents work together. They name no agent ID,
+// so the only IDs the model knows are its sub-agents'. They say nothing of a
+// UI: publish_ui's description says what the agent needs (ui.ts).
 export function instructions({ parent, grant }: Identity): string {
   const them = parent === "owner" ? "the user" : "your parent";
   const lines = [
@@ -260,17 +260,8 @@ export function instructions({ parent, grant }: Identity): string {
   if (grant.spawn) {
     lines.push("A plain message reaches a busy sub-agent after its current batch of work. An urgent one cancels its work in flight and makes it re-plan, so mark a message urgent only when waiting would cause harm or waste, such as a call that must be stopped.");
   }
-  if (parent === "owner" && grant.workspace) lines.push(UI_PARAGRAPH);
   return lines.join("\n\n");
 }
-
-// What a root with workspace is told about its UI. Every such root gets it,
-// since any root can be reached both through its page and by an application.
-export const UI_PARAGRAPH =
-  'A message that starts with "UI action on version" is the user acting on your UI, a page in their browser that shows only what your UI shows, never your text replies. ' +
-  "Until you publish a UI, that page is a plain textbox. So answer each UI action by publishing: write ui/index.html in your workspace and call publish_ui. " +
-  "What your UI shows is up to you, but every UI you publish must give the user a way to keep talking to you. " +
-  "Any other message came from an application, which reads your replies, so answer it with a reply as usual.";
 
 // An agent's record from the runtime, without its parent.
 function withoutParent(agent: Json | undefined): Json {

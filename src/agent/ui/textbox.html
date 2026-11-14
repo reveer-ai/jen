@@ -1,7 +1,8 @@
 <!doctype html>
-<!-- The UI every agent starts with, version 0: a box to type a message in,
-     sent through jen.act like any UI's action. It shows nothing of the
-     conversation: the agent answers it by publishing a UI of its own. -->
+<!-- The UI every agent starts with, version 0, until it publishes one: a box
+     to type in, whose text asks the agent through jen.ask like any UI. It
+     shows nothing of the conversation. It stands in for stock jen's first
+     screen. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -31,7 +32,7 @@
   function send() {
     const text = box.value.trim();
     if (text === "") return;
-    jen.act(text);
+    jen.ask(text);
     box.value = "";
     status.textContent = "Sent.";
   }

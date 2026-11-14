@@ -981,11 +981,11 @@ function current(node: Node, credential: string): boolean {
   return !!node.container && alive(node.container.state) && node.container.labels["jen.credential"] === credential;
 }
 
-// The node, if the caller may act on it. Anything else is not found, so a
-// caller can't probe for agents outside its subtree.
 // Whether the agent has a UI: only a root with workspace does.
 const hasUi = (node: Node) => node.parent === null && node.grant.workspace;
 
+// The node, if the caller may act on it. Anything else is not found, so a
+// caller can't probe for agents outside its subtree.
 function reach(nodes: Map<string, Node>, caller: Caller, id: string): Node {
   if (RESERVED.has(id) || !reaches(nodes, authorize(nodes, caller), id)) throw new RuntimeError(404, `no agent ${id}`);
   return nodes.get(id)!;

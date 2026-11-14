@@ -67,12 +67,13 @@ describe("a root with workspace publishes its UI", () => {
     expect(uiTools({ ...root, grant: { spawn: true, workspace: false } }, runtime, store)).toEqual([]);
   });
 
-  test("the description gives the contract", () => {
+  test("the description gives the contract and what the page shows, and nothing on how to answer", () => {
     const [tool] = uiTools(root, fakeRuntime({}).runtime, store);
     expect(tool!.inputSchema).toEqual({ type: "object", properties: {} });
-    for (const part of [/ui\/index\.html/, /stand alone/, /data: URLs/, /no fetch/, /jen\.act/, /jen\.version/, /click or keydown handlers/, /submit handler never runs/, /what the user typed/,/nothing else on the page is sent/, /never sees your text replies/, /a way to act or type/, /4 MB/]) {
+    for (const part of [/ui\/index\.html/, /stand alone/, /data: URLs/, /no fetch/, /jen\.ask/, /jen\.version/, /click or keydown handlers/, /submit handler never runs/, /what the user typed/, /nothing else on the page is sent/, /shows your latest published version/, /textbox as version 0/, /doesn't show your text replies/, /4 MB/]) {
       expect(tool!.description).toMatch(part);
     }
+    expect(tool!.description).not.toMatch(/answer|keep talking|every UI/i);
   });
 });
 

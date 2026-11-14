@@ -2,9 +2,10 @@
 // Sol (openai/gpt-6-sol), against a runtime of its own. A root with
 // workspace is spawned and its page opened in headless Chromium, through the
 // runtime's relay as the owner opens it. The check types a task in the
-// textbox asking for a UI with a button that asks the agent for a number,
-// clicks that button once a version above 0 shows, and passes when the frame
-// shows a number the agent published after the click. Uses JEN_LIVE_API_KEY
+// textbox asking for a UI with a button that asks the agent, clicks that
+// button once the page has swapped in a version above 0, and passes when the
+// agent receives the ask from that version. It doesn't check what the agent
+// does with it. Uses JEN_LIVE_API_KEY
 // and JEN_LIVE_BASE_URL, and the model is always Sol. Skipped when the key is
 // missing; with it set, a missing Docker fails the check. It prints what the
 // agent did and each version it published.
@@ -19,14 +20,12 @@ import type { Item } from "../agent/model/port.ts";
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const baseURL = process.env.JEN_LIVE_BASE_URL;
 const SOL = "openai/gpt-6-sol";
-// How long the agent may take to publish each version.
+// How long the agent may take to publish.
 const PUBLISH_MS = 300_000;
 
-const TASK =
-  'Make me a UI with a button labeled "New number". Each time I click it, pick a new random whole number from 1000 to 9999 yourself, ' +
-  "and show me the latest one in the UI.";
+const TASK = 'Make me a UI with a button labeled "Ping". Clicking it should ask you something, with the context "ping".';
 
-test.skipIf(!apiKey)("an action on the agent's UI reaches it, and the UI updates", { timeout: 900_000 }, async () => {
+test.skipIf(!apiKey)("the agent's published UI shows, and a click in it asks the agent", { timeout: 600_000 }, async () => {
   for (const target of ["agent", "runtime", "workspace"]) {
     docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "../..")], { timeout: 240_000 });
   }
@@ -59,23 +58,21 @@ test.skipIf(!apiKey)("an action on the agent's UI reaches it, and the UI updates
     await ui.locator("textarea").fill(TASK);
     await ui.getByRole("button", { name: "Send" }).click();
 
-    // A UI of the agent's own, then a click on its button.
-    await expect.poll(() => page.locator("iframe").getAttribute("title"), { timeout: PUBLISH_MS, interval: 1000 }).not.toBe("UI, version 0");
-    const first = await latest();
-    await expect.poll(() => page.locator("iframe").getAttribute("title")).toBe(`UI, version ${first.version}`);
-    const before = numbers(await ui.locator("body").innerText());
-    await ui.getByRole("button", { name: /new number/i }).first().click();
+    // The textbox's ask reaches the agent.
+    await expect.poll(() => asks(items).length, { timeout: 30_000 }).toBe(1);
+    expect(asks(items)[0]).toMatch(/^Asked from your UI, version 0:\n/);
 
-    // A later version, showing a number it didn't show before, which the
-    // agent wrote into the version it published.
-    await expect
-      .poll(async () => Number((await page.locator("iframe").getAttribute("title"))?.match(/\d+$/)?.[0]), { timeout: PUBLISH_MS, interval: 1000 })
-      .toBeGreaterThan(first.version);
-    const second = await latest();
-    await expect.poll(() => page.locator("iframe").getAttribute("title")).toBe(`UI, version ${second.version}`);
-    const shown = numbers(await ui.locator("body").innerText()).filter((n) => !before.includes(n));
-    console.log(`First UI, version ${first.version}:\n${first.document}\n\nAfter the click, version ${second.version}:\n${second.document}\n\nShown after the click: ${shown.join(", ")}`);
-    expect(shown.filter((n) => second.document.includes(n)).length).toBeGreaterThan(0);
+    // The page swaps in a UI of the agent's own, live.
+    await expect.poll(() => page.locator("iframe").getAttribute("title"), { timeout: PUBLISH_MS, interval: 1000 }).not.toBe("UI, version 0");
+    const shown = await latest();
+    await expect.poll(() => page.locator("iframe").getAttribute("title")).toBe(`UI, version ${shown.version}`);
+    console.log(`The agent's UI, version ${shown.version}:\n${shown.document}`);
+    await ui.getByRole("button", { name: /ping/i }).first().click();
+
+    // Its ask reaches the agent as a message from the owner, from that version.
+    // It may wait in the inbox until the agent's next step.
+    await expect.poll(() => asks(items).length, { timeout: PUBLISH_MS, interval: 1000 }).toBe(2);
+    expect(asks(items)[1]).toMatch(new RegExp(`^Asked from your UI, version ${shown.version}:\n.*ping`, "is"));
     await fetch(`${base}/agents/${root}`, { method: "DELETE", headers: owner });
   } finally {
     watch.abort();
@@ -92,8 +89,8 @@ test.skipIf(!apiKey)("an action on the agent's UI reaches it, and the UI updates
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// The four-digit numbers in text.
-const numbers = (text: string): string[] => text.match(/\b\d{4}\b/g) ?? [];
+// The texts of the asks that reached the agent, in order.
+const asks = (items: Item[]): string[] => items.flatMap((item) => (item.type === "message" && item.role === "user" && item.text.startsWith("Asked from your UI") ? [item.text] : []));
 
 // Reads the agent's event stream into items until aborted.
 async function stream(url: string, headers: Record<string, string>, items: Item[], signal: AbortSignal) {

@@ -32,9 +32,9 @@ function publishUi(runtime: RuntimeClient, store: Pick<Store, "publish">): Tool 
     description:
       `Publish ${ENTRY} in your workspace as your UI, under a new version. It's sent as it is and runs with no network, ` +
       "so it must stand alone: scripts and styles inline, images and fonts as data: URLs, and no fetch, other files or links to other pages. " +
-      "In it, jen.version is the version shown, and jen.act(context) sends you an action carrying context, any JSON value. Put in it everything you'll need, such as what the user typed, since nothing else on the page is sent. " +
-      "Call jen.act only from click or keydown handlers: an action without the user's click or key is dropped, and forms never submit, so a submit handler never runs. " +
-      "The user never sees your text replies, so answer each action by publishing, and give every UI a way to act or type. " +
+      "In it, jen.version is the version shown, and jen.ask(context) asks you something, carrying context, any JSON value. Put in it everything you'll need, such as what the user typed, since nothing else on the page is sent. " +
+      "Call jen.ask only from click or keydown handlers: an ask without the user's click or key is dropped, and forms never submit, so a submit handler never runs. " +
+      "The owner's page shows your latest published version, and jen's textbox as version 0 until you first publish. It doesn't show your text replies. " +
       "The file may be at most 4 MB.",
     inputSchema: { type: "object", properties: {} },
     async run(_input, signal) {
