@@ -262,6 +262,9 @@ async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, 
   const calls = items.flatMap(({ agent, item }) => (item.type === "tool_call" ? [{ agent, item }] : []));
   const polls = calls.filter(({ item }) => item.name === "list_agents").length;
   if (polls > 0) faults.push(`${polls} list_agents calls`);
+  // No task asks for a UI.
+  const publishes = calls.filter(({ item }) => item.name === "publish_ui").length;
+  if (publishes > 0) faults.push(`${publishes} publish_ui calls`);
   // A read_file of a file that doesn't exist isn't a fault: checking whether
   // a file exists before creating it is ordinary.
   const named = new Map(calls.map(({ item }) => [item.id, item.name]));

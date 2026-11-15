@@ -9,6 +9,7 @@ import type { Item } from "../agent/model/port.ts";
 import { ScriptedModel } from "../agent/model/scripted.ts";
 import { Agent } from "../agent/loop.ts";
 import { createServer as createAgentServer } from "../agent/server.ts";
+import { PAGE, TEXTBOX } from "../agent/ui.ts";
 import { DockerError } from "./docker.ts";
 import { FakeDocker, type FakeExec } from "./fake-docker.ts";
 import { Runtime } from "./runtime.ts";
@@ -488,6 +489,61 @@ test("a relay to an agent that can't be reached gets 502", async () => {
   const { body: root } = await spawn({ spawn: false });
   const res = await call(`/agents/${root.id}/messages`, { method: "POST", body: '{"text":"hi"}' });
   expect(res.status).toBe(502);
+});
+
+describe("a root agent's page and UI", () => {
+  test("the page relays to a running root with workspace with no token", async () => {
+    const { body: root } = await spawn({ spawn: false, workspace: true });
+    await serveAgent(root.id, []);
+    const res = await fetch(`${base}/agents/${root.id}/page`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(await res.text()).toBe(PAGE);
+  });
+
+  test("a stopped root, a sub-agent, a root without workspace and an unknown ID all get the same 404, and nothing starts", async () => {
+    const { body: stopped } = await spawn({ spawn: false, workspace: true });
+    await call(`/agents/${stopped.id}/stop`, { method: "POST" });
+    const { body: lead } = await spawn({ spawn: true, workspace: true });
+    const { body: sub } = await spawn({ spawn: false, workspace: true }, as(tokenOf(lead.id)));
+    const { body: bare } = await spawn({ spawn: true });
+    for (const id of [sub.id, bare.id]) await serveAgent(id, []);
+    const containers = docker.containers.size;
+    for (const id of [stopped.id, sub.id, bare.id, "0123456789ab", "owner"]) {
+      const res = await fetch(`${base}/agents/${id}/page`);
+      expect(res.status, id).toBe(404);
+      expect(await res.json()).toEqual({ error: `no UI for agent ${id}` });
+    }
+    expect(docker.containers.size).toBe(containers);
+    expect((await runtime.get(null, stopped.id)).state).toBe("stopped");
+  });
+
+  test("the UI is relayed to a caller that reaches the agent", async () => {
+    const { body: root } = await spawn({ spawn: false, workspace: true });
+    await serveAgent(root.id, []);
+    const res = await call(`/agents/${root.id}/ui`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ version: 0, document: TEXTBOX });
+  });
+
+  test("the UI needs a token that reaches the agent", async () => {
+    const { body: root } = await spawn({ spawn: true, workspace: true });
+    const { body: other } = await spawn({ spawn: false, workspace: true });
+    await serveAgent(root.id, []);
+    expect((await fetch(`${base}/agents/${root.id}/ui`)).status).toBe(401);
+    expect((await fetch(`${base}/agents/${root.id}/ui`, { headers: as(tokenOf(other.id)) })).status).toBe(404);
+  });
+
+  test("the UI of a sub-agent or of a root without workspace gets 403", async () => {
+    const { body: lead } = await spawn({ spawn: true, workspace: true });
+    const { body: sub } = await spawn({ spawn: false, workspace: true }, as(tokenOf(lead.id)));
+    const { body: bare } = await spawn({ spawn: false });
+    for (const id of [sub.id, bare.id]) {
+      await serveAgent(id, []);
+      expect((await call(`/agents/${id}/ui`)).status, id).toBe(403);
+    }
+  });
 });
 
 test("an unknown route gets 404", async () => {

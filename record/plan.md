@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-12.
+Last updated 2026-11-14.
 
 ## Current project: Agent harness & UI engine
 
@@ -18,7 +18,7 @@ This project builds the first working jen, end to end. Agents run in containers,
 
 Cycle 5 (Nov 23 – 29) is slack.
 
-**After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped.
+**After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped. So is the UI work after JEN-18, a data layer for agents' apps and jen's shell (see [ideas.md](ideas.md) and [decisions.md](decisions.md), 2026-11-14), which likely needs a project of its own.
 
 Each opening issue is done when its decisions are written down and every remaining issue in its milestone has been created and scoped. See "Planning" in [conventions.md](conventions.md).
 
@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-14 | [JEN-18](https://linear.app/reveer/issue/JEN-18) | [#16](https://github.com/reveer-ai/jen/pull/16) | The web shell's foundation: a root with `workspace` publishes `ui/index.html` with `publish_ui`, and its page runs it in a sandboxed frame, swaps in each version live, and sends a click's `jen.ask` to the agent. |
 | 2026-11-12 | [JEN-19](https://linear.app/reveer/issue/JEN-19) | [#15](https://github.com/reveer-ai/jen/pull/15) | Agents with the `workspace` grant read, write and edit files in their workspace through `read_file`, `write_file` and `edit_file`, on a runtime route that moves a file's bytes as the agent. |
 | 2026-11-12 | [JEN-20](https://linear.app/reveer/issue/JEN-20) | [#14](https://github.com/reveer-ai/jen/pull/14) | Agents with the `workspace` grant run commands in a sandboxed workspace container with no network, through `run_command`; the boundary check runs in CI. |
 | 2026-11-10 | [JEN-3](https://linear.app/reveer/issue/JEN-3) | [#13](https://github.com/reveer-ai/jen/pull/13) | Recorded how agents present themselves and scoped the UI engine milestone. |
@@ -43,7 +44,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-18](https://linear.app/reveer/issue/JEN-18) Let agents present themselves through UI they write. Its proposal, `add-agent-ui`, is aligned and pushed on branch `jen-18-let-agents-present-themselves-through-ui-they-write`, with no pull request yet. Its design, which waited on JEN-19, can start.
+Up next in cycle 3: [JEN-22](https://linear.app/reveer/issue/JEN-22) Make a click's ask reach the agent in Safari. A click's ask from an agent's UI is often dropped in Safari, while Enter works (see the archived `add-agent-ui` design's Risks).
 
 ## Open questions, held for their tasks
 
@@ -51,5 +52,6 @@ These are recorded so they aren't lost. Don't settle them ahead of the task that
 
 - **Auth, beyond the runtime's tokens:** [JEN-10](https://linear.app/reveer/issue/JEN-10) built an owner token and a per-agent token renewed on every start (see [decisions.md](decisions.md), 2026-11-02). Still open: human login, TLS on the runtime's port, and how a browser's `EventSource` gets a token, which belong with hosting (JEN-4). [JEN-18](https://linear.app/reveer/issue/JEN-18) needs a browser to reach an agent's UI, but only locally (see [decisions.md](decisions.md), 2026-11-10). Agents call the runtime with their own tokens since [JEN-11](https://linear.app/reveer/issue/JEN-11).
 - **Model access isn't narrowable yet.** From [JEN-10](https://linear.app/reveer/issue/JEN-10) on, every agent gets the owner's raw API key. [JEN-21](https://linear.app/reveer/issue/JEN-21) moves the key into the runtime, which proxies every model call, and cuts the agent's own container off from the internet. Commands are offline from [JEN-20](https://linear.app/reveer/issue/JEN-20) on, in a workspace container with no network. Still open after it: model access as a grant (which models, how much spend), and spend as a recursion bound.
+- **Whether the Luna-class requirement covers generative UI** (see [decisions.md](decisions.md), 2026-11-10). Evidence so far: on 2026-11-13 the maintainer tried [JEN-18](https://linear.app/reveer/issue/JEN-18)'s UI by hand on `openai/gpt-6-sol` and `openai/gpt-6-luna`, and found their UIs very similar in quality and generation time, Luna perhaps a little slower. The UI live check runs only on Sol.
 - **Organizing and cleaning up agents.** Persistent sub-agents are kept until a parent deletes them, and every agent counts toward the runtime's limit until deleted. How agents stay organized and get cleaned up over time needs more thought once real trees exist.
 - **JEN-4:** how jen reaches a user (distribution, for example an npm package) is separate from where agents run (hosting) and from where the user meets them (the surface). Each account gets its own runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). That isolates accounts only if each runtime also has its own Docker engine, typically one VM per account, because controlling an engine means controlling everything on it. JEN-4 must also leave any application able to connect to jen as a service (see [product.md](product.md)). How it connects is JEN-4's to decide.

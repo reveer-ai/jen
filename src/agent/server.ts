@@ -1,20 +1,30 @@
 // The agent's protocol over HTTP. POST /messages saves a message to the inbox
 // and answers 202. GET /events streams the conversation's saved items as
 // Server-Sent Events, resuming after Last-Event-ID, along with an error event
-// for each failed model call. Every request needs the agent's bearer token,
-// and a message needs its sender in Jen-From, which only the runtime sets.
+// for each failed model call. GET /page serves jen's fixed page, which runs
+// the agent's UI in a sandboxed frame (see ui/page.html), and GET /ui the
+// latest UI the agent published, or the textbox, version 0, before it has
+// published any. Every request needs the agent's bearer token, and a message
+// needs its sender in Jen-From, which only the runtime sets.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { Agent } from "./loop.ts";
 import type { Store } from "./store.ts";
+import { PAGE, TEXTBOX } from "./ui.ts";
 
 const KEEPALIVE_MS = 15_000;
 // How many items a stream reads from the store at a time.
-const PAGE = 100;
+const BATCH = 100;
 // The most a message body may hold. A child can message its parent, so no
 // agent may make another buffer an arbitrary upload.
 export const MAX_MESSAGE = 1024 * 1024;
+// The page's policy. A srcdoc frame inherits it, so it allows whatever the
+// frame needs but network access, which only the page has (connect-src
+// 'self'). frame-ancestors 'none' stops another site framing the page.
+export const PAGE_POLICY =
+  "default-src 'none'; script-src 'unsafe-inline' data:; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; " +
+  "media-src data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
 export function createServer({ store, agent, token }: { store: Store; agent: Agent; token: string }): http.Server {
   const expected = digest(`Bearer ${token}`);
@@ -31,7 +41,7 @@ export function createServer({ store, agent, token }: { store: Store; agent: Age
   function deliver(res: http.ServerResponse) {
     const stream = streams.get(res)!;
     while (!res.writableNeedDrain) {
-      const page = store.after(stream.seq, PAGE);
+      const page = store.after(stream.seq, BATCH);
       if (page.length === 0) break;
       for (const { seq, item } of page) {
         stream.seq = seq;
@@ -110,6 +120,11 @@ export function createServer({ store, agent, token }: { store: Store; agent: Age
     const path = (req.url ?? "/").split("?")[0];
     if (req.method === "POST" && path === "/messages") return messages(req, res);
     if (req.method === "GET" && path === "/events") return events(req, res);
+    if (req.method === "GET" && path === "/page") {
+      return void res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": PAGE_POLICY, "Cache-Control": "no-store" }).end(PAGE);
+    }
+    // JSON, so no route renders the document at the runtime's origin.
+    if (req.method === "GET" && path === "/ui") return json(res, 200, store.latestUi() ?? { version: 0, document: TEXTBOX });
     json(res, 404, { error: `no route for ${req.method} ${path}` });
   }
 

@@ -326,3 +326,17 @@ describe("each saved item has a stable position", () => {
     store.close();
   });
 });
+
+describe("the store keeps the latest UI version", () => {
+  test("none before a publish, and two publishes and a reopen give version 2 and the second document", () => {
+    const store = openStore(path);
+    expect(store.latestUi()).toBeUndefined();
+    expect(store.publish("<p>one</p>")).toBe(1);
+    expect(store.publish("<p>two</p>")).toBe(2);
+    store.close();
+
+    const reopened = openStore(path);
+    expect(reopened.latestUi()).toEqual({ version: 2, document: "<p>two</p>" });
+    reopened.close();
+  });
+});
