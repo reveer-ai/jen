@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: A press keeps focus in a text field
-While an `<input>` that takes typed text has focus in the frame, the bridge SHALL cancel the default action of a `mousedown` whose target isn't a text field, a textarea, a select or editable text. A press on one of those SHALL move focus as it does without the bridge. A click's `click` event SHALL still fire. This holds in every browser.
+While an `<input>` that takes typed text has focus in the frame, the bridge SHALL cancel the default action of a `mousedown`, so the press leaves focus in the field. It SHALL NOT cancel one on an `<input>` other than a button, checkbox or radio, a textarea, a select, editable text, or a draggable element, which behave as without the bridge. A click's `click` event SHALL still fire, in every browser.
 
 #### Scenario: Type, then click a button
 - **WHEN** the user types in an input and clicks a button whose handler calls `jen.ask({"text": "hello"})`
@@ -14,6 +14,10 @@ While an `<input>` that takes typed text has focus in the frame, the bridge SHAL
 #### Scenario: Type, then click another field
 - **WHEN** the user types in one input and clicks another input or a textarea
 - **THEN** focus moves to the field clicked
+
+#### Scenario: Type, then drag
+- **WHEN** the user types in an input, then drags a range slider's thumb or drags a draggable element onto a drop target
+- **THEN** the slider's value changes, and the drop happens
 
 #### Scenario: Nothing focused
 - **WHEN** no text input has focus and the user clicks a button
@@ -33,6 +37,7 @@ It SHALL fail if:
 - a click's ask doesn't reach the inbox
 - after typing in an input and clicking a button, the input lost focus before the button's handler ran, or the button's ask doesn't reach the inbox
 - after typing in an input and clicking a textarea, the textarea doesn't have focus
+- with an input focused, a range slider's thumb doesn't drag or a draggable element doesn't drop
 
 #### Scenario: A hostile document
 - **WHEN** the sandbox check runs

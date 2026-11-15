@@ -6,7 +6,7 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 - [ ] 1.1 In `bridge()` in `src/agent/ui/page.html`, add a capture-phase `mousedown` listener on the frame's window. When `document.activeElement` is a text field and the event's target isn't inside one of the targets below, it calls `preventDefault()`.
   - A text field is an `<input>` of type `text`, `search`, `email`, `url`, `tel`, `password` or `number`, the types WebKit ends editing for.
-  - The targets that keep their focus change are a text field, a `<textarea>`, a `<select>` and editable text (`isContentEditable`).
+  - The press goes ahead as usual on any `<input>` except the kinds that act on click (`button`, `submit`, `reset`, `image`, `checkbox` and `radio`), and on a `<textarea>`, a `<select>`, editable text (`isContentEditable`) or anything inside `[draggable=true]`. Those need `mousedown`: cancelling it stopped a range slider and drag and drop in both browsers (the design review).
 
   The bridge runs before the published document, so its listener runs first. A UI can't remove it, because it holds no reference to the listener. Cancelling `mousedown` keeps focus where it is and leaves `click` firing in Chromium and WebKit. Update the bridge's comment and the page's header comment to say why, citing Safari's dropped activation. Verify in the sandbox check (2.1).
 
@@ -17,6 +17,7 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
   - Give the hostile document an input, a button whose handler records whether the input still has focus and calls `jen.ask` with the input's value, and a textarea.
   - After the existing asks, type in the input and click the button. Pass when the button's handler saw the input focused and the ask reached the inbox.
   - Then type in the input and click the textarea, and pass when the textarea has focus.
+  - With the input focused, drag a range slider's thumb and drag a `draggable` element onto a drop target, and pass when the slider's value changed and the drop fired.
   - Adjust the count of `POST /messages` to the asks the test now makes.
 
   Check how Playwright's WebKit treats evaluating in a frame. If it activates the page as Chromium does, keep reading neither frame until the asks sent on load have been dropped.
