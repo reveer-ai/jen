@@ -4,7 +4,9 @@
      runs the agent's published UI in a sandboxed frame that has no network
      and an opaque origin. The frame's only way out is the bridge,
      window.jen, whose one request, jen.ask, the page posts to messages as
-     the viewer, only when the user just interacted with the frame. The page
+     the viewer, only when the user just interacted with the frame. Since
+     Safari loses a click's activation when the press takes focus out of a
+     text input, the bridge keeps focus in a text field during a press. The page
      passes the frame nothing from the event stream: it reads the stream only
      to learn of a publish and of the agent's errors. -->
 <html lang="en">
@@ -54,6 +56,35 @@ function bridge(version) {
     },
   });
   Object.defineProperty(window, "jen", { value: jen, enumerable: true });
+
+  // Safari drops a click's activation when the press takes focus out of a
+  // text input the user typed in, so the page would drop the click's ask
+  // (JEN-22). While a text field has focus, a press keeps it there by
+  // cancelling mousedown's default, which leaves click firing. Presses that
+  // need mousedown go ahead: on another field, a slider, a select, editable
+  // text or a draggable element. It runs in every browser, so a UI behaves
+  // the same everywhere, and it listens first, in the capture phase, before
+  // the published document runs, which holds no reference to remove it. It
+  // reaches into open shadow roots, where component kits put their inputs,
+  // but not closed ones, which a page can't see into.
+  const textFields = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
+  const clickedInputs = new Set(["button", "submit", "reset", "image", "checkbox", "radio"]);
+  window.addEventListener(
+    "mousedown",
+    (event) => {
+      let focused = document.activeElement;
+      while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
+      if (!(focused instanceof HTMLInputElement) || !textFields.has(focused.type)) return;
+      const target = event.composedPath()[0];
+      if (!(target instanceof Element)) return;
+      const input = target.closest("input");
+      if (input && !clickedInputs.has(input.type)) return;
+      if (target.closest("textarea, select, [draggable=true]")) return;
+      if (target instanceof HTMLElement && target.isContentEditable) return;
+      event.preventDefault();
+    },
+    true,
+  );
 }
 
 const bar = document.getElementById("bar");
