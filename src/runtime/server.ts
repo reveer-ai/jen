@@ -17,7 +17,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { pipeline } from "node:stream";
-import { MAX_FILE, MAX_TIMEOUT, RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
+import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
+import { MAX_FILE, MAX_TIMEOUT } from "./workspace.ts";
 
 export interface RuntimeServerOptions {
   runtime: Runtime;

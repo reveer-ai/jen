@@ -23,7 +23,7 @@ One npm package (ESM, Node ≥ 26) at the repo root. Node runs the TypeScript in
   - `model/`: the model port (`port.ts`), the scripted fake (`scripted.ts`) and the adapters.
 
   `src/agent/AGENTS.md` holds rules for working in this directory. Codex reads it only when started inside it, so read it yourself before changing code here.
-- `src/runtime/`: the runtime, which starts, stops and deletes agents on its Docker engine, relays every request to them, wakes a stopped agent for a message, and reports what only it saw. `docker.ts` is a minimal Engine API client over the socket, `runtime.ts` the tree (its only record is Docker labels), `server.ts` the API and relay, and `main.ts` its entrypoint. Unit tests run against the in-memory engine in `fake-docker.ts`.
+- `src/runtime/`: the runtime, which starts, stops and deletes agents on its Docker engine, relays every request to them, wakes a stopped agent for a message, and reports what only it saw. `docker.ts` is a minimal Engine API client over the socket, `runtime.ts` the tree (its only record is Docker labels), `workspace.ts` a workspace's fixed bounds and the bash scripts the runtime sends to run commands and move files, with the parsers for what they print, `server.ts` the API and relay, and `main.ts` its entrypoint. Unit tests run against the in-memory engine in `fake-docker.ts`.
 
 `docs/` holds views of how jen works, each a page to open in a browser. Each names the files it describes in a `<meta name="describes">` tag, so `tend` can find a view whose sources changed after it was last edited:
 

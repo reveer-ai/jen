@@ -35,7 +35,7 @@ Propose; don't change anything. Each proposal says exactly what to change, where
 
 ## Output
 
-Each pass is tracked by one issue in the project's tracker, titled `Tend: <date>` with the day the pass runs, written like `Tend: November 9th`. Label it `tend` and keep it outside any cycle or milestone. Create it before you start, even if the pass may find nothing. Findings get no issues of their own.
+Each pass is tracked by one issue in the project's tracker, titled `Tend: <date>` with the day the pass runs, written like `Tend: November 9th`. Label it `tend` and keep it outside any cycle or milestone. Create it before you start, even if the pass may find nothing. Findings get no issues of their own. An approved proposal that needs a design is the exception: it gets its own issue, and one that needs none lands in this pass's pull request.
 
 Everything the pass produces goes in one pull request, done under the issue as the project's conventions say, with ` [tend]` at the end of its title. Its description lists what was changed, moved or removed, and why.
 

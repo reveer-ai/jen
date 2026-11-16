@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { DockerError } from "./docker.ts";
 import { FakeDocker, type FakeExec } from "./fake-docker.ts";
-import { MAX_FILE, postMessage, READ_SCRIPT, Runtime, RuntimeError, waitForConnection, WRITE_SCRIPT, type CommandResult, type RuntimeOptions } from "./runtime.ts";
+import { postMessage, Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
+import { MAX_FILE, READ_SCRIPT, WRITE_SCRIPT, type CommandResult } from "./workspace.ts";
 
 const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
 
