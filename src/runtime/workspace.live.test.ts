@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { WRITE_SCRIPT } from "./runtime.ts";
+import { WRITE_SCRIPT } from "./workspace.ts";
 
 const name = `jen-live-${randomBytes(4).toString("hex")}`;
 const ownerToken = randomBytes(32).toString("hex");
