@@ -44,7 +44,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
 
-Up next in cycle 3: [JEN-22](https://linear.app/reveer/issue/JEN-22) Make a click's ask reach the agent in Safari. A click's ask from an agent's UI is often dropped in Safari, while Enter works (see the archived `add-agent-ui` design's Risks).
+In review in cycle 3: [JEN-22](https://linear.app/reveer/issue/JEN-22) Make a click's ask reach the agent in Safari, on [#17](https://github.com/reveer-ai/jen/pull/17).
 
 ## Open questions, held for their tasks
 
