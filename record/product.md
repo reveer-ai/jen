@@ -2,7 +2,9 @@
 
 ## What jen is
 
-jen is a harness for AI agents. A jen agent runs in its own container. It can delegate work to sub-agents, and each sub-agent is the same kind of agent, one level deeper. Agents use hosted AI models, not local inference. jen can run locally, for example from a terminal, or be hosted for users to reach through a web or app interface.
+jen is a harness for AI agents. A jen agent runs in its own container. It can delegate work to sub-agents, and each sub-agent is the same kind of agent, one level deeper. Agents use hosted AI models, not local inference. jen is one package that runs wherever it's installed: on a laptop, used from a terminal or a browser, or on a machine other people reach.
+
+**An agent is jen's unit.** Each agent has an owner, a person or an organization. People have their own agents, which message each other, and a person's agents stay theirs. What belongs to many people lives in an agent they share, such as a company's.
 
 **The agents are the UI.** jen isn't a UI, website or app built to serve agents. Each agent presents itself to the user through UI it generates. This is jen's core concept, and it should shape design decisions.
 
