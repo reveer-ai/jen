@@ -2,6 +2,10 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-15
+
+- **The page's activation check stays, and the bridge keeps focus in a text field during a press so Safari counts the click.** Safari loses a click's activation when the press takes focus out of a text `<input>` the user typed in, so the page dropped the most common form's ask. The cause, unmeasured on 2026-11-14, is measured in [JEN-22](https://linear.app/reveer/issue/JEN-22) and its change, `keep-input-focus-for-asks`. *Why:* set by the maintainer. Without the check, a UI could message the agent as the owner with no one acting, for example in a loop on load, and nothing caps an agent's spend yet. *Rejected:* a confirm bar the page shows for an ask without activation, since most forms in Safari would have taken two presses.
+
 ## 2026-11-14
 
 Made in [JEN-18](https://linear.app/reveer/issue/JEN-18)'s implementation review, checking it against the direction below. The design is in `openspec/changes/archive/2026-11-14-add-agent-ui/`:

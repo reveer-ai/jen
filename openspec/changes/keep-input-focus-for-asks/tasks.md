@@ -4,7 +4,7 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 ## 1. The bridge keeps focus
 
-- [ ] 1.1 In `bridge()` in `src/agent/ui/page.html`, add a capture-phase `mousedown` listener on the frame's window. When `document.activeElement` is a text field and the event's target isn't inside one of the targets below, it calls `preventDefault()`.
+- [x] 1.1 In `bridge()` in `src/agent/ui/page.html`, add a capture-phase `mousedown` listener on the frame's window. When `document.activeElement` is a text field and the event's target isn't inside one of the targets below, it calls `preventDefault()`.
   - A text field is an `<input>` of type `text`, `search`, `email`, `url`, `tel`, `password` or `number`, the types WebKit ends editing for.
   - The press goes ahead as usual on any `<input>` except the kinds that act on click (`button`, `submit`, `reset`, `image`, `checkbox` and `radio`), and on a `<textarea>`, a `<select>`, editable text (`isContentEditable`) or anything inside `[draggable=true]`. Those need `mousedown`: cancelling it stopped a range slider and drag and drop in both browsers (the design review).
 
@@ -12,7 +12,7 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 ## 2. The sandbox check on both browsers
 
-- [ ] 2.1 In `src/agent/sandbox.live.test.ts`:
+- [x] 2.1 In `src/agent/sandbox.live.test.ts`:
   - Run every test in Playwright's Chromium and WebKit, with what's recorded (`probed`, `served`, the inbox) checked per browser.
   - Give the hostile document an input, a button whose handler records whether the input still has focus and calls `jen.ask` with the input's value, and a textarea.
   - After the existing asks, type in the input and click the button. Pass when the button's handler saw the input focused and the ask reached the inbox.
@@ -21,19 +21,19 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
   - Adjust the count of `POST /messages` to the asks the test now makes.
 
   Check how Playwright's WebKit treats evaluating in a frame. If it activates the page as Chromium does, keep reading neither frame until the asks sent on load have been dropped.
-- [ ] 2.2 In `.github/workflows/ci.yml`, have the `sandbox` job install WebKit with Chromium (`npx playwright install --with-deps chromium webkit`).
+- [x] 2.2 In `.github/workflows/ci.yml`, have the `sandbox` job install WebKit with Chromium (`npx playwright install --with-deps chromium webkit`).
 
 ## 3. Record and docs
 
-- [ ] 3.1 In `record/environment.md`, update the sandbox check's note:
+- [x] 3.1 In `record/environment.md`, update the sandbox check's note:
   - it runs on both browsers and needs `npx playwright install chromium webkit`
   - it checks that focus stays in a text field through a click
   - Playwright's WebKit can't reproduce Safari's dropped activation, so a change to the bridge's focus handling or to the activation check needs a hand check in Safari
-- [ ] 3.2 Add a dated entry to `record/decisions.md`: the activation check stays, and the bridge keeps focus in a text field so Safari counts the click. *Why:* set by the maintainer on 2026-11-15. Without the check, a UI could message the agent as the owner with no one acting, for example in a loop on load, and nothing caps an agent's spend yet. The confirm bar was rejected because most forms in Safari would have taken two presses.
-- [ ] 3.3 Check whether `docs/architecture.html` describes the bridge closely enough to need this. If it does, update it.
+- [x] 3.2 Add a dated entry to `record/decisions.md`: the activation check stays, and the bridge keeps focus in a text field so Safari counts the click. *Why:* set by the maintainer on 2026-11-15. Without the check, a UI could message the agent as the owner with no one acting, for example in a loop on load, and nothing caps an agent's spend yet. The confirm bar was rejected because most forms in Safari would have taken two presses.
+- [x] 3.3 Check whether `docs/architecture.html` describes the bridge closely enough to need this. If it does, update it.
 
 ## 4. Verification
 
-- [ ] 4.1 `npm run check` and `npm test` pass, and the sandbox check passes in both browsers.
-- [ ] 4.2 The UI live check (`src/runtime/ui.live.test.ts`) passes on Sol, since the bridge now changes how every published UI handles a press.
+- [x] 4.1 `npm run check` and `npm test` pass, and the sandbox check passes in both browsers.
+- [x] 4.2 The UI live check (`src/runtime/ui.live.test.ts`) passes on Sol, since the bridge now changes how every published UI handles a press.
 - [ ] 4.3 The maintainer opens a root's UI in Safari, types in an input and clicks its button, and the ask reaches the agent. This is the only check of Safari itself. If it's still dropped, the fix is wrong, whatever the automated checks say.
