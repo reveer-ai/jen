@@ -36,4 +36,4 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 - [x] 4.1 `npm run check` and `npm test` pass, and the sandbox check passes in both browsers.
 - [x] 4.2 The UI live check (`src/runtime/ui.live.test.ts`) passes on Sol, since the bridge now changes how every published UI handles a press.
-- [ ] 4.3 The maintainer opens a root's UI in Safari, types in an input and clicks its button, and the ask reaches the agent. This is the only check of Safari itself. If it's still dropped, the fix is wrong, whatever the automated checks say.
+- [x] 4.3 The maintainer opens a root's UI in Safari, types in an input and clicks its button, and the ask reaches the agent. This is the only check of Safari itself. If it's still dropped, the fix is wrong, whatever the automated checks say.
