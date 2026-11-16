@@ -64,15 +64,18 @@ function bridge(version) {
   // need mousedown go ahead: on another field, a slider, a select, editable
   // text or a draggable element. It runs in every browser, so a UI behaves
   // the same everywhere, and it listens first, in the capture phase, before
-  // the published document runs, which holds no reference to remove it.
+  // the published document runs, which holds no reference to remove it. It
+  // reaches into open shadow roots, where component kits put their inputs,
+  // but not closed ones, which a page can't see into.
   const textFields = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
   const clickedInputs = new Set(["button", "submit", "reset", "image", "checkbox", "radio"]);
   window.addEventListener(
     "mousedown",
     (event) => {
-      const focused = document.activeElement;
+      let focused = document.activeElement;
+      while (focused?.shadowRoot?.activeElement) focused = focused.shadowRoot.activeElement;
       if (!(focused instanceof HTMLInputElement) || !textFields.has(focused.type)) return;
-      const target = event.target;
+      const target = event.composedPath()[0];
       if (!(target instanceof Element)) return;
       const input = target.closest("input");
       if (input && !clickedInputs.has(input.type)) return;

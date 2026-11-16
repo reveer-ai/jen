@@ -31,8 +31,9 @@ const token = "sandbox-check-token-0123456789abcdef";
 // button asks the agent from a click. Another tries to leave the frame from a
 // click, apart from the ask, since a popup attempt can consume the click's
 // activation before the page reads it. A form of an input and a button asks
-// with the input's value, and the controls after it need mousedown with the
-// input focused; what their handlers saw goes in #seen.
+// with the input's value, the controls after it need mousedown with the input
+// focused, and another form sits in an open shadow root; what their handlers
+// saw goes in #seen.
 function hostile(probe: string): string {
   return `<!doctype html>
 <html><head>
@@ -52,6 +53,8 @@ function hostile(probe: string): string {
 <div><input id="slider" type="range" min="0" max="100" value="0" style="width: 200px"></div>
 <div id="drag" draggable="true" style="width: 60px; height: 40px; background: gray">drag</div>
 <div id="drop" style="width: 120px; height: 60px; background: silver">drop</div>
+<div><select id="choice"><option>a</option><option>b</option></select> <span id="editable" contenteditable="true" style="display: inline-block; width: 120px; border: 1px solid">edit</span></div>
+<x-form id="shadow"></x-form>
 <pre id="seen"></pre>
 <pre id="results"></pre>
 <script>
@@ -109,6 +112,18 @@ function hostile(probe: string): string {
     event.preventDefault();
     seen.dropped = true;
     record();
+  });
+  // A form inside an open shadow root, as a component kit would build it.
+  customElements.define("x-form", class extends HTMLElement {
+    constructor() {
+      super();
+      const root = this.attachShadow({ mode: "open" });
+      root.innerHTML = '<input id="inner-field"> <button id="inner-send">Send</button>';
+      root.getElementById("inner-send").addEventListener("click", () => {
+        seen.shadowFocusedAtSend = root.activeElement === root.getElementById("inner-field");
+        record();
+      });
+    }
   });
 </script>
 </body></html>`;
@@ -260,6 +275,21 @@ describe.each<[string, BrowserType]>([
     expect(await focused()).toBe("field");
     await ui.locator("#drag").dragTo(ui.locator("#drop"));
     expect((await seen()).dropped).toBe(true);
+
+    // With the input focused, a press on a select or editable text takes focus.
+    for (const id of ["choice", "editable"]) {
+      await ui.locator("#field").click();
+      await ui.locator(`#${id}`).click();
+      expect(await focused()).toBe(id);
+      await page.keyboard.press("Escape");
+    }
+
+    // Inside an open shadow root, typing in an input and clicking its button
+    // keeps focus in the input too.
+    await ui.locator("#inner-field").click();
+    await ui.locator("#inner-field").pressSequentially("hi");
+    await ui.locator("#inner-send").click();
+    expect((await seen()).shadowFocusedAtSend).toBe(true);
 
     // A click's popup and navigations don't leave the frame, and nothing
     // reached any server but the page's own requests.

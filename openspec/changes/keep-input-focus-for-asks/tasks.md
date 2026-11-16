@@ -4,7 +4,8 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 ## 1. The bridge keeps focus
 
-- [x] 1.1 In `bridge()` in `src/agent/ui/page.html`, add a capture-phase `mousedown` listener on the frame's window. When `document.activeElement` is a text field and the event's target isn't inside one of the targets below, it calls `preventDefault()`.
+- [x] 1.1 In `bridge()` in `src/agent/ui/page.html`, add a capture-phase `mousedown` listener on the frame's window. When the focused element is a text field and the event's target isn't inside one of the targets below, it calls `preventDefault()`.
+  - The focused element is `document.activeElement`, followed into each open shadow root's `activeElement`, and the target is `event.composedPath()[0]`, so a form inside a web component is covered (the implementation review). A closed shadow root can't be seen into.
   - A text field is an `<input>` of type `text`, `search`, `email`, `url`, `tel`, `password` or `number`, the types WebKit ends editing for.
   - The press goes ahead as usual on any `<input>` except the kinds that act on click (`button`, `submit`, `reset`, `image`, `checkbox` and `radio`), and on a `<textarea>`, a `<select>`, editable text (`isContentEditable`) or anything inside `[draggable=true]`. Those need `mousedown`: cancelling it stopped a range slider and drag and drop in both browsers (the design review).
 
@@ -18,6 +19,8 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
   - After the existing asks, type in the input and click the button. Pass when the button's handler saw the input focused and the ask reached the inbox.
   - Then type in the input and click the textarea, and pass when the textarea has focus.
   - With the input focused, drag a range slider's thumb and drag a `draggable` element onto a drop target, and pass when the slider's value changed and the drop fired.
+  - With the input focused, click a select, then editable text, and pass when each takes focus.
+  - In a form inside an open shadow root, type in its input and click its button, and pass when the button's handler saw the input focused.
   - Adjust the count of `POST /messages` to the asks the test now makes.
 
   Check how Playwright's WebKit treats evaluating in a frame. If it activates the page as Chromium does, keep reading neither frame until the asks sent on load have been dropped.
