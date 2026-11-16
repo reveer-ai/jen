@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-15 | [JEN-22](https://linear.app/reveer/issue/JEN-22) | [#17](https://github.com/reveer-ai/jen/pull/17) | A click's ask reaches the agent in Safari: the bridge keeps focus in a text field during a press, and the sandbox check runs in Chromium and WebKit. |
 | 2026-11-14 | [JEN-18](https://linear.app/reveer/issue/JEN-18) | [#16](https://github.com/reveer-ai/jen/pull/16) | The web shell's foundation: a root with `workspace` publishes `ui/index.html` with `publish_ui`, and its page runs it in a sandboxed frame, swaps in each version live, and sends a click's `jen.ask` to the agent. |
 | 2026-11-12 | [JEN-19](https://linear.app/reveer/issue/JEN-19) | [#15](https://github.com/reveer-ai/jen/pull/15) | Agents with the `workspace` grant read, write and edit files in their workspace through `read_file`, `write_file` and `edit_file`, on a runtime route that moves a file's bytes as the agent. |
 | 2026-11-12 | [JEN-20](https://linear.app/reveer/issue/JEN-20) | [#14](https://github.com/reveer-ai/jen/pull/14) | Agents with the `workspace` grant run commands in a sandboxed workspace container with no network, through `run_command`; the boundary check runs in CI. |
@@ -43,8 +44,6 @@ Finished work, newest first. The pull request holds the reviews and verification
 | 2026-10-26 | [JEN-1](https://linear.app/reveer/issue/JEN-1) | [#3](https://github.com/reveer-ai/jen/pull/3) | Recorded the agent's core design and scoped the Agent container milestone. |
 | 2026-10-24 | [JEN-6](https://linear.app/reveer/issue/JEN-6) | [#2](https://github.com/reveer-ai/jen/pull/2) | Scoped this project: its milestones, opening issues and cycles. |
 | 2026-10-24 | [JEN-5](https://linear.app/reveer/issue/JEN-5) | [#1](https://github.com/reveer-ai/jen/pull/1) | Initialized OpenSpec and this record. |
-
-In review in cycle 3: [JEN-22](https://linear.app/reveer/issue/JEN-22) Make a click's ask reach the agent in Safari, on [#17](https://github.com/reveer-ai/jen/pull/17).
 
 ## Open questions, held for their tasks
 
