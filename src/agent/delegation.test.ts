@@ -25,12 +25,14 @@ describe("the agent knows who it is", () => {
 
   // The entrypoint, run as the container runs it, with everything else it needs.
   function main(overrides: Record<string, string | undefined>) {
-    const vars: Record<string, string | undefined> = { ...process.env, JEN_MODEL: "m", JEN_API_KEY: "k", JEN_TOKEN: "t", ...env, ...overrides };
+    const vars: Record<string, string | undefined> = { ...process.env, JEN_MODEL: "m", JEN_TOKEN: "t", JEN_API_KEY: undefined, JEN_BASE_URL: undefined, ...env, ...overrides };
     for (const [name, value] of Object.entries(vars)) if (value === undefined) delete vars[name];
     return spawnSync(process.execPath, [join(import.meta.dirname, "main.ts")], { env: vars as NodeJS.ProcessEnv, encoding: "utf8", timeout: 10_000 });
   }
 
   test.each([
+    ["JEN_MODEL", { JEN_MODEL: undefined }],
+    ["JEN_TOKEN", { JEN_TOKEN: undefined }],
     ["JEN_AGENT_ID", { JEN_AGENT_ID: undefined }],
     ["JEN_PARENT", { JEN_PARENT: undefined }],
     ["JEN_PARENT", { JEN_PARENT: "" }],

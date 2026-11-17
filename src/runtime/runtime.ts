@@ -65,7 +65,9 @@ export interface RuntimeOptions {
   image: string;
   // The workspace image, run with its default command.
   workspaceImage: string;
-  model: { model: string; apiKey: string; baseURL?: string };
+  // The model ID agents' adapters send. The runtime's server holds the key
+  // and the endpoint, which no agent is given.
+  model: string;
   maxDepth: number;
   maxAgents: number;
   // Where an agent's protocol is served, given its container's name.
@@ -657,9 +659,7 @@ export class Runtime {
     await docker.createContainer(resource, {
       image,
       env: [
-        `JEN_MODEL=${model.model}`,
-        `JEN_API_KEY=${model.apiKey}`,
-        ...(model.baseURL ? [`JEN_BASE_URL=${model.baseURL}`] : []),
+        `JEN_MODEL=${model}`,
         `JEN_TOKEN=${token}`,
         `JEN_RUNTIME_URL=${RUNTIME_URL}`,
         `JEN_AGENT_ID=${node.id}`,

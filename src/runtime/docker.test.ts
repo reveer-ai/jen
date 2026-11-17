@@ -181,7 +181,18 @@ test("creates, inspects and connects networks", async () => {
   expect(await docker.inspectNetwork("jen")).toEqual({ name: "jen" });
   await docker.connectNetwork("jen", "c1", ["runtime"]);
   expect(seen).toEqual([
-    { method: "POST", url: "/v1.47/networks/create", body: { Name: "jen", Driver: "bridge", Labels: { "jen.runtime": "jen" } } },
+    {
+      method: "POST",
+      url: "/v1.47/networks/create",
+      body: {
+        Name: "jen",
+        Driver: "bridge",
+        Internal: true,
+        EnableIPv6: false,
+        Options: { "com.docker.network.bridge.gateway_mode_ipv4": "isolated" },
+        Labels: { "jen.runtime": "jen" },
+      },
+    },
     { method: "GET", url: "/v1.47/networks/jen", body: undefined },
     { method: "POST", url: "/v1.47/networks/jen/connect", body: { Container: "c1", EndpointConfig: { Aliases: ["runtime"] } } },
   ]);

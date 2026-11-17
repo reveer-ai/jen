@@ -7,7 +7,7 @@ import { FakeDocker, type FakeExec } from "./fake-docker.ts";
 import { postMessage, Runtime, RuntimeError, waitForConnection, type RuntimeOptions } from "./runtime.ts";
 import { MAX_FILE, READ_SCRIPT, WRITE_SCRIPT, type CommandResult } from "./workspace.ts";
 
-const model = { model: "m", apiKey: "k", baseURL: "https://example.test/v1" };
+const model = "m";
 
 // A runtime on a fake engine, started from its own container. sent records
 // each message the runtime sends, by the container it was sent to.
@@ -61,8 +61,6 @@ describe("spawn", () => {
       image: "jen",
       env: [
         "JEN_MODEL=m",
-        "JEN_API_KEY=k",
-        "JEN_BASE_URL=https://example.test/v1",
         `JEN_TOKEN=${token}`,
         "JEN_RUNTIME_URL=http://runtime:8080",
         `JEN_AGENT_ID=${agent.id}`,
@@ -76,10 +74,22 @@ describe("spawn", () => {
     });
   });
 
-  test("leaves JEN_BASE_URL out when the runtime has none", async () => {
-    const { docker, runtime } = await setup({ model: { model: "m", apiKey: "k" } });
-    const agent = await runtime.spawn(null, { spawn: false });
-    expect(container(docker, agent.id)!.env.some((e) => e.startsWith("JEN_BASE_URL"))).toBe(false);
+  test("no agent is given the model's key or endpoint", async () => {
+    vi.stubEnv("JEN_API_KEY", "sk-owner-key-7f3a");
+    vi.stubEnv("JEN_BASE_URL", "https://provider.example.test/v1");
+    try {
+      const { docker, runtime, as } = await setup();
+      const root = await runtime.spawn(null, { spawn: true, workspace: true });
+      await runtime.spawn(as(root.id), { spawn: false });
+      const agents = [...docker.containers.values()].filter((c) => c.labels["jen.agent"]);
+      expect(agents).toHaveLength(2);
+      for (const c of agents) {
+        const config = JSON.stringify([c.env, c.spec]);
+        for (const held of ["sk-owner-key-7f3a", "provider.example.test", "JEN_API_KEY", "JEN_BASE_URL"]) expect(config).not.toContain(held);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test("an agent spawns a sub-agent with its own token", async () => {
@@ -427,7 +437,9 @@ describe("startup", () => {
     const { docker, self, runtime } = engine();
     await runtime.startup(self.id);
     expect(self.name).toBe("jen-runtime");
-    expect(docker.networks.get("jen")).toMatchObject({ labels: { "jen.runtime": "jen" } });
+    // Internal, with no IPv6 and an isolated gateway: agents on it reach
+    // nothing but the runtime and each other.
+    expect(docker.networks.get("jen")).toMatchObject({ labels: { "jen.runtime": "jen" }, internal: true, enableIPv6: false, gatewayModeIPv4: "isolated" });
     expect(docker.networks.get("jen")!.aliases.get(self.id)).toEqual(["runtime"]);
   });
 

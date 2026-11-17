@@ -1,15 +1,20 @@
 // Sends a message to one container, then asks a new container on the same
 // volume to recall it, over the agent's protocol, reading each reply from the
 // event stream. The check plays the runtime's part: it sets each message's
-// sender and the agent's identity, as a root agent with no grant to spawn. Uses the same JEN_LIVE_*
-// variables as the adapter's live check. Skipped when the key or model is
-// missing; with them set, a missing Docker fails the check.
+// sender and the agent's identity, as a root agent with no grant to spawn,
+// and serves a stand-in for the runtime's model route on the host, which adds
+// the key and forwards the call to the provider, so the container holds no
+// key. Uses the same JEN_LIVE_* variables as the adapter's live check.
+// Skipped when the key or model is missing; with them set, a missing Docker
+// fails the check.
 //
 // Vitest can't interrupt a synchronous child, so each Docker command has its
 // own deadline, and together they fit inside the test's timeout.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import type { Item } from "./model/port.ts";
@@ -26,9 +31,10 @@ test.skipIf(!apiKey || !model)("a new container on the same volume recalls the f
   const volume = `jen-live-${randomBytes(4).toString("hex")}`;
   const token = randomBytes(32).toString("hex");
   const containers: string[] = [];
+  const proxy = await serveProxy(token);
   docker(["volume", "create", volume]);
   try {
-    let base = await start(volume, token, containers);
+    let base = await start(volume, token, proxy.port, containers);
     expect((await fetch(`${base}/events`)).status).toBe(401);
 
     const word = `jen-${randomBytes(4).toString("hex")}`;
@@ -37,7 +43,7 @@ test.skipIf(!apiKey || !model)("a new container on the same volume recalls the f
     const first = await reply(`${base}/events`, token, 0);
     docker(["rm", "-f", containers.at(-1)!]);
 
-    base = await start(volume, token, containers);
+    base = await start(volume, token, proxy.port, containers);
     const recall = "What was the word I asked you to remember? Reply with just the word.";
     await send(base, token, recall);
     const second = await reply(`${base}/events`, token, first.events.at(-1)!.id);
@@ -47,22 +53,57 @@ test.skipIf(!apiKey || !model)("a new container on the same volume recalls the f
     // before the second. The replies' wording is the model's.
     expect(first.events[0]!.item).toEqual({ type: "message", role: "user", from: "owner", text: remember });
     expect(second.events[0]!.item).toEqual({ type: "message", role: "user", from: "owner", text: recall });
+    // Every model call went through the stand-in, one or more a turn.
+    expect(proxy.calls()).toBeGreaterThanOrEqual(2);
   } finally {
     for (const container of containers) spawnSync("docker", ["rm", "-f", container], { timeout: 30_000 });
     docker(["volume", "rm", volume]);
+    proxy.server.closeAllConnections();
+    proxy.server.close();
   }
 });
 
-// Starts the agent detached on a random port bound to 127.0.0.1, and returns
-// its address once it accepts connections. Credentials are passed by name,
-// so they stay off the command line.
-async function start(volume: string, token: string, containers: string[]): Promise<string> {
+// A stand-in for the runtime's model route: POST /model/responses with the
+// agent's token is sent on to the provider with the key, and its answer
+// passed back. It listens on every interface, since on Linux the container
+// reaches the host at the bridge's gateway, so it takes only the agent's
+// token. calls counts the calls forwarded.
+async function serveProxy(token: string) {
+  let forwarded = 0;
+  const server = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", async () => {
+      if (req.method !== "POST" || req.url !== "/model/responses") return void res.writeHead(404).end();
+      if (req.headers.authorization !== `Bearer ${token}`) return void res.writeHead(401).end();
+      forwarded++;
+      try {
+        const answer = await fetch(`${(baseURL ?? "https://api.openai.com/v1").replace(/\/+$/, "")}/responses`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json", accept: "application/json" },
+          body: Buffer.concat(chunks),
+        });
+        res.writeHead(answer.status, { "content-type": answer.headers.get("content-type") ?? "application/json" }).end(Buffer.from(await answer.arrayBuffer()));
+      } catch (error) {
+        res.writeHead(502, { "content-type": "application/json" }).end(JSON.stringify({ error: String(error) }));
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "0.0.0.0", resolve));
+  return { server, port: (server.address() as AddressInfo).port, calls: () => forwarded };
+}
+
+// Starts the agent detached on a random port bound to 127.0.0.1, with the
+// stand-in proxy as its runtime and no key, and returns its address once it
+// accepts connections. The token is passed by name, so it stays off the
+// command line. host.docker.internal is added so Linux has it too.
+async function start(volume: string, token: string, proxyPort: number, containers: string[]): Promise<string> {
   const identity = { JEN_AGENT_ID: "a1b2c3d4e5f6", JEN_PARENT: "owner", JEN_GRANT: '{"spawn":false}' };
-  const env = { ...process.env, JEN_MODEL: model, JEN_API_KEY: apiKey, JEN_BASE_URL: baseURL, JEN_TOKEN: token, ...identity };
-  const names = ["JEN_MODEL", "JEN_API_KEY", "JEN_TOKEN", ...Object.keys(identity), ...(baseURL ? ["JEN_BASE_URL"] : [])];
+  const env = { ...process.env, JEN_MODEL: model, JEN_TOKEN: token, JEN_RUNTIME_URL: `http://host.docker.internal:${proxyPort}`, ...identity };
+  const names = ["JEN_MODEL", "JEN_TOKEN", "JEN_RUNTIME_URL", ...Object.keys(identity)];
   const container = `${volume}-${randomBytes(4).toString("hex")}`;
   containers.push(container);
-  const args = ["run", "-d", "--name", container, "-p", "127.0.0.1::8080", "-v", `${volume}:/state`, ...names.flatMap((n) => ["-e", n]), "jen-agent"];
+  const args = ["run", "-d", "--name", container, "-p", "127.0.0.1::8080", "--add-host", "host.docker.internal:host-gateway", "-v", `${volume}:/state`, ...names.flatMap((n) => ["-e", n]), "jen-agent"];
   docker(args, { env });
   const port = docker(["port", container, "8080/tcp"]).trim().split(":").at(-1);
   const base = `http://127.0.0.1:${port}`;
