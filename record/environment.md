@@ -67,6 +67,7 @@ Commands:
 
 ## Tool quirks
 
+- **`git push` to `origin` can fail with `Permission denied (publickey)`.** The remote is `git@github.com`, but the maintainer's SSH config reaches the `joshtgi` GitHub account only through the host alias `joshtgi`. Push with `git push joshtgi:reveer-ai/jen.git HEAD:refs/heads/<branch>`; `gh` works as it is. Seen on 2026-11-16.
 - **The Linear MCP can't create cycles or change team settings.** Someone has to do that in the Linear UI. For example, the number of upcoming cycles is set under jen team settings → Cycles.
 - **Adding an issue to a cycle moves it from Backlog to Todo.**
 - **GitHub refuses an approving or changes-requested review from a pull request's author**, and every session acts as the author, so reviews are posted as `COMMENT` with the verdict in the body.
