@@ -14,7 +14,7 @@
 
 ## 3. The agents' network
 
-- [x] 3.1 In `src/runtime/docker.ts`, `createNetwork` creates the internal network the design names: `Internal: true`, `EnableIPv6: false` and `com.docker.network.bridge.gateway_mode_ipv4=isolated`. Its comment says why the isolated gateway is needed, citing the 2026-11-16 measurement. `fake-docker.ts` records the settings, and `docker.test.ts` and `runtime.test.ts` check them.
+- [x] 3.1 In `src/runtime/docker.ts`, `createNetwork` creates the internal network the design names: `Internal: true`, `EnableIPv6: false` and `com.docker.network.bridge.gateway_mode_ipv4=isolated`. Its comment says why the isolated gateway is needed, citing the 2026-11-16 measurement. `docker.test.ts` checks the request sends them.
 - [x] 3.2 Migrate this laptop by hand, as the design's Migration Plan says, before the live checks.
 
 ## 4. Live checks
@@ -38,5 +38,5 @@
 ## 6. Verification
 
 - [x] 6.1 `npm run check` and `npm test` pass.
-- [ ] 6.2 The boundary check passes on Docker Desktop, and in CI on a plain Linux kernel.
+- [x] 6.2 The boundary check passes on Docker Desktop, and in CI on a plain Linux kernel.
 - [x] 6.3 The container, runtime and UI checks pass, and the behavior check passes on `openai/gpt-6-luna`, all with model calls going through the proxy.

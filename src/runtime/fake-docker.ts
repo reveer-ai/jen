@@ -29,22 +29,10 @@ export interface FakeContainer extends ContainerDetails {
   volume?: string;
 }
 
-// The settings createNetwork gives a network on the engine.
-const AGENTS_NETWORK = { internal: true, enableIPv6: false, gatewayModeIPv4: "isolated" } as const;
-
-export interface FakeNetwork {
-  name: string;
-  labels: Record<string, string>;
-  aliases: Map<string, string[]>;
-  internal: boolean;
-  enableIPv6: boolean;
-  gatewayModeIPv4: "isolated" | "nat";
-}
-
 export class FakeDocker implements Docker {
   readonly volumes = new Map<string, Volume>();
   readonly containers = new Map<string, FakeContainer>();
-  readonly networks = new Map<string, FakeNetwork>();
+  readonly networks = new Map<string, { name: string; labels: Record<string, string>; aliases: Map<string, string[]> }>();
   readonly #watches = new Set<{ labels: string[]; onExit: (id: string) => void }>();
   // Every exec, in the order they started.
   readonly execs: FakeExec[] = [];
@@ -159,7 +147,7 @@ export class FakeDocker implements Docker {
 
   async createNetwork(name: string, labels: Record<string, string>) {
     if (this.networks.has(name)) throw new DockerError(409, `network with name ${name} already exists`);
-    this.networks.set(name, { name, labels: { ...labels }, aliases: new Map(), ...AGENTS_NETWORK });
+    this.networks.set(name, { name, labels: { ...labels }, aliases: new Map() });
   }
   async inspectNetwork(name: string) {
     return this.networks.has(name) ? { name } : undefined;

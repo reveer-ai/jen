@@ -437,9 +437,7 @@ describe("startup", () => {
     const { docker, self, runtime } = engine();
     await runtime.startup(self.id);
     expect(self.name).toBe("jen-runtime");
-    // Internal, with no IPv6 and an isolated gateway: agents on it reach
-    // nothing but the runtime and each other.
-    expect(docker.networks.get("jen")).toMatchObject({ labels: { "jen.runtime": "jen" }, internal: true, enableIPv6: false, gatewayModeIPv4: "isolated" });
+    expect(docker.networks.get("jen")).toMatchObject({ labels: { "jen.runtime": "jen" } });
     expect(docker.networks.get("jen")!.aliases.get(self.id)).toEqual(["runtime"]);
   });
 
