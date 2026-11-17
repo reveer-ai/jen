@@ -4,7 +4,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-16
 
-Made in [JEN-21](https://linear.app/reveer/issue/JEN-21). The proposal and design are in `openspec/changes/keep-key-in-runtime-and-agents-offline/`:
+Made in [JEN-21](https://linear.app/reveer/issue/JEN-21). The proposal and design are in `openspec/changes/archive/2026-11-16-keep-key-in-runtime-and-agents-offline/`:
 
 - **The runtime proxies agents' model calls at `POST /model/responses`, accepts only the request shape jen's Responses adapter builds, and sets the model itself.** No agent holds the key or the endpoint. *Why:* set by the maintainer with the proposal. Forwarding the provider's whole API hands every agent all the key can do, and forwarding the Responses call as it comes leaves the provider able to fetch any URL a request names, such as an image, a file or a remote MCP server. An allowlist fails closed on fields a provider adds later. Setting the model keeps an agent off pricier models and variants such as OpenRouter's `<model>:online`. *Rejected:* refusing only what's known to reach out, which fails open.
 - **Agents' network is internal, with IPv6 off and an isolated IPv4 gateway (Docker Engine 28.0 or later).** *Why:* measured on 2026-11-16 on Docker Desktop: a plain internal network leaves the bridge's gateway address on the engine's host, where a container reached a listener on the host network. The isolated gateway leaves no such address. The boundary check probes every address the host has.

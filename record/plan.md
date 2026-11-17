@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-16 | [JEN-21](https://linear.app/reveer/issue/JEN-21) | [#20](https://github.com/reveer-ai/jen/pull/20) | The runtime holds the model key and proxies agents' model calls, accepting only the Responses adapter's request, and agents sit on an internal network that reaches only the runtime and each other. Completed the Agent workspace milestone. |
 | 2026-11-16 | [JEN-4](https://linear.app/reveer/issue/JEN-4) | [#19](https://github.com/reveer-ai/jen/pull/19) | Recorded that an agent is jen's unit and that jen ships as the `jenai` npm package, and scoped the Distribution milestone, the package only, into [JEN-25](https://linear.app/reveer/issue/JEN-25). |
 | 2026-11-15 | [JEN-22](https://linear.app/reveer/issue/JEN-22) | [#17](https://github.com/reveer-ai/jen/pull/17) | A click's ask reaches the agent in Safari: the bridge keeps focus in a text field during a press, and the sandbox check runs in Chromium and WebKit. Completed the UI engine milestone. |
 | 2026-11-14 | [JEN-18](https://linear.app/reveer/issue/JEN-18) | [#16](https://github.com/reveer-ai/jen/pull/16) | The web shell's foundation: a root with `workspace` publishes `ui/index.html` with `publish_ui`, and its page runs it in a sandboxed frame, swaps in each version live, and sends a click's `jen.ask` to the agent. |
