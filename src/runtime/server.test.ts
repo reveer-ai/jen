@@ -2,10 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { openStore, type Store } from "../agent/store.ts";
 import type { Item } from "../agent/model/port.ts";
+import { OpenAIResponsesModel } from "../agent/model/openai-responses.ts";
 import { ScriptedModel } from "../agent/model/scripted.ts";
 import { Agent } from "../agent/loop.ts";
 import { createServer as createAgentServer } from "../agent/server.ts";
@@ -13,7 +15,7 @@ import { PAGE, TEXTBOX } from "../agent/ui.ts";
 import { DockerError } from "./docker.ts";
 import { FakeDocker, type FakeExec } from "./fake-docker.ts";
 import { Runtime } from "./runtime.ts";
-import { createRuntimeServer, MAX_BODY, MAX_COMMAND_BODY } from "./server.ts";
+import { createRuntimeServer, MAX_BODY, MAX_COMMAND_BODY, MAX_MODEL_BODY } from "./server.ts";
 
 const ownerToken = "owner-secret";
 const owner = { Authorization: `Bearer ${ownerToken}` };
@@ -27,6 +29,24 @@ const servers: http.Server[] = [];
 const stores: Store[] = [];
 // Each agent's protocol, served in-process, by its container's name.
 const agents = new Map<string, string>();
+// What the runtime makes agents' model calls with.
+const modelSettings = { model: "runtime-model", apiKey: "sk-owner", baseURL: "https://provider.test/v1/" };
+// Each call the runtime sent the stub provider, and how the stub answers.
+interface Provided {
+  url: string;
+  headers: Headers;
+  raw: string;
+  body: Record<string, unknown>;
+  signal: AbortSignal;
+}
+let provided: Provided[];
+let provider: (call: Provided) => Response | Promise<Response>;
+const stubFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+  const raw = String(init?.body);
+  const call = { url: String(url), headers: new Headers(init?.headers), raw, body: JSON.parse(raw), signal: init!.signal! };
+  provided.push(call);
+  return provider(call);
+}) as typeof globalThis.fetch;
 
 async function listen(server: http.Server): Promise<string> {
   servers.push(server);
@@ -43,7 +63,7 @@ beforeEach(async () => {
     name: "jen",
     image: "jen",
     workspaceImage: "jen-workspace",
-    model: { model: "m", apiKey: "k" },
+    model: "m",
     maxDepth: 3,
     maxAgents: 10,
     agentURL: (container) => agents.get(container) ?? "http://127.0.0.1:1",
@@ -51,7 +71,9 @@ beforeEach(async () => {
     ready: async () => {},
   });
   await runtime.startup(self.id);
-  base = await listen(createRuntimeServer({ runtime, ownerToken }));
+  provided = [];
+  provider = () => Response.json({ ok: true });
+  base = await listen(createRuntimeServer({ runtime, ownerToken, model: modelSettings, fetch: stubFetch }));
 });
 afterEach(async () => {
   for (const server of servers.splice(0)) {
@@ -774,5 +796,254 @@ describe("GET and PUT /workspace/files", () => {
     const { url, headers } = await workspace();
     expect((await fetch(url("a"), { method: "POST", headers, body: "x" })).status).toBe(404);
     expect((await fetch(url("a"), { method: "DELETE", headers })).status).toBe(404);
+  });
+});
+
+describe("POST /model/responses", () => {
+  // A request in the adapter's shape, with one of each kind of input item.
+  const valid = () => ({
+    model: "agent-model",
+    instructions: "be brief",
+    input: [
+      { role: "user", content: "From: owner\n\nwhat is a?" },
+      { type: "function_call", call_id: "c1", name: "lookup", arguments: '{"key":"a"}' },
+      { type: "function_call_output", call_id: "c1", output: "42" },
+      { role: "assistant", content: "a is 42" },
+    ],
+    tools: [{ type: "function", name: "lookup", description: "Look up a key.", parameters: { type: "object", properties: { key: { type: "string" } } }, strict: false }],
+    store: false,
+  });
+  async function agent() {
+    const { body: root } = await spawn({ spawn: false });
+    return { root, headers: as(tokenOf(root.id)) };
+  }
+  const post = (headers: Record<string, string>, body: unknown, path = "/model/responses") =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body) });
+
+  test("sends an agent's call to the provider with the owner's key, the runtime's model and none of the agent's headers", async () => {
+    const { headers } = await agent();
+    const res = await post({ ...headers, "X-Stainless-Lang": "js", Cookie: "a=b", "OpenAI-Organization": "org-x" }, valid());
+    expect([res.status, await res.json()]).toEqual([200, { ok: true }]);
+    expect(provided).toHaveLength(1);
+    expect(provided[0]!.url).toBe("https://provider.test/v1/responses");
+    expect(Object.fromEntries(provided[0]!.headers)).toEqual({ authorization: "Bearer sk-owner", "content-type": "application/json", accept: "application/json" });
+    expect(provided[0]!.body).toEqual({ ...valid(), model: "runtime-model" });
+  });
+
+  test("sends the checked body serialized again, not the agent's bytes", async () => {
+    const { headers } = await agent();
+    const raw = JSON.stringify(valid()).replace('"store":false', '"store":true, "store" :  false');
+    expect((await post(headers, raw)).status).toBe(200);
+    expect(provided[0]!.raw).toBe(JSON.stringify({ ...valid(), model: "runtime-model" }));
+  });
+
+  test("goes to OpenAI's endpoint when no base URL is set", async () => {
+    const { headers } = await agent();
+    const other = await listen(createRuntimeServer({ runtime, ownerToken, model: { model: "runtime-model", apiKey: "sk-owner" }, fetch: stubFetch }));
+    expect((await fetch(`${other}/model/responses`, { method: "POST", headers, body: JSON.stringify(valid()) })).status).toBe(200);
+    expect(provided[0]!.url).toBe("https://api.openai.com/v1/responses");
+  });
+
+  test("accepts an empty input and no tools", async () => {
+    const { headers } = await agent();
+    expect((await post(headers, { ...valid(), input: [], tools: [] })).status).toBe(200);
+  });
+
+  test("the owner gets 403, and a missing token 401, and nothing reaches the provider", async () => {
+    const owners = await post(owner, valid());
+    expect([owners.status, await owners.json()]).toEqual([403, { error: "only an agent may call the model" }]);
+    expect((await post({}, valid())).status).toBe(401);
+    expect(provided).toEqual([]);
+  });
+
+  test("every other path under /model gets 404, and nothing reaches the provider", async () => {
+    const { headers } = await agent();
+    for (const path of ["/model/files", "/model", "/model/responses/r1", "/model/chat/completions"]) {
+      expect((await post(headers, valid(), path)).status, path).toBe(404);
+    }
+    expect((await fetch(`${base}/model/responses`, { headers })).status).toBe(404);
+    expect(provided).toEqual([]);
+  });
+
+  test("a body declaring over 32 MiB gets 413 unread, and a chunked one too, and nothing reaches the provider", async () => {
+    const { headers } = await agent();
+    const { port } = new URL(base);
+    const declared = await new Promise<{ status?: number; connection?: string }>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/model/responses", headers: { ...headers, "Content-Length": String(MAX_MODEL_BODY + 1) } });
+      req.on("error", () => {});
+      req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
+      req.write("{");
+    });
+    expect(declared).toEqual({ status: 413, connection: "close" });
+    const chunked = await new Promise<number | undefined>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/model/responses", headers });
+      let status: number | undefined;
+      req.on("error", () => {});
+      req.on("response", (res) => ((status = res.statusCode), res.resume()));
+      req.on("close", () => resolve(status));
+      req.write(Buffer.alloc(MAX_MODEL_BODY + 1, " "));
+    });
+    expect(chunked).toBe(413);
+    expect(provided).toEqual([]);
+  });
+
+  test("a call uploading while its agent is stopped gets 401, and nothing reaches the provider", async () => {
+    const { root, headers } = await agent();
+    const identified = vi.spyOn(runtime, "identify");
+    const req = http.request(`${base}/model/responses`, { method: "POST", headers });
+    const answered = new Promise<http.IncomingMessage>((resolve) => req.on("response", resolve));
+    const body = JSON.stringify(valid());
+    req.write(body.slice(0, 10));
+    req.flushHeaders();
+    await vi.waitFor(() => expect(identified).toHaveBeenCalled());
+    await call(`/agents/${root.id}/stop`, { method: "POST" });
+    req.end(body.slice(10));
+    const res = await answered;
+    res.resume();
+    expect(res.statusCode).toBe(401);
+    expect(provided).toEqual([]);
+  });
+
+  // Each refusal: what's changed from the valid request, and the field the
+  // error names.
+  const refusals: [string, (body: any) => unknown, string][] = [
+    ["a body that isn't an object", () => [valid()], "the body must be a JSON object"],
+    ["an unknown field", (b) => ({ ...b, previous_response_id: "resp_1" }), "previous_response_id is not accepted"],
+    ["streaming", (b) => ({ ...b, stream: true }), "stream is not accepted"],
+    ["included extras", (b) => ({ ...b, include: ["file_search_call.results"] }), "include is not accepted"],
+    ["a missing field", ({ instructions, ...b }) => b, "instructions is required"],
+    ["a model that isn't a string", (b) => ({ ...b, model: 1 }), "model must be a string"],
+    ["instructions that aren't a string", (b) => ({ ...b, instructions: null }), "instructions must be a string"],
+    ["storage on", (b) => ({ ...b, store: true }), "store must be false"],
+    ["input that isn't an array", (b) => ({ ...b, input: "hi" }), "input must be an array"],
+    ["an image by URL", (b) => ({ ...b, input: [{ role: "user", content: [{ type: "input_image", image_url: "https://example.com/a.png" }] }] }), "input[0].content must be a string"],
+    ["a file by URL", (b) => ({ ...b, input: [{ role: "user", content: [{ type: "input_file", file_url: "https://example.com/a.pdf" }] }] }), "input[0].content must be a string"],
+    ["a system message", (b) => ({ ...b, input: [{ role: "system", content: "x" }] }), 'input[0].role must be "user" or "assistant"'],
+    ["a typed message", (b) => ({ ...b, input: [{ type: "message", role: "user", content: "x" }] }), 'input[0].type must be "function_call" or "function_call_output", or absent for a message'],
+    ["a message with an ID", (b) => ({ ...b, input: [{ role: "user", content: "x", id: "msg_1" }] }), "input[0].id is not accepted"],
+    ["a stored item by reference", (b) => ({ ...b, input: [{ type: "item_reference", id: "rs_1" }] }), 'input[0].type must be "function_call" or "function_call_output", or absent for a message'],
+    ["a function call with object arguments", (b) => ({ ...b, input: [{ type: "function_call", call_id: "c1", name: "f", arguments: {} }] }), "input[0].arguments must be a string"],
+    ["a function call missing its ID", (b) => ({ ...b, input: [{ type: "function_call", name: "f", arguments: "{}" }] }), "input[0].call_id is required"],
+    ["a function output with a status", (b) => ({ ...b, input: [{ type: "function_call_output", call_id: "c1", output: "x", status: "completed" }] }), "input[0].status is not accepted"],
+    ["a function output that isn't text", (b) => ({ ...b, input: [{ type: "function_call_output", call_id: "c1", output: [{ type: "input_image", image_url: "https://example.com/a.png" }] }] }), "input[0].output must be a string"],
+    ["a later item that doesn't fit", (b) => ({ ...b, input: [...b.input, null] }), "input[4] must be an object"],
+    ["tools that aren't an array", (b) => ({ ...b, tools: {} }), "tools must be an array"],
+    ["a hosted tool", (b) => ({ ...b, tools: [{ type: "web_search" }] }), 'tools[0].type must be "function"'],
+    ["a remote MCP server", (b) => ({ ...b, tools: [{ type: "mcp", server_label: "x", server_url: "https://example.com/mcp" }] }), "tools[0].server_label is not accepted"],
+    ["a tool with parameters that aren't an object", (b) => ({ ...b, tools: [{ ...b.tools[0], parameters: [] }] }), "tools[0].parameters must be an object"],
+    ["a tool whose strict isn't a boolean", (b) => ({ ...b, tools: [{ ...b.tools[0], strict: "no" }] }), "tools[0].strict must be a boolean"],
+    ["a tool with an extra field", (b) => ({ ...b, tools: [{ ...b.tools[0], defer_loading: true }] }), "tools[0].defer_loading is not accepted"],
+  ];
+  for (const [name, change, error] of refusals) {
+    test(`${name} gets 400 naming it, and nothing reaches the provider`, async () => {
+      const { headers } = await agent();
+      const res = await post(headers, change(valid()));
+      expect([res.status, await res.json()]).toEqual([400, { error }]);
+      expect(provided).toEqual([]);
+    });
+  }
+
+  test("a body that isn't JSON gets 400", async () => {
+    const { headers } = await agent();
+    const res = await post(headers, '{"model":');
+    expect([res.status, await res.json()]).toEqual([400, { error: "the body is not JSON" }]);
+    expect(provided).toEqual([]);
+  });
+
+  test("the request the adapter builds is accepted unchanged but for the model, and its answer read", async () => {
+    const { headers } = await agent();
+    provider = () =>
+      Response.json({
+        id: "resp_1",
+        object: "response",
+        created_at: 0,
+        model: "runtime-model",
+        status: "completed",
+        output: [{ type: "message", id: "msg_1", role: "assistant", status: "completed", content: [{ type: "output_text", text: "done", annotations: [] }] }],
+      });
+    // The adapter as an agent builds it, at the runtime, with its token.
+    const sent: Record<string, unknown>[] = [];
+    const adapter = new OpenAIResponsesModel({
+      model: "agent-model",
+      apiKey: headers.Authorization.slice("Bearer ".length),
+      baseURL: `${base}/model`,
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        sent.push(JSON.parse(String(init?.body)));
+        return fetch(url, init);
+      }) as typeof globalThis.fetch,
+    });
+    const reply = await adapter.next(
+      [
+        { type: "message", role: "user", from: "owner", text: "what is a?" },
+        { type: "tool_call", id: "c1", name: "lookup", input: { key: "a" } },
+        { type: "tool_result", callId: "c1", output: "42" },
+        { type: "message", role: "assistant", text: "a is 42" },
+        { type: "message", role: "user", from: "a1b2c3d4e5f6", text: "thanks" },
+      ],
+      [{ name: "lookup", description: "Look up a key.", inputSchema: { type: "object", properties: { key: { type: "string" } }, required: ["key"] } }],
+      "be brief",
+    );
+    expect(reply).toEqual([assistant("done")]);
+    expect(sent).toHaveLength(1);
+    expect(provided).toHaveLength(1);
+    expect(provided[0]!.body).toEqual({ ...sent[0], model: "runtime-model" });
+  });
+
+  test("the provider's status, headers and body pass back, less hop-by-hop and decoded-encoding headers", async () => {
+    const { headers } = await agent();
+    // What fetch hands back for a compressed answer: the decoded body, with
+    // the headers that described the compressed one.
+    provider = () =>
+      new Response('{"error":{"message":"slow down"}}', {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after": "7", "content-encoding": "gzip", "content-length": "12", "keep-alive": "timeout=99", "x-request-id": "req_1" },
+      });
+    const res = await post(headers, valid());
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("7");
+    expect(res.headers.get("x-request-id")).toBe("req_1");
+    expect(res.headers.get("content-encoding")).toBeNull();
+    expect(res.headers.get("keep-alive")).not.toBe("timeout=99");
+    expect(await res.json()).toEqual({ error: { message: "slow down" } });
+  });
+
+  test("a gzipped answer from a real provider reaches the agent decoded", async () => {
+    const { headers } = await agent();
+    const answer = JSON.stringify({ text: "x".repeat(10_000) });
+    let acceptEncoding: string | undefined;
+    const upstream = await listen(
+      http.createServer((req, res) => {
+        acceptEncoding = req.headers["accept-encoding"];
+        req.resume();
+        const zipped = gzipSync(answer);
+        res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip", "content-length": zipped.length }).end(zipped);
+      }),
+    );
+    const other = await listen(createRuntimeServer({ runtime, ownerToken, model: { ...modelSettings, baseURL: upstream } }));
+    const res = await fetch(`${other}/model/responses`, { method: "POST", headers: { ...headers, "Accept-Encoding": "identity" }, body: JSON.stringify(valid()) });
+    expect(acceptEncoding).toContain("gzip");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-encoding")).toBeNull();
+    expect(await res.text()).toBe(answer);
+  });
+
+  test("an agent that hangs up aborts the provider's call", async () => {
+    const { headers } = await agent();
+    provider = (call) => new Promise((_, reject) => call.signal.addEventListener("abort", () => reject(call.signal.reason)));
+    const abort = new AbortController();
+    const res = fetch(`${base}/model/responses`, { method: "POST", headers, body: JSON.stringify(valid()), signal: abort.signal }).catch(() => undefined);
+    await vi.waitFor(() => expect(provided).toHaveLength(1));
+    expect(provided[0]!.signal.aborted).toBe(false);
+    abort.abort();
+    await res;
+    await vi.waitFor(() => expect(provided[0]!.signal.aborted).toBe(true));
+  });
+
+  test("a provider that can't be reached gets 502", async () => {
+    const { headers } = await agent();
+    const other = await listen(createRuntimeServer({ runtime, ownerToken, model: { ...modelSettings, baseURL: "http://127.0.0.1:1" } }));
+    const res = await fetch(`${other}/model/responses`, { method: "POST", headers, body: JSON.stringify(valid()) });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: expect.stringMatching(/^the model provider could not be reached: /) });
   });
 });

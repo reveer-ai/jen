@@ -27,17 +27,6 @@ The image SHALL run the agent as a non-root user that can write to a new named v
 - **WHEN** the agent runs on a new named volume
 - **THEN** its process is not root and it saves the turn
 
-### Requirement: The model is configured through the environment
-The agent SHALL read its model ID from `JEN_MODEL` and API key from `JEN_API_KEY`, and SHALL use `JEN_BASE_URL` as the model endpoint when set. If `JEN_MODEL` or `JEN_API_KEY` is missing, it SHALL exit non-zero with an error naming the variable and save nothing.
-
-#### Scenario: Missing key
-- **WHEN** the agent runs without `JEN_API_KEY`
-- **THEN** it exits non-zero, its error names `JEN_API_KEY`, and the stored conversation is unchanged
-
-#### Scenario: Alternate endpoint
-- **WHEN** `JEN_BASE_URL` is set
-- **THEN** model calls go to that endpoint
-
 ### Requirement: The agent stops promptly when signalled
 On an interrupt or termination signal, the agent SHALL exit promptly. Every step saved before the signal SHALL stay saved, and the agent SHALL resume its unfinished work on its next start.
 
@@ -62,3 +51,18 @@ The agent SHALL read its token from `JEN_TOKEN`. If `JEN_TOKEN` is missing or em
 #### Scenario: Missing token
 - **WHEN** the agent starts without `JEN_TOKEN`
 - **THEN** it exits non-zero and its error names `JEN_TOKEN`
+
+### Requirement: The agent calls the model through the runtime
+The agent SHALL read its model ID from `JEN_MODEL`, and SHALL call the model at `<JEN_RUNTIME_URL>/model`, defaulting to `http://runtime:8080/model`, with its own token, `JEN_TOKEN`, as the API key. It SHALL read no API key and no model endpoint. If `JEN_MODEL` or `JEN_TOKEN` is missing, it SHALL exit non-zero with an error naming the variable and save nothing.
+
+#### Scenario: Missing model
+- **WHEN** the agent runs without `JEN_MODEL`
+- **THEN** it exits non-zero, its error names `JEN_MODEL`, and the stored conversation is unchanged
+
+#### Scenario: Model calls go to the runtime
+- **WHEN** the agent calls the model
+- **THEN** the call goes to `<JEN_RUNTIME_URL>/model/responses` with `Authorization: Bearer <JEN_TOKEN>`
+
+#### Scenario: No key needed
+- **WHEN** the agent runs with `JEN_MODEL` and `JEN_TOKEN` and without `JEN_API_KEY`
+- **THEN** it starts and serves its protocol

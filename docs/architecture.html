@@ -55,12 +55,12 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 <main>
   <header>
     <h1>jen Agent Components</h1>
-    <p class="lede">The runtime and the agents it runs, as of JEN-18 (<code>add-agent-ui</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime. An agent with the <code>workspace</code> grant also has a workspace: a container of its own with no network, where the runtime runs the agent's commands and reads and writes its files by exec. A root agent with <code>workspace</code> can also publish a UI, which the owner opens in a browser (see below).</p>
+    <p class="lede">The runtime and the agents it runs, as of JEN-21 (<code>keep-key-in-runtime-and-agents-offline</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime. Agents' network is internal: an agent reaches the runtime and other agents and nothing else, and calls the model through the runtime, which alone holds the owner's key. An agent with the <code>workspace</code> grant also has a workspace: a container of its own with no network, where the runtime runs the agent's commands and reads and writes its files by exec. A root agent with <code>workspace</code> can also publish a UI, which the owner opens in a browser (see below).</p>
   </header>
 
   <figure>
     <div class="scroll">
-      <svg viewBox="0 0 1280 1060" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter to the model provider. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools and the workspace tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same. For an agent with the workspace grant, the engine also runs a workspace container with no network and a home volume of its own, where the runtime runs the agent's commands and moves its files by exec, as the agent.">
+      <svg viewBox="0 0 1280 1060" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter, which calls the runtime's model route with the agent's own token; the runtime checks the request against the adapter's shape, sets the model, adds the owner's key and sends it to the model provider, the only thing outside the engine it reaches. Agents' network is internal, so an agent reaches nothing but the runtime and other agents. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools and the workspace tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same. For an agent with the workspace grant, the engine also runs a workspace container with no network and a home volume of its own, where the runtime runs the agent's commands and moves its files by exec, as the agent.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -70,7 +70,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <!-- Docker host -->
         <rect class="ghost" x="170" y="20" width="940" height="1020" rx="12"/>
         <text class="hl" x="190" y="46">Docker host</text>
-        <text class="zs" x="290" y="46">one engine · network jen</text>
+        <text class="zs" x="290" y="46">one engine · network jen: internal, no internet, no host address</text>
 
         <!-- Owner and provider, outside -->
         <rect class="box" x="20" y="120" width="120" height="90" rx="6"/>
@@ -78,9 +78,10 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <text class="d" x="80" y="175">curl · any client</text>
         <text class="f" x="80" y="193">JEN_OWNER_TOKEN</text>
 
-        <rect class="box" x="1140" y="520" width="125" height="90" rx="6"/>
-        <text class="t" x="1202" y="558">Model provider</text>
-        <text class="d" x="1202" y="578">OpenAI · OpenRouter</text>
+        <rect class="box" x="20" y="420" width="120" height="90" rx="6"/>
+        <text class="t" x="80" y="456">Model provider</text>
+        <text class="d" x="80" y="475">OpenAI · OpenRouter</text>
+        <text class="f" x="80" y="493">JEN_BASE_URL</text>
 
         <!-- ============ RUNTIME ============ -->
         <rect class="zone" x="190" y="70" width="290" height="470" rx="10"/>
@@ -88,9 +89,10 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <text class="zs" x="210" y="116">jen-runtime · 127.0.0.1:8080</text>
 
         <rect class="box" x="215" y="135" width="240" height="90" rx="6"/>
-        <text class="t" x="335" y="167">API and relay</text>
-        <text class="f" x="335" y="185">server.ts</text>
-        <text class="d" x="335" y="204">checks tokens · stamps Jen-From</text>
+        <text class="t" x="335" y="163">API, relay, model route</text>
+        <text class="f" x="335" y="181">server.ts · model.ts</text>
+        <text class="d" x="335" y="199">checks tokens · stamps Jen-From</text>
+        <text class="d" x="335" y="215">checks model calls · adds the key</text>
 
         <rect class="box" x="215" y="285" width="240" height="100" rx="6"/>
         <text class="t" x="335" y="315">Agent tree</text>
@@ -141,6 +143,10 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <path class="edge" d="M455,662 H620 V698" marker-end="url(#arrow)"/>
         <text class="lbl" x="530" y="655">runs</text>
 
+        <!-- API <-> model provider -->
+        <path class="edge" d="M215,220 H158 V465 H142" marker-end="url(#arrow)"/>
+        <text class="lbl" x="150" y="330" text-anchor="middle" transform="rotate(-90 150 330)">model calls · owner's key</text>
+
         <!-- owner <-> API -->
         <line class="edge" x1="140" y1="150" x2="213" y2="150" marker-end="url(#arrow)"/>
         <text class="lbl" x="177" y="143" text-anchor="middle">requests</text>
@@ -150,7 +156,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <!-- ============ ROOT AGENT ============ -->
         <rect class="zone" x="530" y="70" width="560" height="560" rx="10"/>
         <text class="zl" x="550" y="98">root agent</text>
-        <text class="zs" x="550" y="116">jen-agent · :8080 · JEN_PARENT=owner · JEN_GRANT</text>
+        <text class="zs" x="550" y="116">jen-agent · :8080 · JEN_PARENT=owner · JEN_GRANT · no key</text>
 
         <!-- server -->
         <rect class="box" x="555" y="135" width="200" height="90" rx="6"/>
@@ -239,10 +245,10 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <line class="edge" x1="985" y1="520" x2="985" y2="452" marker-end="url(#arrow)"/>
         <text class="lbl" x="993" y="508">response</text>
 
-        <line class="edge" x1="1065" y1="550" x2="1138" y2="550" marker-end="url(#arrow)"/>
-        <text class="lbl" x="1102" y="543" text-anchor="middle">create</text>
-        <line class="edge" x1="1140" y1="585" x2="1067" y2="585" marker-end="url(#arrow)"/>
-        <text class="lbl" x="1102" y="602" text-anchor="middle">output</text>
+        <!-- the adapter calls the runtime's model route, with its own token -->
+        <path class="edge" d="M955,610 V642 H500"/>
+        <circle cx="500" cy="642" r="3" fill="currentColor"/>
+        <text class="lbl" x="1012" y="657" text-anchor="middle">/model/responses</text>
 
         <!-- ============ SUB-AGENTS ============ -->
         <rect class="box" x="555" y="700" width="240" height="120" rx="6"/>
@@ -289,7 +295,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <text class="lbl" x="360" y="933" text-anchor="middle">runs · exec, for the runtime</text>
       </svg>
     </div>
-    <figcaption>Blue outlines are containers; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type. A workspace has no network, so the only way into it is the runtime's exec: an agent's <code>run_command</code> and file tools ask the runtime, which runs the command, or reads or writes the file's bytes, in the caller's own workspace and no other, as the agent.</figcaption>
+    <figcaption>Blue outlines are containers; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type. The adapter's calls go to the runtime's <code>POST /model/responses</code> with the agent's own token in the key's place; the runtime refuses anything but the request the adapter builds (text, function tools and their calls, storage off), so a call can't name a URL for the provider to fetch, and sends it on with the owner's key. A workspace has no network, so the only way into it is the runtime's exec: an agent's <code>run_command</code> and file tools ask the runtime, which runs the command, or reads or writes the file's bytes, in the caller's own workspace and no other, as the agent.</figcaption>
   </figure>
 
   <section>
@@ -298,7 +304,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
       <li>A root agent with <code>workspace</code> writes its UI as one self-contained file, <code>ui/index.html</code> in its workspace, with the file tools, and publishes it with <code>publish_ui</code> (<code>ui.ts</code>). The tool reads the file's bytes through the runtime and saves them, unchanged, as the next version in the store, which keeps only the latest. A file that's missing, isn't UTF-8 or is over 4 MiB is refused and nothing changes. Until a first publish the agent serves the textbox shipped in its image (<code>ui/textbox.html</code>) as version 0.</li>
       <li>The owner opens <code>/agents/&lt;id&gt;/page#token=&lt;owner token&gt;</code>. It's the one runtime route without a token, relayed only to a running root with <code>workspace</code>; anything else gets the same <code>404</code> and nothing starts. The agent serves jen's fixed page (<code>ui/page.html</code>) with a Content Security Policy that lets only the page connect, to its own origin, and frames nothing but its own <code>srcdoc</code>.</li>
       <li>The page moves the token from the fragment into <code>sessionStorage</code>, fetches <code>ui</code> (relayed like <code>/events</code>, only for a root with <code>workspace</code>) and streams <code>events</code> with it, reconnecting with <code>Last-Event-ID</code>.</li>
-      <li>It runs the document in an <code>&lt;iframe sandbox="allow-scripts"&gt;</code> whose <code>srcdoc</code> is a doctype, a policy with no network access, the bridge, and the document as published. The frame has an opaque origin, so it can't read the page or its token, and it reaches no server. The page passes it nothing from the stream.</li>
+      <li>It runs the document in an <code>&lt;iframe sandbox="allow-scripts"&gt;</code> whose <code>srcdoc</code> is a doctype, a policy with no network access, the bridge, and the document as published. The frame has an opaque origin, so it can't read the page or its token, and it reaches no server, except over WebRTC: an <code>RTCPeerConnection</code> in the frame sends to any host it names, in Chromium and WebKit alike, the known gap the <code>agent-ui</code> spec records. The page passes it nothing from the stream.</li>
       <li>The bridge is the frame's only way out. It defines <code>jen.version</code> and one request, <code>jen.ask(context)</code>, which hands the page the context, any JSON value, and nothing else. The page accepts an ask only from the current frame and version, only while the user's click or key press is still active, and only under the 1 MiB bound. Safari drops a click's activation when the press takes focus out of a text input, so while one has focus, in the document or an open shadow root, the bridge cancels a press's <code>mousedown</code> default, keeping focus in the field, unless the press lands on another field, a slider, a select, editable text or a draggable element. The page posts an ask to <code>messages</code> as <code>Asked from your UI, version &lt;n&gt;:</code>, a newline and the JSON, which reaches the agent as an ordinary message from the owner. <code>publish_ui</code>'s description tells the agent what the page does; no agent's instructions mention a UI, and nothing tells it how to answer.</li>
       <li>When the stream carries a <code>publish_ui</code> result, the page fetches <code>ui</code>, at most one fetch at a time and retrying one that fails, and swaps in the new version live. A published version is the only thing the agent changes on the page: its text replies never show there, and a bar shows only the page's own failures and the agent's error events.</li>
     </ol>

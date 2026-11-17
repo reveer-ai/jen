@@ -1,8 +1,11 @@
-// The workspace's boundary, checked from a real workspace container. Starts a
-// runtime under a runtime name of its own, with placeholder model settings,
-// since no model is called, spawns an agent with the workspace grant, and runs
-// commands as that agent through POST /workspace/commands, and reads and
-// writes files through /workspace/files. Each test is one probe, so a failure
+// The boundary of an agent's world, checked from real containers. Starts a
+// stand-in model provider on Docker's default bridge, then a runtime under a
+// runtime name of its own, with a placeholder model and key and the
+// stand-in's address as JEN_BASE_URL, and spawns an agent with the workspace
+// grant. It runs commands as that agent through POST /workspace/commands,
+// reads and writes files through /workspace/files, and probes the agent's own
+// container with docker exec: what it holds, what it reaches, and what its
+// model calls carry to the stand-in. Each test is one probe, so a failure
 // names the one that didn't hold.
 //
 // It needs Docker and no credentials, so it never skips: without Docker it
@@ -19,6 +22,14 @@ import { WRITE_SCRIPT } from "./workspace.ts";
 
 const name = `jen-live-${randomBytes(4).toString("hex")}`;
 const ownerToken = randomBytes(32).toString("hex");
+// The runtime's placeholder model settings: no real model is called.
+const placeholderModel = "placeholder-model";
+const placeholderKey = `placeholder-key-${randomBytes(8).toString("hex")}`;
+// The stand-in provider, and a listener on the engine's host network.
+const provider = `${name}-provider`;
+const hostListener = `${name}-host`;
+const hostPort = 20000 + randomBytes(2).readUInt16BE() % 20000;
+let baseURL = "";
 const owner = { Authorization: `Bearer ${ownerToken}` };
 let base = "";
 let agentId = "";
@@ -69,9 +80,16 @@ beforeAll(async () => {
   for (const target of ["agent", "runtime", "workspace"]) {
     docker(["build", "--target", target, "-t", `jen-${target}`, join(import.meta.dirname, "../..")], { timeout: 300_000 });
   }
-  // Placeholders: nothing here calls a model.
-  const env = { ...process.env, JEN_RUNTIME_NAME: name, JEN_OWNER_TOKEN: ownerToken, JEN_MODEL: "placeholder", JEN_API_KEY: "placeholder" };
-  const names = ["JEN_RUNTIME_NAME", "JEN_OWNER_TOKEN", "JEN_MODEL", "JEN_API_KEY"];
+  // The stand-in records each call and answers it as a provider would. It's
+  // on the default bridge, as a provider is beyond the runtime's own network.
+  docker(["run", "-d", "--name", provider, "--entrypoint", "node", "jen-runtime", "-e", STAND_IN]);
+  const providerIP = docker(["container", "inspect", "-f", "{{.NetworkSettings.Networks.bridge.IPAddress}}", provider]).trim();
+  baseURL = `http://${providerIP}:8080/v1`;
+  // Accepts connections on every address the engine's host has.
+  docker(["run", "-d", "--name", hostListener, "--network", "host", "-e", `PORT=${hostPort}`, "--entrypoint", "node", "jen-runtime", "-e", HOST_LISTENER]);
+  // Placeholders: the stand-in takes any model and key.
+  const env = { ...process.env, JEN_RUNTIME_NAME: name, JEN_OWNER_TOKEN: ownerToken, JEN_MODEL: placeholderModel, JEN_API_KEY: placeholderKey, JEN_BASE_URL: baseURL };
+  const names = ["JEN_RUNTIME_NAME", "JEN_OWNER_TOKEN", "JEN_MODEL", "JEN_API_KEY", "JEN_BASE_URL"];
   docker(["run", "-d", "--name", `${name}-runtime`, "-p", "127.0.0.1::8080", "-v", "/var/run/docker.sock:/var/run/docker.sock", ...names.flatMap((n) => ["-e", n]), "jen-runtime"], { env });
   const port = docker(["port", `${name}-runtime`, "8080/tcp"]).trim().split("\n")[0]!.split(":").at(-1);
   base = `http://127.0.0.1:${port}`;
@@ -87,7 +105,7 @@ afterAll(() => {
   // Everything the check created, whatever state it was left in.
   const quiet = (args: string[]) => spawnSync("docker", args, { encoding: "utf8", timeout: 30_000 });
   const containers = quiet(["ps", "-aq", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
-  quiet(["rm", "-f", `${name}-runtime`, ...containers]);
+  quiet(["rm", "-f", `${name}-runtime`, provider, hostListener, ...containers]);
   const volumes = quiet(["volume", "ls", "-q", "--filter", `label=jen.runtime=${name}`]).stdout.split("\n").filter(Boolean);
   if (volumes.length > 0) quiet(["volume", "rm", ...volumes]);
   quiet(["network", "rm", name]);
@@ -162,6 +180,73 @@ describe("a workspace has no network", () => {
     expect(started.status).toBe(200);
     expect(started.seconds).toBeLessThan(5);
     expect(await output("for i in $(seq 100); do curl -sf -o /dev/null localhost:8000 && echo up && break; sleep 0.1; done")).toBe("up\n");
+  });
+});
+
+describe("an agent's container holds no key and reaches only the runtime", () => {
+  test("no key or endpoint in its configuration, its environment or any process's", () => {
+    const config = docker(["container", "inspect", "-f", "{{json .Config}}", agentContainer()]);
+    const seen = docker(["exec", "-u", "0", agentContainer(), "sh", "-c", "env; for f in /proc/[0-9]*/environ; do tr '\\0' '\\n' < \"$f\" 2>/dev/null; done; true"]);
+    // The control: the agent's own token is there to find.
+    expect(seen).toContain(`JEN_TOKEN=${tokenOf(agentContainer())}`);
+    for (const held of [placeholderKey, baseURL, "JEN_API_KEY", "JEN_BASE_URL"]) {
+      expect(config, held).not.toContain(held);
+      expect(seen, held).not.toContain(held);
+    }
+  });
+
+  test("it reaches the runtime", () => {
+    expect(inAgent(`return await connects("runtime", 8080)`)).toBe(true);
+  });
+
+  test("it can't connect to a public address", () => {
+    expect(inAgent(`return { https: await connects("1.1.1.1", 443), dns: await connects("8.8.8.8", 53) }`)).toEqual({ https: false, dns: false });
+  });
+
+  test("it gets no DNS answer for a public name, from its resolver or a public one", () => {
+    const answers = inAgent(`
+      const dns = process.getBuiltinModule("node:dns").promises;
+      const answered = (lookup) => lookup.then(() => true, () => false);
+      const resolver = new dns.Resolver({ timeout: 3000, tries: 1 });
+      resolver.setServers(["8.8.8.8", "1.1.1.1"]);
+      return {
+        example: await answered(dns.lookup("example.com")),
+        host: await answered(dns.lookup("host.docker.internal")),
+        public: await answered(resolver.resolve4("example.com")),
+      };
+    `);
+    expect(answers).toEqual({ example: false, host: false, public: false });
+  });
+
+  test("it can't connect to the engine's host at any address the host has", () => {
+    const addresses = hostAddresses();
+    expect(addresses.length).toBeGreaterThan(0);
+    // The control: a container on a plain bridge reaches the listener at its gateway.
+    const gateway = docker(["network", "inspect", "-f", "{{(index .IPAM.Config 0).Gateway}}", "bridge"]).trim();
+    expect(runIn(provider, `return await connects(${JSON.stringify(gateway)}, ${hostPort})`)).toBe(true);
+    const reached = inAgent(`
+      const addresses = ${JSON.stringify(addresses)};
+      const results = await Promise.all(addresses.map((a) => connects(a, ${hostPort})));
+      return addresses.filter((a, i) => results[i]);
+    `);
+    expect(reached).toEqual([]);
+  }, 60_000);
+
+  test("a valid model call reaches the provider with the runtime's model and key", () => {
+    const before = received().length;
+    const status = inAgent(`return await callModel(${JSON.stringify(modelCall())})`);
+    expect(status).toBe(200);
+    const calls = received().slice(before);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "POST", url: "/v1/responses", authorization: `Bearer ${placeholderKey}` });
+    expect(JSON.parse(calls[0]!.body)).toEqual({ ...modelCall(), model: placeholderModel });
+  });
+
+  test("a model call with an image by URL gets 400 and reaches nothing", () => {
+    const before = received().length;
+    const call = { ...modelCall(), input: [{ role: "user", content: [{ type: "input_image", image_url: `${baseURL}/fetched-by-the-provider.png` }] }] };
+    expect(inAgent(`return await callModel(${JSON.stringify(call)})`)).toBe(400);
+    expect(received()).toHaveLength(before);
   });
 });
 
@@ -391,6 +476,82 @@ describe("the workspace follows its agent", () => {
     expect(exists("volume", workspace())).toBe(false);
   }, 120_000);
 });
+
+// The stand-in provider: records every call, serves the record at GET
+// /received, and answers each call with a completed response.
+const STAND_IN = `
+const received = [];
+process.getBuiltinModule("node:http").createServer((req, res) => {
+  let body = "";
+  req.on("data", (chunk) => (body += chunk));
+  req.on("end", () => {
+    res.writeHead(200, { "content-type": "application/json" });
+    if (req.method === "GET" && req.url === "/received") return res.end(JSON.stringify(received));
+    received.push({ method: req.method, url: req.url, authorization: req.headers.authorization, body });
+    res.end(JSON.stringify({ id: "resp_1", object: "response", created_at: 0, model: "stand-in", status: "completed", output: [] }));
+  });
+}).listen(8080);
+`;
+
+// A listener on the engine's host network, on every interface.
+const HOST_LISTENER = `process.getBuiltinModule("node:net").createServer((socket) => socket.end("host\\n")).listen(Number(process.env.PORT));`;
+
+// What a probe has besides its own code: connects(host, port), true once a
+// TCP connection opens within 3 seconds, and callModel(body), the status of a
+// model call to the runtime with the container's own token.
+const PRELUDE = `
+const net = process.getBuiltinModule("node:net");
+const connects = (host, port) => new Promise((resolve) => {
+  const socket = net.connect({ host, port, timeout: 3000 });
+  const done = (reached) => (socket.destroy(), resolve(reached));
+  socket.on("connect", () => done(true)).on("timeout", () => done(false)).on("error", () => done(false));
+});
+const callModel = async (body) => {
+  const res = await fetch(process.env.JEN_RUNTIME_URL + "/model/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer " + process.env.JEN_TOKEN, "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
+  });
+  await res.text();
+  return res.status;
+};
+`;
+
+// Runs a probe's body as an async function in a container, as root, and
+// returns what it returns.
+function runIn(container: string, body: string): any {
+  const script = `${PRELUDE}\nconsole.log(JSON.stringify(await (async () => {${body}})()));`;
+  const out = docker(["exec", "-u", "0", container, "node", "--input-type=module", "-e", script], { timeout: 60_000 }).trim();
+  return JSON.parse(out.split("\n").at(-1)!);
+}
+
+const inAgent = (body: string) => runIn(agentContainer(), body);
+
+// A request in the agent adapter's shape, naming a model of its own.
+const modelCall = () => ({
+  model: "agent-chosen-model",
+  instructions: "be brief",
+  input: [{ role: "user", content: "From: owner\n\nhi" }],
+  tools: [],
+  store: false,
+});
+
+// Every call the stand-in provider has received.
+function received(): { method: string; url: string; authorization?: string; body: string }[] {
+  return runIn(provider, `return await (await fetch("http://127.0.0.1:8080/received")).json()`);
+}
+
+// Every address the engine's host has now, read in its listener's container,
+// so it includes the agents' network's bridge, which the runtime created after
+// the listener started. Link-local IPv6 addresses need a scope to reach, so
+// they're left out.
+function hostAddresses(): string[] {
+  return runIn(hostListener, `
+    const os = process.getBuiltinModule("node:os");
+    return Object.values(os.networkInterfaces()).flat().filter((a) => !a.address.startsWith("fe80:")).map((a) => a.address);
+  `);
+}
 
 function tokenOf(container: string): string {
   return docker(["container", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", container])

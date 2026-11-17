@@ -21,7 +21,7 @@ const runtime = new Runtime({
   name: process.env.JEN_RUNTIME_NAME || "jen",
   image: process.env.JEN_AGENT_IMAGE || "jen-agent",
   workspaceImage: process.env.JEN_WORKSPACE_IMAGE || "jen-workspace",
-  model: { model: process.env.JEN_MODEL!, apiKey: process.env.JEN_API_KEY!, baseURL: process.env.JEN_BASE_URL || undefined },
+  model: process.env.JEN_MODEL!,
   maxDepth: count("JEN_MAX_DEPTH", 3),
   maxAgents: count("JEN_MAX_AGENTS", 10),
 });
@@ -37,7 +37,11 @@ try {
 runtime.watch((error) => process.stderr.write(`jen-runtime: a crashed agent wasn't reported: ${error instanceof Error ? error.message : String(error)}\n`));
 
 // Every interface, so docker run -p can reach it.
-createRuntimeServer({ runtime, ownerToken: process.env.JEN_OWNER_TOKEN! }).listen(8080, "0.0.0.0", () => {
+createRuntimeServer({
+  runtime,
+  ownerToken: process.env.JEN_OWNER_TOKEN!,
+  model: { model: process.env.JEN_MODEL!, apiKey: process.env.JEN_API_KEY!, baseURL: process.env.JEN_BASE_URL || undefined },
+}).listen(8080, "0.0.0.0", () => {
   process.stderr.write("jen-runtime: listening on 8080\n");
 });
 

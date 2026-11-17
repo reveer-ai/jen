@@ -113,6 +113,9 @@ export interface Docker {
   // agent's state. Succeeds when the container doesn't exist.
   removeContainer(nameOrId: string): Promise<void>;
 
+  // Creates the agents' network: an internal bridge, with no IPv6 and no
+  // gateway address on the host, so a container on it reaches only the
+  // others there.
   createNetwork(name: string, labels: Record<string, string>): Promise<void>;
   // Undefined when the network doesn't exist.
   inspectNetwork(name: string): Promise<{ name: string } | undefined>;
@@ -228,8 +231,22 @@ export function createDocker(socketPath = "/var/run/docker.sock"): Docker {
       await absentOk(call("DELETE", `/containers/${id(nameOrId)}?force=true`));
     },
 
+    // Internal alone isn't enough. Measured on 2026-11-16 on Docker Desktop
+    // (Engine 29.4.1), a plain internal network leaves the bridge's gateway
+    // address on the host, so a container reached a listener on the engine's
+    // host network there. The isolated gateway mode, in Engine 28.0 and
+    // later, gives the bridge no address, and that listener was unreachable.
+    // IPv6 is off so no second address family needs closing. Docker can't
+    // change these on an existing network.
     async createNetwork(name, labels) {
-      await call("POST", "/networks/create", { Name: name, Driver: "bridge", Labels: labels });
+      await call("POST", "/networks/create", {
+        Name: name,
+        Driver: "bridge",
+        Internal: true,
+        EnableIPv6: false,
+        Options: { "com.docker.network.bridge.gateway_mode_ipv4": "isolated" },
+        Labels: labels,
+      });
     },
     async inspectNetwork(name) {
       const n = await absentOk(call("GET", `/networks/${id(name)}`));

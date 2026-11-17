@@ -12,7 +12,7 @@ import { createServer } from "./server.ts";
 process.on("SIGINT", () => process.exit(130));
 process.on("SIGTERM", () => process.exit(143));
 
-for (const name of ["JEN_MODEL", "JEN_API_KEY", "JEN_TOKEN"]) {
+for (const name of ["JEN_MODEL", "JEN_TOKEN"]) {
   if (!process.env[name]) fail(`${name} is not set`);
 }
 let identity: Identity;
@@ -23,15 +23,14 @@ try {
 }
 
 const token = process.env.JEN_TOKEN!;
-const runtime = new RuntimeClient(process.env.JEN_RUNTIME_URL || "http://runtime:8080", token);
+const runtimeURL = process.env.JEN_RUNTIME_URL || "http://runtime:8080";
+const runtime = new RuntimeClient(runtimeURL, token);
 const store = openStore("/state/agent.db");
 const agent = new Agent({
   store,
-  model: new OpenAIResponsesModel({
-    model: process.env.JEN_MODEL!,
-    apiKey: process.env.JEN_API_KEY!,
-    baseURL: process.env.JEN_BASE_URL || undefined,
-  }),
+  // The runtime makes the call with the owner's key, which no agent holds.
+  // The agent's own token takes the key's place, as on every runtime route.
+  model: new OpenAIResponsesModel({ model: process.env.JEN_MODEL!, apiKey: token, baseURL: `${runtimeURL.replace(/\/+$/, "")}/model` }),
   tools: toolsFor(identity, runtime, store),
   instructions: instructions(identity),
   wake: identity.wake,

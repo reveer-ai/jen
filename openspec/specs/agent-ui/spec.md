@@ -79,7 +79,7 @@ An agent that has published nothing SHALL serve the textbox shipped in its image
 - **THEN** its bar says it needs one, and it requests nothing else
 
 ### Requirement: The page runs the UI in a sandboxed frame
-The page SHALL run the UI in an `<iframe sandbox="allow-scripts">`. The frame's document SHALL start with `<!doctype html>`, then a Content Security Policy that allows no network access, then the bridge, followed by the published document. The page's own policy SHALL include `frame-src 'none'` and `frame-ancestors 'none'`.
+The page SHALL run the UI in an `<iframe sandbox="allow-scripts">`. The frame's document SHALL start with `<!doctype html>`, then a Content Security Policy that allows no network access, then the bridge, followed by the published document. The page's own policy SHALL include `frame-src 'none'` and `frame-ancestors 'none'`. WebRTC is the known exception: an `RTCPeerConnection` in the frame, or in a `srcdoc` frame nested in it, sends to any host it names in Chromium and WebKit, and neither CSP's `webrtc 'block'` nor the frame's sandbox stops it.
 
 #### Scenario: The frame can't reach the network
 - **WHEN** a published UI calls `fetch`, loads an image from a server, opens a WebSocket, submits a form, opens a window or sets `location.href`

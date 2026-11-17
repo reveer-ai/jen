@@ -13,16 +13,27 @@
 // browser opening a URL can't send a header: it's relayed only to a running
 // root with workspace, and serves jen's fixed page, which then reads the
 // viewer's token from its URL's fragment and sends it with every request.
+// POST /model/responses is an agent's model call: the runtime checks it
+// against the request its adapter builds (see model.ts), sends it to the
+// provider with the owner's key, which never reaches an agent, and streams
+// the answer back. It's the only route under /model.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
-import { pipeline } from "node:stream";
+import { pipeline, Readable } from "node:stream";
+import type { ReadableStream } from "node:stream/web";
+import { checkModelRequest } from "./model.ts";
 import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
 import { MAX_FILE, MAX_TIMEOUT } from "./workspace.ts";
 
 export interface RuntimeServerOptions {
   runtime: Runtime;
   ownerToken: string;
+  // What agents' model calls are made with. Only the model route reads it.
+  model: { model: string; apiKey: string; baseURL?: string };
+  // Replaces the fetch model calls are sent with. Tests use it to stub the
+  // provider.
+  fetch?: typeof globalThis.fetch;
 }
 
 // Response headers that belong to one connection, not to the response.
@@ -32,6 +43,16 @@ const FORWARDED = ["content-type", "content-length", "accept", "last-event-id"];
 // The most a spawn body may hold. A grant is a few dozen bytes; the bound keeps
 // any caller from making the shared runtime buffer an arbitrary upload.
 export const MAX_BODY = 16 * 1024;
+// The most a model call's body may hold. The runtime parses the whole body to
+// check it, so it buffers it. A conversation as long as a model takes, about a
+// million tokens, is a few MiB of JSON.
+export const MAX_MODEL_BODY = 32 * 1024 * 1024;
+// Where model calls go when JEN_BASE_URL is unset.
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+// Provider response headers the model route drops besides the hop-by-hop
+// ones. fetch asks for compression and decodes the body, but keeps both, so
+// they no longer describe what's streamed back. Node frames the response.
+const DECODED = new Set(["content-encoding", "content-length"]);
 // The most a command's body may hold. It stays under Linux's 128 KiB limit on
 // one argument, which the command becomes. Agents write files through the
 // file route, but nothing is gained by shrinking it, and a short heredoc
@@ -42,8 +63,9 @@ export const MAX_PATH = 4096;
 // A command's timeout when the body names none, in seconds.
 const DEFAULT_TIMEOUT = 120;
 
-export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOptions): http.Server {
+export function createRuntimeServer({ runtime, ownerToken, model, fetch = globalThis.fetch }: RuntimeServerOptions): http.Server {
   const owner = digest(`Bearer ${ownerToken}`);
+  const responses = `${(model.baseURL ?? DEFAULT_BASE_URL).replace(/\/+$/, "")}/responses`;
 
   // The caller, or undefined when the token belongs to no one.
   async function authenticate(header: string | undefined): Promise<Caller | undefined> {
@@ -113,6 +135,56 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     res.writeHead(204).end();
   }
 
+  // Sends an agent's checked model call to the provider with the owner's key,
+  // and streams the answer back. The owner holds the key already, so only an
+  // agent may call it. The body sent is the checked one serialized again, so
+  // nothing the runtime's parser and the provider's would read differently,
+  // such as a duplicate key, carries past the check. A caller that hangs up
+  // aborts the call, as when an urgent message cancels it.
+  async function modelCall(req: http.IncomingMessage, res: http.ServerResponse, caller: Caller) {
+    if (caller === null) throw new RuntimeError(403, "only an agent may call the model");
+    const hangUp = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) hangUp.abort();
+    });
+    const body = await readBody(req, MAX_MODEL_BODY);
+    if (body === undefined) return tooLarge(res, MAX_MODEL_BODY);
+    // The token may have stopped being current while the body arrived.
+    if ((await authenticate(req.headers.authorization)) === undefined) throw new RuntimeError(401, "the caller's token is no longer current");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      return json(res, 400, { error: "the body is not JSON" });
+    }
+    const checked = checkModelRequest(parsed, model.model);
+    if ("error" in checked) return json(res, 400, { error: checked.error });
+    // A caller that hung up while its body arrived gets nothing sent.
+    if (hangUp.signal.aborted) return;
+    let answer: Response;
+    try {
+      answer = await fetch(responses, {
+        method: "POST",
+        headers: { authorization: `Bearer ${model.apiKey}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(checked.request),
+        signal: hangUp.signal,
+      });
+    } catch (error) {
+      if (hangUp.signal.aborted) return;
+      return json(res, 502, { error: `the model provider could not be reached: ${error instanceof Error ? error.message : String(error)}` });
+    }
+    const headers: Record<string, string | string[]> = {};
+    for (const [name, value] of answer.headers) {
+      if (HOP_BY_HOP.has(name) || DECODED.has(name)) continue;
+      headers[name] = name === "set-cookie" ? answer.headers.getSetCookie() : value;
+    }
+    res.writeHead(answer.status, headers);
+    if (answer.body === null) return void res.end();
+    // A provider that fails mid-answer cuts the agent's response off too, and
+    // an agent that hangs up cancels the provider's.
+    pipeline(Readable.fromWeb(answer.body as ReadableStream<Uint8Array>), res, () => {});
+  }
+
   // Relays a message, an event stream, a UI or a page. A message carries its
   // true sender, and a stopped agent is started for it, then sent the
   // runtime's notice, if any, once the message is saved. A page has no caller.
@@ -165,6 +237,7 @@ export function createRuntimeServer({ runtime, ownerToken }: RuntimeServerOption
     const [path, query = ""] = (req.url ?? "/").split(/\?(.*)/s);
     const [empty, agents, id, action, ...rest] = path.split("/");
     const method = req.method;
+    if (path === "/model/responses" && method === "POST") return modelCall(req, res, caller);
     if (path === "/workspace/commands" && method === "POST") return command(req, res, caller);
     if (path === "/workspace/files" && (method === "GET" || method === "PUT")) return file(req, res, caller, query);
     if (empty === "" && agents === "agents" && rest.length === 0) {

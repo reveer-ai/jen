@@ -6,8 +6,9 @@
 // headless WebKit through Playwright, each against its own agent. Playwright's
 // routing stands in for the runtime's relay: it adds the agent's token to the
 // page's request, which a browser opening a URL can't send, and stamps the
-// sender on the page's messages. It skips WebRTC, which leaves the frame (see
-// the add-agent-ui design's risks). Playwright's WebKit doesn't reproduce
+// sender on the page's messages. It skips WebRTC, which leaves the frame, the
+// known exception in the agent-ui spec's sandboxed-frame requirement.
+// Playwright's WebKit doesn't reproduce
 // Safari's dropped activation (JEN-22), so it checks that focus stays in a
 // text field through a click, which is what makes Safari count it.
 
