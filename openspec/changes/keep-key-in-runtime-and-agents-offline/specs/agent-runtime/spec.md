@@ -44,7 +44,7 @@ The runtime SHALL start every agent from the agent image named by `JEN_AGENT_IMA
 - **THEN** it gets `413` and nothing reaches the provider
 
 ### Requirement: The runtime makes agents' model calls
-The runtime SHALL send an agent's checked model call, serialized again, to `<JEN_BASE_URL>/responses` (default `https://api.openai.com/v1/responses`) with `Authorization: Bearer <JEN_API_KEY>`, JSON `Content-Type` and `Accept`, and no other header of the caller's. It SHALL stream the provider's status, headers less hop-by-hop ones, and body back unchanged, and abort the provider's call when the caller hangs up. An unreachable provider SHALL get the caller `502` with `{"error"}`.
+The runtime SHALL send an agent's checked call, serialized again, to `<JEN_BASE_URL>/responses` (default `https://api.openai.com/v1/responses`) with `Authorization: Bearer <JEN_API_KEY>`, JSON `Content-Type` and `Accept`, and none of the caller's headers. It SHALL stream back the provider's status, decoded body and headers, less hop-by-hop ones, `content-encoding` and `content-length`. It SHALL abort the call if the caller hangs up, and answer `502` if the provider can't be reached.
 
 #### Scenario: An agent calls the model
 - **WHEN** a running agent posts a valid request to `/model/responses` with its own token
@@ -57,6 +57,10 @@ The runtime SHALL send an agent's checked model call, serialized again, to `<JEN
 #### Scenario: Provider errors pass through
 - **WHEN** the provider answers `429` with `retry-after`
 - **THEN** the agent gets `429` with the same `retry-after` and body
+
+#### Scenario: A compressed response
+- **WHEN** the provider answers with a gzipped body
+- **THEN** the agent receives the decoded body, with no `content-encoding`
 
 #### Scenario: The provider can't be reached
 - **WHEN** the provider's address doesn't answer
