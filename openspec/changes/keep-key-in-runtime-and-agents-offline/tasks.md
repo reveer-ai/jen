@@ -39,4 +39,4 @@
 
 - [x] 6.1 `npm run check` and `npm test` pass.
 - [ ] 6.2 The boundary check passes on Docker Desktop, and in CI on a plain Linux kernel.
-- [ ] 6.3 The container, runtime and UI checks pass, and the behavior check passes on `openai/gpt-6-luna`, all with model calls going through the proxy.
+- [x] 6.3 The container, runtime and UI checks pass, and the behavior check passes on `openai/gpt-6-luna`, all with model calls going through the proxy.
