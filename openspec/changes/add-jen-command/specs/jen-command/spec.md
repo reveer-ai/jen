@@ -1,6 +1,6 @@
 ## Purpose
 
-The `jen` command: how a user creates, talks to, opens, lists and stops their root agents from a terminal, and how the command keeps its settings and the runtime it drives.
+The `jen` command: how a user creates, talks to, opens, lists and stops their root agents from a terminal, how the command keeps its settings and the runtime it drives, and how it deletes everything of jen's.
 
 ## ADDED Requirements
 
@@ -12,11 +12,11 @@ The `jen` command: how a user creates, talks to, opens, lists and stops their ro
 - **THEN** it exits non-zero with an error saying Docker isn't reachable
 
 ### Requirement: Settings are asked for and kept by the command
-`jen config` SHALL ask for the model, the optional base URL and the model key, with the key not echoed. An empty answer SHALL keep the current value. It SHALL keep them, with an owner token it makes up once, in one file under the user's config directory (`$XDG_CONFIG_HOME/jen`, or `~/.config/jen`), readable and writable only by the user, replaced whole on each save. Without a terminal on stdin, `jen config` SHALL fail.
+`jen config` SHALL ask for the model, the optional base URL and the model key, with the key not echoed. An empty answer SHALL keep the current value. It SHALL keep them, with an owner token it makes up once, in a Docker volume labelled as jen's, replaced whole on each save, and SHALL write nothing of jen's outside Docker. The key SHALL never appear on a command line. Without a terminal on stdin, `jen config` SHALL fail.
 
 #### Scenario: First settings
 - **WHEN** the user runs `jen config` and answers each question
-- **THEN** the settings file exists with mode `0600` in a directory with mode `0700`, and holds the answers and an owner token
+- **THEN** a volume labelled `jen.runtime=jen` holds the answers and an owner token, and nothing of jen's is written in the user's home folder
 
 #### Scenario: Keeping a value
 - **WHEN** the user runs `jen config` again and leaves the key empty
@@ -25,6 +25,13 @@ The `jen` command: how a user creates, talks to, opens, lists and stops their ro
 #### Scenario: No terminal
 - **WHEN** `jen config` runs with stdin from a pipe
 - **THEN** it exits non-zero, and the settings are unchanged
+
+### Requirement: A running runtime is reached without reading the settings volume
+While the runtime is running, a command SHALL get the owner token and the runtime's port from the runtime's container, and SHALL start no container to read the settings.
+
+#### Scenario: A query to a running runtime
+- **WHEN** the user sends a query while the runtime is running
+- **THEN** no container is started besides any the root itself starts
 
 ### Requirement: The first command asks for missing settings
 A command that needs the runtime and finds no settings SHALL ask `jen config`'s questions first when stdin is a terminal, then carry on. Without a terminal, it SHALL fail with an error saying to run `jen config`.
@@ -60,7 +67,7 @@ Every command that needs the runtime SHALL start it when it isn't running, publi
 - **THEN** the command exits non-zero and shows the runtime's error
 
 ### Requirement: A missing image is named
-When an image the runtime needs is missing, every command that needs the runtime SHALL fail naming the image and the command that builds it, having started nothing.
+When an image the runtime needs is missing, every command that needs the runtime SHALL fail naming the image and the command that builds it, having started nothing. So SHALL `jen config` when the runtime's image is missing, since it keeps the settings with it.
 
 #### Scenario: No workspace image
 - **WHEN** the user runs `jen list` without a `jen-workspace` image
@@ -161,6 +168,29 @@ On Ctrl-C, `jen @<name> <query>` SHALL stop reading, say the root is still worki
 - **WHEN** the user runs `jen stop all`
 - **THEN** no agent, workspace or runtime container of jen's is left, every volume is kept, and the next query starts them again with their conversations
 
+### Requirement: Uninstalling deletes everything of jen's
+`jen uninstall` SHALL ask for confirmation, and do nothing unless the user answers `y`; without a terminal on stdin it SHALL fail. On `y`, it SHALL remove every container, volume and network that's jen's, the settings and jen's images, without needing the runtime to start, carrying on past a failure and reporting each one. When `jen` was installed globally with npm, it SHALL then uninstall the package; otherwise it SHALL say how the command remains.
+
+#### Scenario: Uninstalling
+- **WHEN** the user runs `jen uninstall` with two roots, a sub-agent and a workspace, and answers `y`
+- **THEN** no container, volume, network or image of jen's is left, and the settings are gone
+
+#### Scenario: Declining
+- **WHEN** the user runs `jen uninstall` and answers anything but `y`
+- **THEN** nothing is removed
+
+#### Scenario: Without a runtime that can start
+- **WHEN** the user runs `jen uninstall` while the runtime's image is missing
+- **THEN** the agents' containers and volumes, the settings and the other images are still removed
+
+#### Scenario: Installed with npm
+- **WHEN** `jen` runs from a global npm install and the user uninstalls
+- **THEN** the `jenai` package is uninstalled too, and `jen` is no longer on the path
+
+#### Scenario: Run from a checkout
+- **WHEN** `jen` runs through `npm link` and the user uninstalls
+- **THEN** everything of jen's in Docker is removed, the checkout is untouched, and jen says the command was installed another way
+
 ### Requirement: Usage is printed for anything else
 `jen` with no arguments, `jen help`, or a first argument that isn't a command or `@<name>` SHALL print the usage. Only `jen help` SHALL exit 0; the others SHALL exit 2.
 
@@ -169,7 +199,7 @@ On Ctrl-C, `jen @<name> <query>` SHALL stop reading, say the root is still worki
 - **THEN** it prints the usage and exits 2
 
 ### Requirement: The command is checked against a real runtime
-A live check SHALL run `jen` against real Docker and a real model, under a runtime name and settings directory of its own. It SHALL create a root, get a reply, see a tool call's progress line, open the UI without a browser and fetch its page, list, stop the root and stop everything, and remove whatever it started even when it fails. It SHALL skip without model credentials, as the other live checks do.
+A live check SHALL run `jen` against real Docker and a real model, under a runtime name and image tags of its own. It SHALL create a root, get a reply, see a tool call's progress line, open the UI without a browser and fetch its page, list, stop the root, stop everything and uninstall, finding nothing of its runtime left, and remove whatever it started even when it fails. It SHALL skip without model credentials, as the other live checks do.
 
 #### Scenario: Without credentials
 - **WHEN** the live checks run without `JEN_LIVE_API_KEY`
