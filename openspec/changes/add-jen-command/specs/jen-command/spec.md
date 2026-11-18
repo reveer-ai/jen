@@ -41,7 +41,7 @@ When `jen config` saves settings while the runtime is running, it SHALL replace 
 - **THEN** the root is still running, and its next model call uses the new model
 
 ### Requirement: The runtime starts on demand and keeps running
-Every command that needs the runtime SHALL start it when it isn't running, publish it only on `127.0.0.1`, and wait until it answers. The runtime SHALL be published on the same host port at each start while that port is free. No command but `jen stop all` SHALL stop the runtime. If the runtime exits at start, the command SHALL fail showing why.
+Every command that needs the runtime SHALL start it when it isn't running, publish it only on `127.0.0.1`, and wait until it answers. The runtime SHALL be published on the same host port at each start while that port is free. No command SHALL stop the runtime except `jen stop all`, and replacing it for new settings or a new image. If the runtime exits at start, the command SHALL fail showing why.
 
 #### Scenario: A query starts the runtime
 - **WHEN** the user sends a query to a root while the runtime isn't running
@@ -50,6 +50,10 @@ Every command that needs the runtime SHALL start it when it isn't running, publi
 #### Scenario: The same port
 - **WHEN** the runtime is stopped with `jen stop all` and started again by a later command
 - **THEN** it's published on the port it had before
+
+#### Scenario: Two commands at once
+- **WHEN** the user runs two queries in two terminals while the runtime isn't running
+- **THEN** one runtime is started, and both queries get their replies
 
 #### Scenario: A bad key
 - **WHEN** the runtime exits at start because a setting is missing
@@ -90,6 +94,10 @@ When the runtime, or any of its agents or workspaces, runs an image other than t
 #### Scenario: Progress
 - **WHEN** the root runs a command before replying
 - **THEN** stderr has a line naming `run_command` before the reply appears on stdout
+
+#### Scenario: A stopped root
+- **WHEN** the user sends a query to a root that's stopped
+- **THEN** the root is started, and its reply reaches stdout
 
 #### Scenario: History isn't shown
 - **WHEN** the user sends a second query to a root that already answered one

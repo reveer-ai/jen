@@ -63,7 +63,7 @@ Every command but `jen config` and `jen help` needs the runtime, and calls `ensu
 1. **The images.** `docker image inspect` the three images. A missing one is an error naming the `docker build` command that makes it.
 2. **What's running.** Inspect `<name>-runtime`, and every container labelled `jen.runtime=<name>`. These are the runtime's agents and workspaces.
 3. **A new image.** If the runtime's container or any agent or workspace container runs an image ID that isn't the current ID of its image's name, `jen` stops every agent and restarts the runtime (below), and says so.
-4. **Start.** If the runtime's container isn't running, remove what's left of it and `docker run -d --name <name>-runtime` with the socket, `-p 127.0.0.1:<port>:8080` and the settings. With no saved port, or if publishing the saved one fails because it's taken, publish `127.0.0.1::8080` and let Docker choose. Then read the port back with `docker port` and save it. Keeping one port keeps a UI's URL the same across restarts, so an open tab reconnects.
+4. **Start.** If the runtime's container isn't running, remove what's left of it and `docker run -d --name <name>-runtime` with the socket, `-p 127.0.0.1:<port>:8080` and the settings. With no saved port, publish `127.0.0.1::8080` and let Docker choose. If the saved port fails to start, which is how a taken port shows, remove the container and retry once with a port Docker chooses. A conflict on the container's name means another `jen` is starting the runtime, so this one goes on to step 5 and waits for it. Then read the port back with `docker port` and save it. Keeping one port keeps a UI's URL the same across restarts, so an open tab reconnects.
 5. **Ready.** Poll the port until the runtime answers, for at most 15 seconds. If its container has exited, show the last lines of its logs, which name a missing or bad setting, as the runtime already reports.
 
 `<name>` is `jen`, or `JEN_RUNTIME_NAME` when set, which the runtime reads as it does today. That's how the live check keeps its own runtime apart from the user's.
@@ -84,7 +84,7 @@ The name is stored as a `jen.name` label on the root's volume, beside `jen.paren
 
 `jen` gives every new root `{"spawn": true, "workspace": true}`. It finds a root by name in the owner's `GET /agents`. A root without a name is listed by its ID, marked as having no name, and can't be addressed.
 
-*Rejected: optional names.* Every root jen makes has one, and a root without a name can't be reached from `jen`. Requiring it keeps the tree and the command in step.
+*Rejected: optional names.* Every root jen makes has one, and a root without a name can't be reached from `jen`. Requiring it keeps the tree and the command in step. The tests and live checks that spawn roots give them names.
 
 ### Following a root's work
 
@@ -92,14 +92,14 @@ The agent's event stream gains one event: `synced`, whose data is `{"seq": n}`, 
 
 `jen @<name> <query>` (`follow.ts`):
 
-1. Open the root's `GET /agents/<id>/events` and read until the first `synced`. Everything before it is history and isn't shown. Its `seq` is where the query starts.
+1. If the root is stopped, start it with `POST /agents/<id>/start`, since the runtime relays `/events` only to a running agent. Then open the root's `GET /agents/<id>/events` and read until the first `synced`. A `409` there means the root stopped in between, and is an error saying so. Everything before it is history and isn't shown. Its `seq` is where the query starts.
 2. Post the query to `/agents/<id>/messages`. A stopped root is started by the runtime, as today.
 3. Read the items after that position. Each tool call prints one line to stderr: the tool's name and a summary of its input, cut to the terminal's width. A message from a sub-agent prints a line naming it. Each `error` event prints its message.
 4. Once the root's own message from `owner` with the query's text has arrived, the reply is the text of the first model response after it with no tool call. A response ends with any item that isn't an assistant message or a tool call, or with a `synced`. The reply is written to stdout, and `jen` exits 0.
 
 Progress goes to stderr and the reply to stdout, so `jen @<name> <query> > out` keeps only the reply.
 
-If the stream ends before the reply, the root's container stopped or restarted. `jen` asks the runtime for the root's state: if it's `running`, `jen` reopens the stream with `Last-Event-ID` and carries on; if it's `stopped`, it reports that the root stopped and exits 1. Ctrl-C closes the stream, says the root is still working and how to see it (`jen @<name> open`), and exits 130. The root isn't told.
+If the stream ends before the reply, the root's container stopped or restarted, or the runtime was replaced. `jen` asks the runtime for the root's state, waiting for the runtime to answer for as long as a start may take (step 5 above), so a runtime being replaced doesn't end the query: if it's `running`, `jen` reopens the stream with `Last-Event-ID` and carries on; if it's `stopped`, it reports that the root stopped and exits 1. Ctrl-C closes the stream, says the root is still working and how to see it (`jen @<name> open`), and exits 130. The root isn't told.
 
 A query that arrives while the root is still working on an earlier one, such as one left with Ctrl-C, is delivered at its next step, and its reply may answer both. That's how the root's inbox already works.
 
@@ -127,6 +127,9 @@ The first argument decides: `new`, `list`, `stop`, `config`, `help`, or `@<name>
 - **No way to delete a root from `jen`.** A root made by mistake stays until it's deleted through the API by hand. The open question on organizing and cleaning up agents (`record/plan.md`) owns this.
 - **A query that's only `open` can't be sent** (proposal).
 - **The owner token sits in the settings file and the UI's URL.** Anyone who can read the user's files or the engine already holds everything jen has, as today.
+- **A turn that saves nothing isn't seen.** A model response with no tool call and no output items ends the root's turn without saving an item (`store.endTurn`), so `jen` waits until Ctrl-C. Making every turn's end visible would add an item the model sees on every later call, for a response that's rare.
+- **Replacing the runtime cuts calls in flight.** A model call an agent is making while `jen config` or a new image replaces the runtime fails, shows as an error line in any `jen` following that root, and is retried by the agent's loop, as any failed model call is. A `jen` following a root through the old runtime reconnects through the new one.
+- **Two commands replacing the runtime for a new image at once** can each remove the runtime the other started. It takes a rebuilt image and two commands in the same moment, and the next command starts the runtime again.
 - **Docker's own messages surface as they are** when a `docker` call fails for a reason `jen` doesn't expect, such as a full disk. `jen` shows them rather than guessing.
 
 ## Migration Plan
