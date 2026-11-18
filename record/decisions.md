@@ -2,6 +2,17 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-18
+
+Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), aligning on its proposal with the maintainer. The proposal is in `openspec/changes/add-jen-command/`:
+
+- **The Distribution milestone is two tasks: the `jen` command and its interactions ([JEN-25](https://linear.app/reveer/issue/JEN-25)), and publishing it as `jenai` ([JEN-26](https://linear.app/reveer/issue/JEN-26)).** *Why:* set by the maintainer. The command is a task of its own, and publishing can run beside it.
+- **The user addresses every root by name, with `@<name>`, and creates roots with `jen new <name>`.** The commands are `jen new <name>`, `jen @<name> <query>`, `jen @<name> open`, `jen list`, `jen stop @<name>` and `jen stop all`. *Why:* set by the maintainer. A user has several roots, each keeping its sub-agents over time. A current or default root can come later.
+- **The runtime starts when a command needs it and runs until `jen stop all`.** *Why:* a root's UI is served through the runtime, a root's work can outlast its reply, and a stopped root wakes for a message. *Rejected:* stopping the runtime when a query finishes, the maintainer's first thought, which would kill the UI the query just built.
+- **A new image stops every agent, and nothing migrates stored state between versions.** *Why:* set by the maintainer. A rebuilt image otherwise reaches an agent only after a stop and start by hand. Migration waits until jen has users whose agents must survive an upgrade.
+- **`jen` asks for its settings and keeps them, with the owner token, in a file only it reads and writes, readable only by the user.** *Why:* the maintainer wanted settings the user never edits. The runtime keeps no state of its own by design, so it can't hold them. *Rejected:* a Docker volume the runtime owns, which makes the runtime stateful and costs a container run to read the token on every command, and the system keychain, which Node has no API for and which leaves the key in the runtime's environment anyway.
+- **`jen @<name> <query>` shows a line for each step of progress, then the reply.** *Why:* set by the maintainer.
+
 ## 2026-11-16
 
 Made in [JEN-21](https://linear.app/reveer/issue/JEN-21). The proposal and design are in `openspec/changes/archive/2026-11-16-keep-key-in-runtime-and-agents-offline/`:
