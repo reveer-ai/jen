@@ -92,7 +92,7 @@ The agent's event stream gains one event: `synced`, whose data is `{"seq": n}`, 
 
 `jen @<name> <query>` (`follow.ts`):
 
-1. If the root is stopped, start it with `POST /agents/<id>/start`, since the runtime relays `/events` only to a running agent. Then open the root's `GET /agents/<id>/events` and read until the first `synced`. A `409` there means the root stopped in between, and is an error saying so. Everything before it is history and isn't shown. Its `seq` is where the query starts.
+1. If the root is stopped, start it with `POST /agents/<id>/start`, since the runtime relays `/events` only to a running agent. Then open the root's `GET /agents/<id>/events` and read until the first `synced`. Everything before it is history and isn't shown, and its `seq` is where the query starts. A `409` when opening the stream means the root stopped in between, and is an error saying so.
 2. Post the query to `/agents/<id>/messages`. A stopped root is started by the runtime, as today.
 3. Read the items after that position. Each tool call prints one line to stderr: the tool's name and a summary of its input, cut to the terminal's width. A message from a sub-agent prints a line naming it. Each `error` event prints its message.
 4. Once the root's own message from `owner` with the query's text has arrived, the reply is the text of the first model response after it with no tool call. A response ends with any item that isn't an assistant message or a tool call, or with a `synced`. The reply is written to stdout, and `jen` exits 0.

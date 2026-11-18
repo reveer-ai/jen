@@ -121,6 +121,10 @@ If the root's event stream ends before the reply, `jen` SHALL carry on from wher
 - **WHEN** the root's process exits while it works on a query and the engine restarts it
 - **THEN** the reply still reaches stdout, and nothing written before the crash is written again
 
+#### Scenario: The runtime is replaced
+- **WHEN** `jen config` replaces the runtime while another terminal follows a query
+- **THEN** that query's reply still reaches stdout
+
 ### Requirement: Interrupting a query leaves the root working
 On Ctrl-C, `jen @<name> <query>` SHALL stop reading, say the root is still working and how to open it, and exit 130. It SHALL NOT stop or message the root.
 
