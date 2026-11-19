@@ -285,8 +285,9 @@ describe("the event stream sends the conversation", () => {
   test("an empty conversation sends no items until a message is delivered", async () => {
     await serve(new ScriptedModel([[assistant("hi")]]));
     const stream = await openEvents();
+    expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 0 }) });
     await post("hello");
-    // The first event is the message's, so nothing came before it.
+    // The next event is the message's, so no item came before it.
     expect(await stream.next()).toEqual({ id: "1", event: "item", data: JSON.stringify(user("hello")) });
   });
 });
@@ -367,13 +368,62 @@ describe("the event stream sends only saved items, each as it's saved", () => {
   });
 });
 
+describe("the event stream says when it has caught up", () => {
+  const synced = (seq: number) => ({ event: "synced", data: JSON.stringify({ seq }) });
+  const item = (seq: number, value: Item) => ({ id: String(seq), event: "item", data: JSON.stringify(value) });
+
+  test("on history of four items: the four, then synced with seq 4", async () => {
+    store.save([user("hello"), assistant("hi")]);
+    store.save([user("how are you?"), assistant("fine")]);
+    await serve(new ScriptedModel([]));
+    const stream = await openEvents();
+    const events = [await stream.next(), await stream.next(), await stream.next(), await stream.next(), await stream.next()];
+    expect(events).toEqual([item(1, user("hello")), item(2, assistant("hi")), item(3, user("how are you?")), item(4, assistant("fine")), synced(4)]);
+  });
+
+  test("on an empty conversation: synced with seq 0 and no item", async () => {
+    await serve(new ScriptedModel([]));
+    expect(await (await openEvents()).next()).toEqual(synced(0));
+  });
+
+  test("an assistant message and a tool call saved together arrive before one synced", async () => {
+    let finish!: (output: string) => void;
+    const lookup: Tool = { name: "lookup", description: "", inputSchema: { type: "object" }, run: () => new Promise((resolve) => (finish = resolve)) };
+    await serve(new ScriptedModel([[assistant("checking"), call("c1", "lookup")], [assistant("42")]]), { tools: [lookup] });
+    const stream = await openEvents();
+    expect(await stream.next()).toEqual(synced(0));
+    await post("what is a?");
+    expect(await stream.next()).toEqual(item(1, user("what is a?")));
+    expect(await stream.next()).toEqual(synced(1));
+    expect(await stream.next()).toEqual(item(2, assistant("checking")));
+    expect(await stream.next()).toEqual(item(3, call("c1", "lookup")));
+    expect(await stream.next()).toEqual(synced(3));
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    finish("42");
+    expect(await stream.next()).toEqual(item(4, result("c1", "42")));
+    expect(await stream.next()).toEqual(synced(4));
+    expect(await stream.next()).toEqual(item(5, assistant("42")));
+    expect(await stream.next()).toEqual(synced(5));
+  });
+
+  test("resuming with Last-Event-ID: 2 on four items: items 3 and 4, then synced with seq 4", async () => {
+    store.save([user("hello"), assistant("hi")]);
+    store.save([user("how are you?"), assistant("fine")]);
+    await serve(new ScriptedModel([]));
+    const stream = await openEvents({ "Last-Event-ID": "2" });
+    expect([await stream.next(), await stream.next(), await stream.next()]).toEqual([item(3, user("how are you?")), item(4, assistant("fine")), synced(4)]);
+  });
+});
+
 describe("model failures are sent as error events", () => {
   test("each failed call sends an error event with its message and no id, and saves nothing", async () => {
     const model = flaky([[assistant("hi")]]);
     await serve(model, { delays: [0] });
     const stream = await openEvents();
+    expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 0 }) });
     await post("hello");
     expect(await stream.next()).toEqual({ id: "1", event: "item", data: JSON.stringify(user("hello")) });
+    expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 1 }) });
     expect(await stream.next()).toEqual({ event: "error", data: JSON.stringify({ message: "model unreachable" }) });
     expect(await stream.next()).toEqual({ event: "error", data: JSON.stringify({ message: "model unreachable" }) });
     await agent.idle();
@@ -391,12 +441,15 @@ describe("a root agent that gave up tells every watcher", () => {
     await post("hello");
     await agent.idle();
     await open.items(1);
+    expect(await open.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 1 }) });
     expect(await open.next()).toEqual({ event: "error", data: JSON.stringify({ message: "model unreachable" }) });
     expect(await open.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice }) });
 
     const late = await openEvents();
     expect(await late.next()).toMatchObject({ id: "1", event: "item" });
     expect(await late.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice }) });
+    // The notice is part of what the stream had to send when it opened.
+    expect(await late.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 1 }) });
   });
 
   test("after the agent recovers, a new stream gets no notice", async () => {
@@ -412,6 +465,7 @@ describe("a root agent that gave up tells every watcher", () => {
 
     const stream = await openEvents();
     expect((await stream.items(3)).map((e) => e.item)).toEqual([user("hello"), user("try again"), assistant("back")]);
+    expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 3 }) });
     // Nothing else is waiting: the next event is the keepalive.
     vi.advanceTimersByTime(15_000);
     expect(await stream.next()).toEqual({ comment: "keepalive" });
@@ -462,6 +516,7 @@ describe("a quiet event stream is kept alive", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     await serve(new ScriptedModel([]));
     const stream = await openEvents();
+    expect(await stream.next()).toMatchObject({ event: "synced" });
     vi.advanceTimersByTime(15_000);
     expect(await stream.next()).toEqual({ comment: "keepalive" });
   });

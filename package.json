@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "jen": "src/cli/main.ts"
+  },
   "engines": {
     "node": ">=26"
   },

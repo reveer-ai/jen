@@ -1,7 +1,9 @@
 // The agent's protocol over HTTP. POST /messages saves a message to the inbox
 // and answers 202. GET /events streams the conversation's saved items as
 // Server-Sent Events, resuming after Last-Event-ID, along with an error event
-// for each failed model call. GET /page serves jen's fixed page, which runs
+// for each failed model call, and a synced event, {"seq": <n>}, each time it
+// has sent every item saved so far: when it opens, and after each later step.
+// n is the position of the last item sent, or 0. GET /page serves jen's fixed page, which runs
 // the agent's UI in a sandboxed frame (see ui/page.html), and GET /ui the
 // latest UI the agent published, or the textbox, version 0, before it has
 // published any. Every request needs the agent's bearer token, and a message
@@ -28,21 +30,28 @@ export const PAGE_POLICY =
 
 export function createServer({ store, agent, token }: { store: Store; agent: Agent; token: string }): http.Server {
   const expected = digest(`Bearer ${token}`);
-  // Each open stream, with the position of the last item it was sent and the
-  // error events waiting until it has every item saved before them.
-  const streams = new Map<http.ServerResponse, { seq: number; errors: string[] }>();
+  // Each open stream, with the position of the last item it was sent, the
+  // error events waiting until it has every item saved before them, and the
+  // position its last synced event named, if it has been sent one.
+  const streams = new Map<http.ServerResponse, { seq: number; errors: string[]; synced?: number }>();
 
   // Sends a stream the items saved since its last one, then its waiting error
-  // events. Called when a stream opens, after each save, after each error, and
-  // when a slow reader's socket drains; the store is synchronous, so no step
-  // can be saved partway through. A stream whose buffer is full gets nothing
-  // more until it drains, so a reader that stops reading holds at most one
-  // event beyond the socket's buffer.
+  // events, then, once it has every item saved so far and has been sent any
+  // since its last synced, a synced event naming the last. Called when a
+  // stream opens, after each save, after each error, and when a slow reader's
+  // socket drains; the store is synchronous, so no step can be saved partway
+  // through, and a synced never comes between one step's items. A stream
+  // whose buffer is full gets nothing more until it drains, so a reader that
+  // stops reading holds at most one event beyond the socket's buffer.
   function deliver(res: http.ServerResponse) {
     const stream = streams.get(res)!;
+    let caughtUp = false;
     while (!res.writableNeedDrain) {
       const page = store.after(stream.seq, BATCH);
-      if (page.length === 0) break;
+      if (page.length === 0) {
+        caughtUp = true;
+        break;
+      }
       for (const { seq, item } of page) {
         stream.seq = seq;
         if (!res.write(`id: ${seq}\nevent: item\ndata: ${JSON.stringify(item)}\n\n`)) return;
@@ -50,6 +59,10 @@ export function createServer({ store, agent, token }: { store: Store; agent: Age
     }
     while (!res.writableNeedDrain && stream.errors.length > 0) {
       res.write(`event: error\ndata: ${JSON.stringify({ message: stream.errors.shift() })}\n\n`);
+    }
+    if (caughtUp && !res.writableNeedDrain && stream.synced !== stream.seq) {
+      stream.synced = stream.seq;
+      res.write(`event: synced\ndata: ${JSON.stringify({ seq: stream.seq })}\n\n`);
     }
   }
 

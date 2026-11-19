@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="describes" content="src/agent src/agent/ui.ts src/agent/ui src/runtime Dockerfile">
-<meta name="checked" content="2026-11-16">
+<meta name="describes" content="src/agent src/agent/ui.ts src/agent/ui src/runtime src/cli Dockerfile">
+<meta name="checked" content="2026-11-18">
 <title>jen Agent Components</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -55,12 +55,12 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 <main>
   <header>
     <h1>jen Agent Components</h1>
-    <p class="lede">The runtime and the agents it runs, as of JEN-21 (<code>keep-key-in-runtime-and-agents-offline</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime. Agents' network is internal: an agent reaches the runtime and other agents and nothing else, and calls the model through the runtime, which alone holds the owner's key. An agent with the <code>workspace</code> grant also has a workspace: a container of its own with no network, where the runtime runs the agent's commands and reads and writes its files by exec. A root agent with <code>workspace</code> can also publish a UI, which the owner opens in a browser (see below).</p>
+    <p class="lede">The <code>jen</code> command, the runtime and the agents it runs, as of JEN-25 (<code>add-jen-command</code>). See <a href="interactions.html">jen Agent Interactions</a> for real runs replayed step by step. The user drives jen with the <code>jen</code> command on their own machine, which keeps its settings in a Docker volume of its own, starts the runtime when a command needs it, and talks to roots by name as the owner. One runtime container sits beside the Docker engine and relays every request; each agent is the same image, works one saved step at a time from its SQLite store, and talks to other agents only through the runtime. Agents' network is internal: an agent reaches the runtime and other agents and nothing else, and calls the model through the runtime, which alone holds the owner's key. An agent with the <code>workspace</code> grant also has a workspace: a container of its own with no network, where the runtime runs the agent's commands and reads and writes its files by exec. A root agent with <code>workspace</code> can also publish a UI, which the owner opens in a browser (see below).</p>
   </header>
 
   <figure>
     <div class="scroll">
-      <svg viewBox="0 0 1280 1060" role="img" aria-label="Component diagram of jen. The owner calls the runtime's API, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter, which calls the runtime's model route with the agent's own token; the runtime checks the request against the adapter's shape, sets the model, adds the owner's key and sends it to the model provider, the only thing outside the engine it reaches. Agents' network is internal, so an agent reaches nothing but the runtime and other agents. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools and the workspace tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same. For an agent with the workspace grant, the engine also runs a workspace container with no network and a home volume of its own, where the runtime runs the agent's commands and moves its files by exec, as the agent.">
+      <svg viewBox="0 0 1280 1060" role="img" aria-label="Component diagram of jen. The jen command, on the user's machine, keeps its settings in a Docker volume of its own and starts the runtime's container through the docker command, then calls the runtime's API as the owner, which checks tokens, stamps Jen-From and relays messages and event streams to an agent's HTTP server. The runtime's tree module applies grants and bounds in one operation queue and drives the Docker engine through its engine client, which also watches for container exits. The engine runs each agent's container and keeps its volume. Inside an agent, the server inserts messages into the store's inbox and streams saved items; the loop reads its state from the store and repeats three saved steps: settle tool calls, deliver the inbox, call the model through the Model port and Responses adapter, which calls the runtime's model route with the agent's own token; the runtime checks the request against the adapter's shape, sets the model, adds the owner's key and sends it to the model provider, the only thing outside the engine it reaches. Agents' network is internal, so an agent reaches nothing but the runtime and other agents. A turn's final text is the agent's reply: a sub-agent posts it from its outbox to its parent through the runtime, and a root's is read on its stream. An urgent message aborts the step in flight. Delegation tools and the workspace tools call the runtime API with the agent's own token, and sub-agents, the same image one level deeper, do the same. For an agent with the workspace grant, the engine also runs a workspace container with no network and a home volume of its own, where the runtime runs the agent's commands and moves its files by exec, as the agent.">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
@@ -74,9 +74,23 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
         <!-- Owner and provider, outside -->
         <rect class="box" x="20" y="120" width="120" height="90" rx="6"/>
-        <text class="t" x="80" y="156">Owner</text>
-        <text class="d" x="80" y="175">curl · any client</text>
-        <text class="f" x="80" y="193">JEN_OWNER_TOKEN</text>
+        <text class="t" x="80" y="148">jen command</text>
+        <text class="d" x="80" y="166">the user's machine</text>
+        <text class="f" x="80" y="183">src/cli · the owner</text>
+        <text class="f" x="80" y="199">docker CLI</text>
+
+        <!-- jen reaches the engine only through the docker command -->
+        <path class="edge" d="M20,190 H8 V886 H213" marker-end="url(#arrow)"/>
+        <line class="edge" x1="8" y1="645" x2="213" y2="645" marker-end="url(#arrow)"/>
+        <circle cx="8" cy="645" r="3" fill="currentColor"/>
+        <text class="lbl" x="100" y="638" text-anchor="middle">docker run · rm · ps</text>
+        <text class="lbl" x="100" y="879" text-anchor="middle">at start · config</text>
+
+        <!-- settings: the command's own volume -->
+        <rect class="box" x="215" y="852" width="240" height="68" rx="6"/>
+        <text class="t" x="335" y="876">Settings volume</text>
+        <text class="f" x="335" y="893">jen-settings · settings.json</text>
+        <text class="d" x="335" y="910">model · key · owner token · port</text>
 
         <rect class="box" x="20" y="420" width="120" height="90" rx="6"/>
         <text class="t" x="80" y="456">Model provider</text>
@@ -149,7 +163,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
 
         <!-- owner <-> API -->
         <line class="edge" x1="140" y1="150" x2="213" y2="150" marker-end="url(#arrow)"/>
-        <text class="lbl" x="177" y="143" text-anchor="middle">requests</text>
+        <text class="lbl" x="177" y="143" text-anchor="middle">owner API</text>
         <line class="edge" x1="215" y1="195" x2="142" y2="195" marker-end="url(#arrow)"/>
         <text class="lbl" x="177" y="212" text-anchor="middle">SSE</text>
 
@@ -295,18 +309,30 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
         <text class="lbl" x="360" y="933" text-anchor="middle">runs · exec, for the runtime</text>
       </svg>
     </div>
-    <figcaption>Blue outlines are containers; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type. The adapter's calls go to the runtime's <code>POST /model/responses</code> with the agent's own token in the key's place; the runtime refuses anything but the request the adapter builds (text, function tools and their calls, storage off), so a call can't name a URL for the provider to fetch, and sends it on with the owner's key. A workspace has no network, so the only way into it is the runtime's exec: an agent's <code>run_command</code> and file tools ask the runtime, which runs the command, or reads or writes the file's bytes, in the caller's own workspace and no other, as the agent.</figcaption>
+    <figcaption>Blue outlines are containers. The <code>jen</code> command is the owner: it reaches the engine only through the user's <code>docker</code> command, to read and write its settings volume with a short-lived container, start the runtime and remove everything at uninstall, and everything else through the runtime's API. The runtime gets the settings in its environment and never reads the volume; dashed arrows link a parent to its children, which it reaches only through the runtime. An agent never calls another agent directly: its tools (and every sub-agent's) call the runtime's API, which relays to the target with the target's token. The orange arrow is an urgent message cancelling the step in flight. The dotted blue line is the Model port (<code>port.ts</code>): nothing above it sees an SDK type. The adapter's calls go to the runtime's <code>POST /model/responses</code> with the agent's own token in the key's place; the runtime refuses anything but the request the adapter builds (text, function tools and their calls, storage off), so a call can't name a URL for the provider to fetch, and sends it on with the owner's key. A workspace has no network, so the only way into it is the runtime's exec: an agent's <code>run_command</code> and file tools ask the runtime, which runs the command, or reads or writes the file's bytes, in the caller's own workspace and no other, as the agent.</figcaption>
   </figure>
 
   <section>
     <h2>A UI, from the agent to the browser and back</h2>
     <ol>
       <li>A root agent with <code>workspace</code> writes its UI as one self-contained file, <code>ui/index.html</code> in its workspace, with the file tools, and publishes it with <code>publish_ui</code> (<code>ui.ts</code>). The tool reads the file's bytes through the runtime and saves them, unchanged, as the next version in the store, which keeps only the latest. A file that's missing, isn't UTF-8 or is over 4 MiB is refused and nothing changes. Until a first publish the agent serves the textbox shipped in its image (<code>ui/textbox.html</code>) as version 0.</li>
-      <li>The owner opens <code>/agents/&lt;id&gt;/page#token=&lt;owner token&gt;</code>. It's the one runtime route without a token, relayed only to a running root with <code>workspace</code>; anything else gets the same <code>404</code> and nothing starts. The agent serves jen's fixed page (<code>ui/page.html</code>) with a Content Security Policy that lets only the page connect, to its own origin, and frames nothing but its own <code>srcdoc</code>.</li>
+      <li><code>jen @&lt;name&gt; open</code> starts the root if it's stopped, prints <code>/agents/&lt;id&gt;/page#token=&lt;owner token&gt;</code> on the runtime's port, and opens it in the browser where the system can. It's the one runtime route without a token, relayed only to a running root with <code>workspace</code>; anything else gets the same <code>404</code> and nothing starts. The agent serves jen's fixed page (<code>ui/page.html</code>) with a Content Security Policy that lets only the page connect, to its own origin, and frames nothing but its own <code>srcdoc</code>.</li>
       <li>The page moves the token from the fragment into <code>sessionStorage</code>, fetches <code>ui</code> (relayed like <code>/events</code>, only for a root with <code>workspace</code>) and streams <code>events</code> with it, reconnecting with <code>Last-Event-ID</code>.</li>
       <li>It runs the document in an <code>&lt;iframe sandbox="allow-scripts"&gt;</code> whose <code>srcdoc</code> is a doctype, a policy with no network access, the bridge, and the document as published. The frame has an opaque origin, so it can't read the page or its token, and it reaches no server, except over WebRTC: an <code>RTCPeerConnection</code> in the frame sends to any host it names, in Chromium and WebKit alike, the known gap the <code>agent-ui</code> spec records. The page passes it nothing from the stream.</li>
       <li>The bridge is the frame's only way out. It defines <code>jen.version</code> and one request, <code>jen.ask(context)</code>, which hands the page the context, any JSON value, and nothing else. The page accepts an ask only from the current frame and version, only while the user's click or key press is still active, and only under the 1 MiB bound. Safari drops a click's activation when the press takes focus out of a text input, so while one has focus, in the document or an open shadow root, the bridge cancels a press's <code>mousedown</code> default, keeping focus in the field, unless the press lands on another field, a slider, a select, editable text or a draggable element. The page posts an ask to <code>messages</code> as <code>Asked from your UI, version &lt;n&gt;:</code>, a newline and the JSON, which reaches the agent as an ordinary message from the owner. <code>publish_ui</code>'s description tells the agent what the page does; no agent's instructions mention a UI, and nothing tells it how to answer.</li>
       <li>When the stream carries a <code>publish_ui</code> result, the page fetches <code>ui</code>, at most one fetch at a time and retrying one that fails, and swaps in the new version live. A published version is the only thing the agent changes on the page: its text replies never show there, and a bar shows only the page's own failures and the agent's error events.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>A query from <code>jen</code>, end to end</h2>
+    <ol>
+      <li><code>jen @&lt;name&gt; &lt;query&gt;</code> checks the three images, then finds the runtime. A running one gives the owner token from its container's environment and its port from <code>docker port</code>, with no container started. Otherwise <code>jen</code> reads the settings volume with a short-lived container of the runtime's image, asks for the settings in the terminal if there are none, and runs <code>&lt;name&gt;-runtime</code> with the socket, the settings passed by name and the port it had before, on <code>127.0.0.1</code>. The runtime keeps running after the query. If any of jen's containers is on an image its name no longer refers to, <code>jen</code> first stops every root through the runtime, and each starts on the new image at its next message.</li>
+      <li>It finds the root by its name in <code>GET /agents</code>, starts it if it's stopped, and opens the root's <code>/events</code> through the runtime's relay.</li>
+      <li>The stream sends the saved items, then <code>synced</code> with the last item's position. Everything before that first <code>synced</code> is history, and isn't shown. Only then does <code>jen</code> post the query to <code>/messages</code>.</li>
+      <li>Each later step's items arrive followed by one <code>synced</code>, never split by one. <code>jen</code> prints a line to stderr for each tool call, each message from a sub-agent and each <code>error</code> event, once the query's own message has arrived.</li>
+      <li>The reply is the text of the first model response after the query's message with no tool call, read once a <code>synced</code> or another item says the response has ended. It goes to stdout, and <code>jen</code> exits.</li>
+      <li>If the stream ends first, <code>jen</code> waits for the runtime, which may be being replaced, and resumes with <code>Last-Event-ID</code> while the root runs, or reports that it stopped. Ctrl-C leaves the root working.</li>
     </ol>
   </section>
 

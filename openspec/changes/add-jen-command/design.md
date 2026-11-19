@@ -79,7 +79,7 @@ Every command but `jen config`, `jen uninstall` and `jen help` needs the runtime
 
 `jen` labels the runtime's container `jen.runtime=<name>`, as everything else of jen's is, so uninstalling finds it. The runtime reads only containers that are also labelled `jen.agent` or `jen.workspace`, so the label changes nothing for it.
 
-**Stopping every agent and restarting the runtime** (a new image, or `jen config`): with a running runtime, `POST /agents/<id>/stop` for each root, which stops everything under it. Then `docker rm -f <name>-runtime` and step 4. For `jen config` the stops are skipped: the agents keep running, and the new runtime reads them back. A runtime that isn't running is started on its current image first, so the agents can be stopped through it, since the tree is the runtime's to change.
+**Stopping every agent and restarting the runtime** (a new image, or `jen config`): with a running runtime, `POST /agents/<id>/stop` for each root, which stops everything under it. Then, if the runtime itself is on an old image, `docker rm -f <name>-runtime` and step 4; one already on its current image is left running, since restarting it would change nothing. A runtime that isn't running is started first, on its current image, so the agents can be stopped through it, since the tree is the runtime's to change. For `jen config` the stops are skipped and the runtime is always replaced, so it gets the new settings: the agents keep running, and the new runtime reads them back.
 
 *Rejected: comparing versions instead of image IDs.* A checkout has no version, and a rebuilt image is exactly the change that should reach agents.
 
@@ -99,7 +99,7 @@ The name is stored as a `jen.name` label on the root's volume, beside `jen.paren
 
 ### Following a root's work
 
-The agent's event stream gains one event: `synced`, whose data is `{"seq": n}`, where `n` is the position of the last item the stream has sent, or 0. A stream sends it when it opens, once it has sent every item saved so far, and again each time it catches up after new items are saved. Each step's items are saved at once and sent in one pass, so a `synced` after an item means that item's step has fully arrived. The runtime relays it unchanged. The UI page doesn't read `/events`, and `EventSource` ignores event types nobody listens for.
+The agent's event stream gains one event: `synced`, whose data is `{"seq": n}`, where `n` is the position of the last item the stream has sent, or 0. A stream sends it when it opens, once it has sent every item saved so far, and again each time it catches up after new items are saved. Each step's items are saved at once and sent in one pass, so a `synced` after an item means that item's step has fully arrived. The runtime relays it unchanged. The UI page reads `/events` to see `publish_ui` finish, but acts only on `item` and `error` events, and moves its resume cursor only on an event with an ID, which `synced` doesn't have, so it ignores `synced`.
 
 `jen @<name> <query>` (`follow.ts`):
 
@@ -152,7 +152,7 @@ The first argument decides: `new`, `list`, `stop`, `config`, `uninstall`, `help`
 - **The owner token and the key sit in the settings volume and the runtime's environment, and the token in the UI's URL.** Anyone who can reach the engine already holds everything jen has, as today.
 - **Removing the settings volume by hand** loses the settings, and the next command asks for them again. The agents are untouched.
 - **`npm uninstall -g jenai` on its own leaves everything in Docker.** npm runs no script of a package when it's uninstalled (npm v7 and later, checked in npm 11.12.1's docs). The usage text points to `jen uninstall`, and everything left is labelled, so installing jen again and uninstalling with it cleans it up.
-- **Starting the runtime costs a short-lived container** to read the settings. It wasn't measured, since Docker wasn't running on 2026-11-18. The implementation measures it.
+- **Starting the runtime costs a short-lived container** to read the settings. On Docker Desktop 29.4.1 on the maintainer's Mac, measured on 2026-11-18, one takes 0.12 to 0.13 seconds (six runs), a small part of a start that already takes seconds.
 - **A turn that saves nothing isn't seen.** A model response with no tool call and no output items ends the root's turn without saving an item (`store.endTurn`), so `jen` waits until Ctrl-C. Making every turn's end visible would add an item the model sees on every later call, for a response that's rare.
 - **Replacing the runtime cuts calls in flight.** A model call an agent is making while `jen config` or a new image replaces the runtime fails, shows as an error line in any `jen` following that root, and is retried by the agent's loop, as any failed model call is. A `jen` following a root through the old runtime reconnects through the new one.
 - **Two commands replacing the runtime for a new image at once** can each remove the runtime the other started. It takes a rebuilt image and two commands in the same moment, and the next command starts the runtime again.

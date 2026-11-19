@@ -53,6 +53,9 @@ const CAPABILITIES = ["spawn", "workspace"] as const satisfies readonly (keyof G
 export interface Agent {
   id: string;
   parent: string | null;
+  // A root's name, fixed at its spawn. null for a sub-agent, and for a root
+  // spawned before roots had names.
+  name: string | null;
   grant: Grant;
   state: "running" | "stopped";
 }
@@ -107,6 +110,8 @@ const READY_MS = 30_000;
 // How long a message from the runtime may take to be accepted. Notices are
 // sent while holding the tree-operation queue, so one must never wait forever.
 const SEND_MS = 10_000;
+// What a root's name may be, so it can follow @ on a command line unquoted.
+export const NAME = /^[a-z][a-z0-9-]{0,31}$/;
 // IDs that name the owner and the runtime. Agent IDs are 12 hex characters,
 // so neither can collide, and no route reaches either.
 const RESERVED = new Set(["owner", "runtime"]);
@@ -114,6 +119,7 @@ const RESERVED = new Set(["owner", "runtime"]);
 interface Node {
   id: string;
   parent: string | null;
+  name: string | null;
   grant: Grant;
   container?: Container;
 }
@@ -205,12 +211,21 @@ export class Runtime {
     return undefined;
   }
 
-  // grant may leave a capability out, which means false.
-  spawn(caller: Caller, requested: Partial<Grant>): Promise<Agent> {
+  // grant may leave a capability out, which means false. The owner's spawn
+  // names the root, and an agent's names nothing. The name is checked here, in
+  // the queue, so two spawns of one name can't both pass.
+  spawn(caller: Caller, requested: Partial<Grant>, name?: string): Promise<Agent> {
     const grant = fullGrant(requested);
     return this.#serial(async () => {
       const { nodes } = await this.#read();
       const parentId = authorize(nodes, caller);
+      if (parentId !== null && name !== undefined) throw new RuntimeError(400, "only the owner names an agent: a sub-agent has no name");
+      if (parentId === null) {
+        if (name === undefined || !NAME.test(name)) {
+          throw new RuntimeError(400, "a root agent's name must be 1 to 32 lowercase letters, digits and hyphens, starting with a letter");
+        }
+        if ([...nodes.values()].some((n) => n.parent === null && n.name === name)) throw new RuntimeError(409, `a root agent is already named ${name}`);
+      }
       let parentGrant = OWNER_GRANT;
       let depth = 1;
       if (parentId !== null) {
@@ -225,12 +240,13 @@ export class Runtime {
       if (depth > this.#o.maxDepth) throw new RuntimeError(403, `the agent would be deeper than ${this.#o.maxDepth}`);
       if (nodes.size >= this.#o.maxAgents) throw new RuntimeError(403, `the runtime already holds ${this.#o.maxAgents} agents`);
 
-      const node: Node = { id: randomBytes(6).toString("hex"), parent: parentId, grant };
+      const node: Node = { id: randomBytes(6).toString("hex"), parent: parentId, name: parentId === null ? name! : null, grant };
       try {
         await this.#o.docker.createVolume(this.#resource(node.id), {
           "jen.runtime": this.#o.name,
           "jen.agent": node.id,
           "jen.parent": node.parent ?? "",
+          ...(node.name === null ? {} : { "jen.name": node.name }),
           "jen.grant": JSON.stringify(node.grant),
         });
         if (node.grant.workspace) {
@@ -718,7 +734,8 @@ export class Runtime {
     for (const v of volumes) {
       const id = v.labels["jen.agent"];
       if (v.name !== this.#resource(id)) continue;
-      nodes.set(id, { id, parent: v.labels["jen.parent"] || null, grant: parseGrant(v.labels["jen.grant"]) });
+      // A root spawned before names has no jen.name, and reads as null.
+      nodes.set(id, { id, parent: v.labels["jen.parent"] || null, name: v.labels["jen.name"] || null, grant: parseGrant(v.labels["jen.grant"]) });
     }
     for (const c of containers) {
       const node = nodes.get(c.labels["jen.agent"]);
@@ -768,6 +785,7 @@ function describe(node: Node, state?: Agent["state"]): Agent {
   return {
     id: node.id,
     parent: node.parent,
+    name: node.name,
     grant: { ...node.grant },
     state: state ?? (running(node) ? "running" : "stopped"),
   };

@@ -92,8 +92,10 @@ function call(path: string, init: RequestInit & { headers?: Record<string, strin
   return fetch(`${base}${path}`, { ...init, headers: { ...owner, ...init.headers } });
 }
 
-async function spawn(grant: unknown, headers: Record<string, string> = owner) {
-  const res = await fetch(`${base}/agents`, { method: "POST", headers, body: JSON.stringify({ grant }) });
+// The owner's spawns name the root, unless name says otherwise.
+let roots = 0;
+async function spawn(grant: unknown, headers: Record<string, string> = owner, name: unknown = headers === owner ? `root-${++roots}` : undefined) {
+  const res = await fetch(`${base}/agents`, { method: "POST", headers, body: JSON.stringify({ grant, name }) });
   return { res, body: await res.json() };
 }
 
@@ -190,22 +192,49 @@ for (const restart of [false, true]) {
   });
 }
 
-test("the owner spawns a root agent", async () => {
-  const { res, body } = await spawn({ spawn: true });
+test("the owner spawns a named root agent", async () => {
+  const { res, body } = await spawn({ spawn: true }, owner, "home");
   expect(res.status).toBe(201);
-  expect(body).toEqual({ id: expect.any(String), parent: null, grant: { spawn: true, workspace: false }, state: "running" });
+  expect(body).toEqual({ id: expect.any(String), parent: null, name: "home", grant: { spawn: true, workspace: false }, state: "running" });
+  expect(await (await call(`/agents/${body.id}`)).json()).toMatchObject({ name: "home" });
+  expect(await (await call("/agents")).json()).toEqual([body]);
 });
 
-test("an agent spawns a sub-agent with its own token", async () => {
+test("an agent spawns a sub-agent with its own token, and it has no name", async () => {
   const { body: root } = await spawn({ spawn: true });
   const { res, body } = await spawn({ spawn: false }, as(tokenOf(root.id)));
   expect(res.status).toBe(201);
-  expect(body).toMatchObject({ parent: root.id, grant: { spawn: false } });
+  expect(body).toMatchObject({ parent: root.id, name: null, grant: { spawn: false } });
+});
+
+test("the owner's spawn without a name, or with a malformed one, gets 400", async () => {
+  const unnamed = await call("/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: true } }) });
+  expect(unnamed.status).toBe(400);
+  for (const name of [null, 7, "", "Home", "a".repeat(33)]) {
+    const { res, body } = await spawn({ spawn: true }, owner, name);
+    expect(res.status).toBe(400);
+    expect(body.error).toEqual(expect.any(String));
+  }
+  expect(await runtime.list(null)).toEqual([]);
+});
+
+test("the owner's spawn of a name in use gets 409", async () => {
+  await spawn({ spawn: true }, owner, "home");
+  const { res } = await spawn({ spawn: true }, owner, "home");
+  expect(res.status).toBe(409);
+  expect(await runtime.list(null)).toHaveLength(1);
+});
+
+test("an agent's spawn that names its sub-agent gets 400", async () => {
+  const { body: root } = await spawn({ spawn: true });
+  const { res } = await spawn({ spawn: false }, as(tokenOf(root.id)), "helper");
+  expect(res.status).toBe(400);
+  expect(await runtime.list(null)).toHaveLength(1);
 });
 
 test("fields besides grant don't reach the container", async () => {
   const { body: plain } = await spawn({ spawn: false });
-  const res = await call("/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: false }, image: "evil", env: ["X=1"], binds: ["/:/host"] }) });
+  const res = await call("/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: false }, name: "extra", image: "evil", env: ["X=1"], binds: ["/:/host"] }) });
   expect(res.status).toBe(201);
   const extra = await res.json();
   const settings = (id: string) => {
@@ -444,6 +473,23 @@ test("the event stream is relayed, resuming after Last-Event-ID", async () => {
     { id: "3", item: { type: "message", role: "user", from: "owner", text: "second" } },
     { id: "4", item: assistant("two") },
   ]);
+});
+
+test("a relayed event stream carries the agent's synced events unchanged", async () => {
+  const { body: root } = await spawn({ spawn: false });
+  const agent = await serveAgent(root.id, [[assistant("one")]]);
+  await call(`/agents/${root.id}/messages`, message("first"));
+  await agent.idle();
+  const res = await call(`/agents/${root.id}/events`);
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let text = "";
+  while (!text.includes("event: synced")) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error("the stream ended");
+    text += value;
+  }
+  await reader.cancel();
+  expect(text).toMatch(/^id: 1\nevent: item\n.*\n\nid: 2\nevent: item\n.*\n\nevent: synced\ndata: \{"seq":2\}\n/s);
 });
 
 test("an event stream opens before the agent has anything to send", async () => {

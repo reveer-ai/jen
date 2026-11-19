@@ -94,7 +94,7 @@ beforeAll(async () => {
   const port = docker(["port", `${name}-runtime`, "8080/tcp"]).trim().split("\n")[0]!.split(":").at(-1);
   base = `http://127.0.0.1:${port}`;
   await until(async () => !!(await fetch(base).catch(() => undefined)), "the runtime to serve");
-  const res = await call("/agents", { method: "POST", body: JSON.stringify({ grant: { workspace: true } }) });
+  const res = await call("/agents", { method: "POST", body: JSON.stringify({ grant: { workspace: true }, name: "boundary" }) });
   const agent = await res.json();
   expect([res.status, agent.grant]).toEqual([201, { spawn: false, workspace: true }]);
   agentId = agent.id;

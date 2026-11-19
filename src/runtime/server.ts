@@ -17,6 +17,10 @@
 // against the request its adapter builds (see model.ts), sends it to the
 // provider with the owner's key, which never reaches an agent, and streams
 // the answer back. It's the only route under /model.
+//
+// The owner's POST /agents takes {"grant", "name"}, and names the root it
+// spawns; an agent's takes only {"grant"}, since a sub-agent has no name. An
+// agent is described as {"id", "parent", "name", "grant", "state"}.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
@@ -78,13 +82,15 @@ export function createRuntimeServer({ runtime, ownerToken, model, fetch = global
     const body = await readBody(req, MAX_BODY);
     if (body === undefined) return tooLarge(res, MAX_BODY);
     let grant: unknown;
+    let name: unknown;
     try {
-      grant = JSON.parse(body)?.grant;
+      ({ grant, name } = JSON.parse(body) ?? {});
     } catch {
       return json(res, 400, { error: "the body is not JSON" });
     }
     if (!isGrant(grant)) return json(res, 400, { error: 'grant must be an object of "spawn" and "workspace", each a boolean, such as {"spawn": true}' });
-    json(res, 201, await runtime.spawn(caller, grant));
+    if (name !== undefined && typeof name !== "string") return json(res, 400, { error: "name must be a string" });
+    json(res, 201, await runtime.spawn(caller, grant, name));
   }
 
   // Runs a command in the caller's own workspace. A caller that hangs up
