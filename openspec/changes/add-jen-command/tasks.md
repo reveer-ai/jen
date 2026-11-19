@@ -60,8 +60,8 @@
 ## 11. Verification
 
 - [x] 11.1 `npm run check` and `npm test` pass.
-- [ ] 11.2 The command's live check passes, and the runtime, UI, behavior, container and boundary checks still pass with named roots.
-- [ ] 11.3 By hand, from the checkout after `npm link`: `jen new home`, a query with progress, `jen @home open` in the browser, `jen config` with a new model while `home` runs, a rebuilt `jen-agent` stopping and restarting `home` on its next query, and `jen uninstall` leaving nothing of jen's in Docker.
+- [x] 11.2 The command's live check passes, and the runtime, UI, behavior, container and boundary checks still pass with named roots.
+- [x] 11.3 By hand, from the checkout after `npm link`: `jen new home`, a query with progress, `jen @home open` in the browser, `jen config` with a new model while `home` runs, a rebuilt `jen-agent` stopping and restarting `home` on its next query, and `jen uninstall` leaving nothing of jen's in Docker.
 
 ## Workflow follow-up
 
