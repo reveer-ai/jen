@@ -47,14 +47,14 @@ async function populated(answers: string[]) {
   const { docker } = h;
   docker.add({ name: "jen-runtime", labels: { "jen.runtime": "jen" } });
   for (const id of ["home", "work", "sub"]) {
-    docker.add({ name: `jen-agent-${id}`, labels: { "jen.runtime": "jen", "jen.agent": id } });
+    docker.add({ name: `jen-agent-${id}`, labels: { "jen.runtime": "jen", "jen.agent": id }, volumes: [`jen-agent-${id}`] });
     docker.volumes_.set(`jen-agent-${id}`, { labels: { "jen.runtime": "jen", "jen.agent": id }, files: new Map() });
   }
-  docker.add({ name: "jen-workspace-home", labels: { "jen.runtime": "jen", "jen.workspace": "home" } });
+  docker.add({ name: "jen-workspace-home", labels: { "jen.runtime": "jen", "jen.workspace": "home" }, volumes: ["jen-workspace-home"] });
   docker.volumes_.set("jen-workspace-home", { labels: { "jen.runtime": "jen", "jen.workspace": "home" }, files: new Map() });
   docker.networks.add("jen");
   // Someone else's, which stays.
-  docker.add({ name: "postgres", labels: {} });
+  docker.add({ name: "postgres", labels: {}, volumes: ["pgdata"] });
   docker.volumes_.set("pgdata", { labels: {}, files: new Map() });
   docker.images.set("postgres", "sha256:pg");
   return h;

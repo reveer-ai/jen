@@ -223,5 +223,6 @@ export async function stopAll(ctx: Context): Promise<void> {
   const api = await ensureRuntime(ctx);
   const stopped = await stopRoots(api);
   await docker.remove(runtimeContainer(names.name));
-  ctx.print(`Stopped ${stopped === 1 ? "1 root agent" : `${stopped} root agents`} and everything under them, and the runtime. Their conversations and files are kept.`);
+  const roots = stopped === 1 ? "1 root agent and everything under it" : `${stopped} root agents and everything under them`;
+  ctx.print(`Stopped ${roots}, and the runtime. Their conversations and files are kept.`);
 }

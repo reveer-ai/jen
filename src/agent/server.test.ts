@@ -443,11 +443,11 @@ describe("a root agent that gave up tells every watcher", () => {
     await open.items(1);
     expect(await open.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 1 }) });
     expect(await open.next()).toEqual({ event: "error", data: JSON.stringify({ message: "model unreachable" }) });
-    expect(await open.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice }) });
+    expect(await open.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice, gaveUp: true }) });
 
     const late = await openEvents();
     expect(await late.next()).toMatchObject({ id: "1", event: "item" });
-    expect(await late.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice }) });
+    expect(await late.next()).toEqual({ event: "error", data: JSON.stringify({ message: notice, gaveUp: true }) });
     // The notice is part of what the stream had to send when it opened.
     expect(await late.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 1 }) });
   });
@@ -470,6 +470,18 @@ describe("a root agent that gave up tells every watcher", () => {
     vi.advanceTimersByTime(15_000);
     expect(await stream.next()).toEqual({ comment: "keepalive" });
   });
+});
+
+test("a sub-agent's notice that its reply couldn't be sent isn't marked as giving up", async () => {
+  await serve(new ScriptedModel([[assistant("done")]]), { delays: [], post: () => Promise.reject(new Error("parent unreachable")) });
+  const stream = await openEvents();
+  expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 0 }) });
+  await post("hello");
+  await stream.items(2);
+  expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 2 }) });
+  const error = await stream.next();
+  expect(error.event).toBe("error");
+  expect(JSON.parse(error.data!)).toEqual({ message: expect.stringMatching(/couldn't be sent.*parent unreachable/) });
 });
 
 describe("a watcher that stops reading is sent no more than it can take", () => {

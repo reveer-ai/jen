@@ -2,6 +2,12 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-19
+
+Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), fixing its implementation review:
+
+- **A root's notice that it gave up on its model is marked `"gaveUp": true` on its `error` event, and ends a query in `jen` with exit 1.** *Why:* a root that gives up saves nothing, so `jen` otherwise waited forever, as the maintainer's hand check hit with a mistyped base URL. A field on the existing event leaves the UI page, which shows every `error` event's message, unchanged. *Rejected:* an event type of its own, which the page would need to learn; and matching the notice's text, which is the agent's own wording.
+
 ## 2026-11-18
 
 Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), aligning on its proposal with the maintainer. The proposal is in `openspec/changes/add-jen-command/`:

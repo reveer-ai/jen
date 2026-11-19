@@ -11,6 +11,8 @@ export interface FakeContainer extends ContainerInfo {
   port?: number;
   // The -p it was run with.
   publish?: string;
+  // The named volumes it mounts, which Docker won't remove while it exists.
+  volumes?: string[];
 }
 
 export interface RuntimeRun {
@@ -123,7 +125,7 @@ export class FakeDocker implements Docker {
   }
   async removeVolume(name: string) {
     this.#log("removeVolume");
-    if ([...this.containers_.values()].some((c) => c.labels["jen.volume"] === name)) throw new Error(`volume ${name} is in use`);
+    if ([...this.containers_.values()].some((c) => c.volumes?.includes(name))) throw new Error(`volume ${name} is in use`);
     this.volumes_.delete(name);
   }
   async removeNetwork(name: string) {
@@ -174,7 +176,9 @@ export class FakeDocker implements Docker {
     }
     const values = { ...options.env, ...options.secrets };
     const env = args.flatMap((arg, i) => (args[i - 1] === "-e" ? [`${arg}=${values[arg] ?? ""}`] : []));
-    const container = this.add({ name, image: this.images.get(image)!, state: "created", env, labels, publish });
+    // -v's sources that aren't host paths, such as the socket's, are volumes.
+    const volumes = args.flatMap((arg, i) => (args[i - 1] === "-v" && !arg.startsWith("/") ? [arg.split(":")[0]!] : []));
+    const container = this.add({ name, image: this.images.get(image)!, state: "created", env, labels, publish, volumes });
     if (asked !== undefined && this.taken.has(asked)) {
       return fail(`docker: Error response from daemon: driver failed programming external connectivity: Bind for 127.0.0.1:${asked} failed: port is already allocated.`);
     }

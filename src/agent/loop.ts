@@ -58,8 +58,9 @@ export interface AgentOptions {
 export const POST_DEADLINE_MS = 60_000;
 
 // Emits "saved" after each save, "failure" with the message of each failed
-// model call, and "notice" with a notice when watchers should see it: the
-// give-up notice, or that a reply to the parent couldn't be sent.
+// model call, "gaveUp" with a root's notice that it stopped trying after its
+// model kept failing, and "notice" with the notice that a reply to the parent
+// couldn't be sent.
 export class Agent extends EventEmitter {
   readonly #o: AgentOptions & { delays: readonly number[] };
   readonly #specs: ToolSpec[];
@@ -86,6 +87,11 @@ export class Agent extends EventEmitter {
   // the parent is stuck in the outbox.
   get notice(): string | undefined {
     return this.#gaveUp ?? this.#unsent;
+  }
+
+  // Whether the notice is a root's that it gave up.
+  get gaveUp(): boolean {
+    return this.#gaveUp !== undefined;
   }
 
   // Posts the outbox, settles the batch a stop interrupted, then runs unless
@@ -239,7 +245,7 @@ export class Agent extends EventEmitter {
       return this.#post();
     }
     this.#gaveUp = text;
-    this.emit("notice", text);
+    this.emit("gaveUp", text);
   }
 
   #result(call: ToolCall, output: string) {

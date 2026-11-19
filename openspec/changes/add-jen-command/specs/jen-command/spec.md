@@ -132,12 +132,23 @@ If the root's event stream ends before the reply, `jen` SHALL carry on from wher
 - **WHEN** `jen config` replaces the runtime while another terminal follows a query
 - **THEN** that query's reply still reaches stdout
 
+### Requirement: A root that gives up ends the query
+When the root stops trying after its model kept failing, `jen @<name> <query>` SHALL write the root's notice to stderr in full and exit 1. A notice from before the query SHALL NOT end it.
+
+#### Scenario: The model keeps failing
+- **WHEN** every model call fails while the root works on a query, and the root gives up
+- **THEN** stderr ends with the root's notice, and the command exits 1 without waiting for Ctrl-C
+
 ### Requirement: Interrupting a query leaves the root working
-On Ctrl-C, `jen @<name> <query>` SHALL stop reading, say the root is still working and how to open it, and exit 130. It SHALL NOT stop or message the root.
+On Ctrl-C, `jen @<name> <query>` SHALL stop reading and exit 130. Once the query may have reached the root, it SHALL say the root is still working and how to open it. Before that, it SHALL say nothing was sent, and SHALL NOT send the query. It SHALL NOT stop the root or send it anything else.
 
 #### Scenario: Ctrl-C
 - **WHEN** the user presses Ctrl-C while the root works
 - **THEN** the command exits 130, and the root keeps working and replies to its conversation
+
+#### Scenario: Ctrl-C before the query is sent
+- **WHEN** the user presses Ctrl-C while `jen` is still starting the runtime
+- **THEN** the command exits 130 saying nothing was sent, and the root's conversation doesn't hold the query
 
 ### Requirement: The user opens a root's UI
 `jen @<name> open` SHALL start the root if it's stopped, print the URL of its page with the owner token in the fragment, and open it with `$BROWSER` when set, otherwise the system's opener where one applies. A failure to open SHALL leave the printed URL as the result, and still exit 0.

@@ -254,7 +254,16 @@ describe("jen stop all", () => {
     expect(api.requests.filter((r) => r.includes("/stop"))).toHaveLength(1);
     expect(docker.find("jen-runtime")).toBeUndefined();
     expect([...docker.volumes_.keys()].sort()).toEqual(["jen-agent-x", "jen-settings"]);
-    expect(out.at(-1)).toMatch(/^Stopped 1 root agent/);
+    expect(out.at(-1)).toBe("Stopped 1 root agent and everything under it, and the runtime. Their conversations and files are kept.");
+  });
+
+  test("more than one root stopped is counted as them", async () => {
+    const { ctx, api, out } = await setup();
+    await ensureRuntime(ctx);
+    api.add({ name: "home" });
+    api.add({ name: "work" });
+    await stopAll(ctx);
+    expect(out.at(-1)).toBe("Stopped 2 root agents and everything under them, and the runtime. Their conversations and files are kept.");
   });
 
   test("agents running without a runtime are stopped through one started for it", async () => {

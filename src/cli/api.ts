@@ -29,7 +29,9 @@ export class Unanswered extends Error {
 export type StreamEvent =
   | { type: "item"; seq: number; item: Item }
   | { type: "synced"; seq: number }
-  | { type: "error"; message: string }
+  // gaveUp marks a root's notice that it stopped trying after its model kept
+  // failing.
+  | { type: "error"; message: string; gaveUp: boolean }
   | { type: "other"; event: string };
 
 export class Api {
@@ -143,7 +145,7 @@ function toEvent(event: string, id: string | undefined, data: string): StreamEve
     const parsed = JSON.parse(data);
     if (event === "item" && id !== undefined) return { type: "item", seq: Number(id), item: parsed };
     if (event === "synced" && Number.isSafeInteger(parsed?.seq)) return { type: "synced", seq: parsed.seq };
-    if (event === "error") return { type: "error", message: String(parsed?.message ?? data) };
+    if (event === "error") return { type: "error", message: String(parsed?.message ?? data), gaveUp: parsed?.gaveUp === true };
   } catch {}
   return { type: "other", event };
 }

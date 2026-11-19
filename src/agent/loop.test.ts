@@ -496,15 +496,17 @@ describe("an agent that gives up tells its parent", () => {
     const shown: string[] = [];
     const model = failing(4, [[assistant("back")]], "rate limited");
     const a = agent(model);
-    a.on("notice", (text: string) => shown.push(text));
+    a.on("gaveUp", (text: string) => shown.push(text));
     a.start();
     a.accept(plain("go"));
     await a.idle();
     expect(shown).toEqual([notice]);
     expect(a.notice).toBe(notice);
+    expect(a.gaveUp).toBe(true);
     a.accept(plain("try again"));
     await a.idle();
     expect(a.notice).toBeUndefined();
+    expect(a.gaveUp).toBe(false);
   });
 
   test("a notice that can't be sent stays in the outbox, and the stream says so", async () => {

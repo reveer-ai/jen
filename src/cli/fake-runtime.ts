@@ -23,6 +23,9 @@ export class FakeRuntime {
   readonly opened: (string | undefined)[] = [];
   // Called after a message is accepted.
   onMessage: (id: string, text: string) => void = () => {};
+  // A root's notice that it gave up, which a stream gets when it opens,
+  // after the saved items, as an agent sends it.
+  readonly gaveUp = new Map<string, string>();
   // Answers a request before it's routed, when it returns a status.
   intercept: (method: string, path: string) => number | undefined = () => undefined;
   readonly #streams = new Map<http.ServerResponse, { id: string; seq: number }>();
@@ -63,9 +66,10 @@ export class FakeRuntime {
     for (const [res, stream] of this.#streams) if (stream.id === id) this.#deliver(res, stream, partly === undefined ? undefined : stream.seq + partly);
   }
 
-  // Sends an error event to every stream open on the agent.
-  error(id: string, message: string) {
-    for (const [res, stream] of this.#streams) if (stream.id === id) res.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`);
+  // Sends an error event to every stream open on the agent, marked as its
+  // notice that it gave up when gaveUp is true.
+  error(id: string, message: string, { gaveUp = false } = {}) {
+    for (const [res, stream] of this.#streams) if (stream.id === id) res.write(errorEvent(message, gaveUp));
   }
 
   // Ends every stream open on the agent, as its container stopping does,
@@ -130,9 +134,17 @@ export class FakeRuntime {
       const stream = { id: agent.id, seq: last === undefined ? 0 : Number(last) };
       this.#streams.set(res, stream);
       res.on("close", () => this.#streams.delete(res));
-      this.#deliver(res, stream);
+      const notice = this.gaveUp.get(agent.id);
+      if (notice === undefined) return this.#deliver(res, stream);
+      this.#deliver(res, stream, this.conversations.get(agent.id)!.length);
+      res.write(errorEvent(notice, true));
+      res.write(`event: synced\ndata: ${JSON.stringify({ seq: stream.seq })}\n\n`);
       return;
     }
     json(404, { error: `no route for ${method} ${path}` });
   }
+}
+
+function errorEvent(message: string, gaveUp: boolean): string {
+  return `event: error\ndata: ${JSON.stringify(gaveUp ? { message, gaveUp } : { message })}\n\n`;
 }

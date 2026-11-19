@@ -332,7 +332,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
       <li>The stream sends the saved items, then <code>synced</code> with the last item's position. Everything before that first <code>synced</code> is history, and isn't shown. Only then does <code>jen</code> post the query to <code>/messages</code>.</li>
       <li>Each later step's items arrive followed by one <code>synced</code>, never split by one. <code>jen</code> prints a line to stderr for each tool call, each message from a sub-agent and each <code>error</code> event, once the query's own message has arrived.</li>
       <li>The reply is the text of the first model response after the query's message with no tool call, read once a <code>synced</code> or another item says the response has ended. It goes to stdout, and <code>jen</code> exits.</li>
-      <li>If the stream ends first, <code>jen</code> waits for the runtime, which may be being replaced, and resumes with <code>Last-Event-ID</code> while the root runs, or reports that it stopped. Ctrl-C leaves the root working.</li>
+      <li>If the stream ends first, <code>jen</code> waits for the runtime, which may be being replaced, and resumes with <code>Last-Event-ID</code> while the root runs, or reports that it stopped. A root that gives up on its model ends the query with its notice, an <code>error</code> event marked <code>gaveUp</code>. Ctrl-C leaves the root working.</li>
     </ol>
   </section>
 

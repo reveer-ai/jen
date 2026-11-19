@@ -4,7 +4,8 @@
 // for each tool call, each message from a sub-agent and each error, and the
 // reply to stdout: the text of the first model response after the query's
 // own message with no tool call, read once a synced says every item saved
-// with it has arrived.
+// with it has arrived. A root that gives up on its model ends the wait, with
+// its notice.
 
 import { Api, ApiError, Unanswered, type Agent, type Item, type StreamEvent } from "./api.ts";
 import { READY_MS } from "./runtime.ts";
@@ -28,9 +29,17 @@ export interface FollowOptions {
 
 const RETRY_MS = 250;
 
-// The exit code: 0 with the reply, 1 when the root stopped first, 130 on Ctrl-C.
+// The exit code: 0 with the reply, 1 when the root stopped or gave up first,
+// 130 on Ctrl-C.
 export async function follow(o: FollowOptions): Promise<number> {
   const { api, root, query } = o;
+  // Whether the query may have reached the root.
+  let posted = false;
+  const interrupted = () => {
+    o.say(posted ? `@${root.name} is still working. To see it, run: jen @${root.name} open` : `Nothing was sent to @${root.name}.`);
+    return 130;
+  };
+  if (o.interrupt.aborted) return interrupted();
   if (root.state === "stopped") await api.start(root.id);
 
   // Where the stream has been read to, to resume after.
@@ -40,6 +49,7 @@ export async function follow(o: FollowOptions): Promise<number> {
   // The model response arriving: its text, and whether it called a tool.
   let response = { open: false, text: "", called: false };
   let reply: string | undefined;
+  let gaveUp: string | undefined;
 
   const end = () => {
     if (found && response.open && !response.called && response.text.trim() !== "") reply = response.text.trim();
@@ -70,12 +80,15 @@ export async function follow(o: FollowOptions): Promise<number> {
     } else if (event.type === "synced") {
       last = event.seq;
       if (!history) end();
-    } else if (event.type === "error" && !history) line(`! ${event.message}`);
+    } else if (event.type === "error" && !history) {
+      if (event.gaveUp) gaveUp = event.message;
+      else line(`! ${event.message}`);
+    }
   };
 
   for (;;) {
     const stream = await open(o, last);
-    if (stream === "interrupted") return interrupted(o);
+    if (stream === "interrupted") return interrupted();
     if (stream === "stopped") {
       o.say(`@${root.name} stopped before it replied. Its conversation is kept: send it another query to start it again.`);
       return 1;
@@ -84,20 +97,21 @@ export async function follow(o: FollowOptions): Promise<number> {
       onEvent(event);
       if (event.type === "synced" && history) {
         history = false;
+        posted = true;
         await api.post(root.id, query);
       }
       if (reply !== undefined) {
         o.write(`${reply}\n`);
         return 0;
       }
+      // Whole, unlike a progress line: it says how to go on.
+      if (gaveUp !== undefined) {
+        o.say(`! ${gaveUp}`);
+        return 1;
+      }
     }
-    if (o.interrupt.aborted) return interrupted(o);
+    if (o.interrupt.aborted) return interrupted();
   }
-}
-
-function interrupted(o: FollowOptions): number {
-  o.say(`@${o.root.name} is still working. To see it, run: jen @${o.root.name} open`);
-  return 130;
 }
 
 // Opens the root's stream after last, waiting for the runtime for as long as

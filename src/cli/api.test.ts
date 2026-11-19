@@ -75,8 +75,8 @@ test("a stopped agent's stream is refused with 409", async () => {
   await expect(api.events(root.id)).rejects.toMatchObject({ status: 409 });
 });
 
-test("events are parsed across chunks, with comments, errors and unknown types, and a cut-off event is dropped", async () => {
-  const chunks = [": keepalive\n\nid: 1\nevent: it", 'em\ndata: {"type":"message","role":"assistant","text":"hi"}\n\n', 'event: error\ndata: {"message":"boom"}\n\n', "event: new\ndata: {}\n\n", "id: 2\nevent: item\ndata: {"];
+test("events are parsed across chunks, with comments, errors, a give-up notice and unknown types, and a cut-off event is dropped", async () => {
+  const chunks = [": keepalive\n\nid: 1\nevent: it", 'em\ndata: {"type":"message","role":"assistant","text":"hi"}\n\n', 'event: error\ndata: {"message":"boom"}\n\n', 'event: error\ndata: {"message":"gone","gaveUp":true}\n\n', "event: new\ndata: {}\n\n", "id: 2\nevent: item\ndata: {"];
   const body = new ReadableStream<Uint8Array<ArrayBuffer>>({
     start(controller) {
       for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
@@ -85,5 +85,5 @@ test("events are parsed across chunks, with comments, errors and unknown types, 
   });
   const out: StreamEvent[] = [];
   for await (const event of parseEvents(body)) out.push(event);
-  expect(out).toEqual([{ type: "item", seq: 1, item: assistant("hi") }, { type: "error", message: "boom" }, { type: "other", event: "new" }]);
+  expect(out).toEqual([{ type: "item", seq: 1, item: assistant("hi") }, { type: "error", message: "boom", gaveUp: false }, { type: "error", message: "gone", gaveUp: true }, { type: "other", event: "new" }]);
 });

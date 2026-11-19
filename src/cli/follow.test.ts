@@ -173,6 +173,47 @@ test("Ctrl-C exits 130 saying the root is still working, and neither stops nor m
   expect(runtime.messages).toHaveLength(1);
 });
 
+test("a root that gives up on its model ends the wait with its notice, whole, and exits 1", async () => {
+  const notice = "My model is failing, so I've stopped working. Error: 401 Incorrect API key provided. Message me to try again.";
+  const { log, run } = await setup("hello", (id) => {
+    runtime.error(id, "401 Incorrect API key provided");
+    runtime.error(id, notice, { gaveUp: true });
+  });
+  expect(await run()).toBe(1);
+  expect(log).toEqual(["err ! 401 Incorrect API key provided", `err ! ${notice}`]);
+});
+
+test("a notice that the root gave up before the query is history, and the reply to the query still arrives", async () => {
+  const { root, log, options } = await setup("try again", (id) => runtime.save(id, [assistant("Working now.")]), { history: [[owner("hello")]] });
+  runtime.gaveUp.set(root.id, "My model is failing, so I've stopped working. Error: timeout. Message me to try again.");
+  runtime.onMessage = (id, text) => {
+    runtime.gaveUp.delete(id);
+    runtime.save(id, [owner(text)]);
+    setTimeout(() => runtime.save(id, [assistant("Working now.")]), 5);
+  };
+  expect(await follow(options)).toBe(0);
+  expect(log).toEqual(["out Working now.\n"]);
+});
+
+test("Ctrl-C before the query is sent says nothing was sent, and neither starts nor messages the root", async () => {
+  const { log, run, interrupt } = await setup("work", () => {}, { state: "stopped" });
+  interrupt.abort();
+  expect(await run()).toBe(130);
+  expect(log).toEqual(["err Nothing was sent to @home."]);
+  expect(runtime.requests).toEqual([]);
+});
+
+test("Ctrl-C while the stream won't open says nothing was sent", async () => {
+  const { log, run, interrupt } = await setup("work", () => {});
+  runtime.intercept = (method, path) => (method === "GET" && path.endsWith("/events") ? 503 : undefined);
+  const done = run();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  interrupt.abort();
+  expect(await done).toBe(130);
+  expect(log).toEqual(["err Nothing was sent to @home."]);
+  expect(runtime.messages).toEqual([]);
+});
+
 test("a tool call's input is summarized by its values", () => {
   expect(summary({ command: "ls", timeout: 5 })).toBe("ls 5");
   expect(summary({})).toBe("");
