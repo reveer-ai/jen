@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="describes" content="src/agent src/agent/ui.ts src/agent/ui src/runtime src/cli Dockerfile">
-<meta name="checked" content="2026-11-18">
+<meta name="checked" content="2026-11-19">
 <title>jen Agent Components</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -355,7 +355,7 @@ li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
       <ul>
         <li><strong>Restart:</strong> all state is in the store, so the loop resumes. A call that may have been running is reported as unknown; later calls in its batch are marked not run. The model decides what to retry.</li>
         <li><strong>Woken by a message:</strong> the runtime starts the agent with <code>JEN_WAKE</code>, which holds the loop until its first message is saved, so recovery never calls the model without it.</li>
-        <li><strong>Model failing:</strong> retried after 1, 5 and 25 s, each failure an <code>error</code> event. Then the agent puts a notice in its outbox for its parent (a root shows it on its stream) and waits; any message retries.</li>
+        <li><strong>Model failing:</strong> retried after 1, 5 and 25 s, each failure an <code>error</code> event. Then, unless a message has arrived meanwhile, which it retries for instead, the agent puts a notice in its outbox for its parent (a root shows it on its stream, marked <code>gaveUp</code>, until it's messaged again) and waits; any message retries.</li>
         <li><strong>Runtime notices:</strong> the runtime sends as <code>runtime</code> only what it alone saw: a child whose restarts ran out, or sub-agents still stopped when an agent starts.</li>
         <li><strong>Stop and delete:</strong> both act on the whole subtree. Stop removes the agent's container and then its workspace's, ending every process in it, and keeps both volumes; delete removes them too.</li>
         <li><strong>Workspace:</strong> a crash of the agent's process leaves its workspace running. A workspace whose first process dies comes back with its files. When an agent's restarts run out, its workspace container is removed. A file write goes to a temporary file and is renamed over its target only once every byte has arrived, so one cut short leaves the file as it was.</li>
