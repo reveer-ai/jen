@@ -492,7 +492,7 @@ describe("an agent that gives up tells its parent", () => {
     expect(a.notice).toBeUndefined();
   });
 
-  test("a root agent shows the notice to its watchers instead, until it works again", async () => {
+  test("a root agent shows the notice to its watchers instead, until it is messaged again", async () => {
     const shown: string[] = [];
     const model = failing(4, [[assistant("back")]], "rate limited");
     const a = agent(model);
