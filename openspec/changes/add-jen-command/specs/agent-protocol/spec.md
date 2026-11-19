@@ -22,7 +22,7 @@ Whenever `GET /events` has sent every item saved so far, it SHALL send an event 
 ## MODIFIED Requirements
 
 ### Requirement: A root agent that gave up tells every watcher
-While a root agent has stopped trying after its model kept failing, every event stream already open, and every one opened later, SHALL receive the agent's failure notice as an `error` event whose `data` is `{"message": "<notice>", "gaveUp": true}`. No other `error` event SHALL carry `gaveUp`. Once the agent works again, new streams SHALL NOT receive it.
+While a root agent has stopped trying after its model kept failing, every event stream already open, and every one opened later, SHALL receive the agent's failure notice as an `error` event whose `data` is `{"message": "<notice>", "gaveUp": true}`. No other `error` event SHALL carry `gaveUp`. Once the agent accepts a message, which makes it try again, new streams SHALL NOT receive it.
 
 #### Scenario: Owner connects after the failure
 - **WHEN** a root agent has given up on its model, and the owner then opens its event stream
@@ -31,6 +31,10 @@ While a root agent has stopped trying after its model kept failing, every event 
 #### Scenario: Watching as it gives up
 - **WHEN** a stream is open while a root agent's model calls fail until it gives up
 - **THEN** the stream receives an `error` event for each failed call without `gaveUp`, then the notice with `gaveUp` true
+
+#### Scenario: Messaged again
+- **WHEN** the owner messages a root that gave up, and its model calls still fail
+- **THEN** a stream opened while it retries receives no notice
 
 #### Scenario: After recovery
 - **WHEN** the owner messages the root, and its next model call succeeds

@@ -6,7 +6,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), fixing its implementation review:
 
-- **A root's notice that it gave up on its model is marked `"gaveUp": true` on its `error` event, and ends a query in `jen` with exit 1.** *Why:* a root that gives up saves nothing, so `jen` otherwise waited forever, as the maintainer's hand check hit with a mistyped base URL. A field on the existing event leaves the UI page, which shows every `error` event's message, unchanged. *Rejected:* an event type of its own, which the page would need to learn; and matching the notice's text, which is the agent's own wording.
+- **A root's notice that it gave up on its model is marked `"gaveUp": true` on its `error` event, and ends a query in `jen` with exit 1.** *Why:* a root that gives up saves nothing, so `jen` otherwise waited forever, as the maintainer's hand check hit with a mistyped base URL. A field on the existing event leaves the UI page, which shows every `error` event's message, unchanged. A message clears the notice, and an agent with a message waiting when its last retry fails tries again rather than giving up, so a notice that reaches a query is about that query. *Rejected:* an event type of its own, which the page would need to learn; and matching the notice's text, which is the agent's own wording.
 
 ## 2026-11-18
 

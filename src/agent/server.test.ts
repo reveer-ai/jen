@@ -484,6 +484,22 @@ test("a sub-agent's notice that its reply couldn't be sent isn't marked as givin
   expect(JSON.parse(error.data!)).toEqual({ message: expect.stringMatching(/couldn't be sent.*parent unreachable/) });
 });
 
+test("a root that gave up and is messaged again sends no notice to a stream opened while it retries", async () => {
+  const model = flaky([[assistant("back")]]);
+  await serve(model, { delays: [300] });
+  await post("hello");
+  await agent.idle();
+  expect(agent.gaveUp).toBe(true);
+  await post("again");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const stream = await openEvents();
+  await stream.items(2);
+  expect(await stream.next()).toEqual({ event: "synced", data: JSON.stringify({ seq: 2 }) });
+  model.fail = false;
+  expect(await stream.next()).toEqual({ id: "3", event: "item", data: JSON.stringify(assistant("back")) });
+  await agent.idle();
+});
+
 describe("a watcher that stops reading is sent no more than it can take", () => {
   test("its buffer stays bounded, others are served, and it gets everything once it reads", async () => {
     const big = (n: number) => `${n} ${"x".repeat(64 * 1024)}`;

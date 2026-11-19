@@ -114,6 +114,8 @@ export class Agent extends EventEmitter {
     const discard = empty && turnEnded(this.#o.store.load());
     this.#o.store.accept(empty ? { ...message, urgent: false } : message, this.#held ? this.#o.wake : undefined, discard);
     this.#held = false;
+    // A message makes a root that gave up try again.
+    if (!empty) this.#gaveUp = undefined;
     if (message.urgent && !empty) this.#inflight?.abort();
     this.#kick();
   }
@@ -156,9 +158,13 @@ export class Agent extends EventEmitter {
             this.emit("failure", message(error));
             if (failures === delays.length) {
               this.#inflight = undefined;
-              await this.#giveUp(message(error));
-              // A message that arrived while it gave up resumes the work.
-              if (!hasMessage(store)) return;
+              // A message that arrived during the retries is tried in full,
+              // so the agent gives up only with none waiting.
+              if (!hasMessage(store)) {
+                await this.#giveUp(message(error));
+                // One that arrived while it gave up resumes the work.
+                if (!hasMessage(store)) return;
+              }
               failures = 0;
             } else {
               await sleep(delays[failures++]!, controller.signal);
@@ -169,7 +175,6 @@ export class Agent extends EventEmitter {
         }
         this.#inflight = undefined;
         failures = 0;
-        this.#gaveUp = undefined;
         if (response.some((item) => item.type === "tool_call")) {
           store.save(response);
           this.#saved();
