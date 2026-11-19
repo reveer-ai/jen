@@ -61,6 +61,8 @@ The runtime never mounts or reads the volume, so it keeps no state of its own. I
 
 The first command that needs the runtime and finds no settings runs `jen config`'s questions first when stdin is a terminal. Otherwise it fails, saying to run `jen config`.
 
+*Rejected: editing the settings in the user's `$VISUAL` or `$EDITOR`, as `git commit` does.* It shows every setting at once, but it puts the key in a file on the host while it's edited, and an editor may copy that file into swap, backup or undo files that `jen` can't find or delete. That leaves the key outside Docker, where `jen uninstall` can't remove it. Discussed with the maintainer on 2026-11-18. An editor becomes worth it for the settings that aren't secret once there are enough of them.
+
 *Rejected: a file in `~/.config/jen/`, which needs no container to read.* It's the one piece of jen that would live outside Docker, and the maintainer wants jen in one place (proposal). Reading the running runtime's environment keeps the cost to a container at start, which already takes seconds.
 
 ### Starting the runtime on demand
