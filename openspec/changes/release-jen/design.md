@@ -58,22 +58,21 @@ The generated `package.json` has no `dependencies`: the command needs none, and 
 |---|---|---|
 | Image names | `jen-runtime`, `jen-agent`, `jen-workspace` | `ghcr.io/reveer-ai/jen-runtime:0.1.0`, and so on |
 | A missing image | fails naming its `docker build` | pulled |
-| `jen uninstall` removes the command with | says `npm unlink -g jen` | `npm uninstall -g jen-ai` |
 
-`JEN_RUNTIME_IMAGE`, `JEN_AGENT_IMAGE` and `JEN_WORKSPACE_IMAGE` still override the names either way, as the live checks use them. An image whose name was overridden is never pulled: it fails as a checkout's does.
+`JEN_RUNTIME_IMAGE`, `JEN_AGENT_IMAGE` and `JEN_WORKSPACE_IMAGE` still override the names either way, as the live checks use them. An image whose name was overridden is never pulled: it fails as a checkout's does. How `jen uninstall` removes the command isn't decided by `VERSION` but, as today, by whether the running file is inside the global npm folder's package, so a package run with `npx` is left to npm.
 
 *Alternative: read the version from the `package.json` beside the command.* A checkout's `package.json` sits at a different depth, is named `jen` and has a version that means nothing, so the code would have to tell them apart anyway.
 
 ### Checking Node before anything runs
 
-The package's `bin` is `cli/jen.js`, compiled from a new `src/cli/jen.ts`. It reads `process.versions.node` and, below 26, prints `jen: jen needs Node 26 or later, and this is Node <version>. Install it from https://nodejs.org.` and exits 1. Otherwise it imports `./main.js` and calls its `start()`, which is today's `if (import.meta.main)` block. `jen.ts` uses no syntax or API newer than Node 18's, so an older Node reaches the message. Without it, `import.meta.main` is undefined below Node 24.2 and `jen` would exit silently. The repo's `bin` moves to `src/cli/jen.ts` too, so a checkout runs the same entry.
+The package's `bin` is `cli/jen.js`, compiled from a new `src/cli/jen.ts`. It reads `process.versions.node` and, below 26, prints `jen: jen needs Node 26 or later, and this is Node <version>. Install it from https://nodejs.org.` and exits 1. Otherwise it imports `./main.js` and calls its `start()`, which is today's `if (import.meta.main)` block. `jen.ts` uses no syntax or API newer than Node 18's, so an older Node reaches the message. Without it, `import.meta.main` is undefined below Node 24.2 and `jen` would exit silently. The repo's `bin` moves to `src/cli/jen.ts` too, so a checkout runs the same entry. `npm link` writes the bin's path when it links, so a checkout linked before this change runs `main.ts`, which then starts nothing, until `npm link` is run again (Migration Plan).
 
 ### Finding Docker, starting it and checking its version
 
 `ping` becomes `ensureEngine`, in `src/cli/docker.ts`, and runs before every command except `help`, usage and the two stops:
 
 1. **No `docker` command** (`spawn` fails with `ENOENT`): fail with what to install. On macOS, Docker Desktop, `https://docs.docker.com/desktop/setup/install/mac-install/`. On Linux, Docker Engine, `https://docs.docker.com/engine/install/`. Both say jen needs Engine 28.0 or later.
-2. **The engine doesn't answer**: start Docker Desktop if it's installed, with `docker desktop start`, the Docker Desktop CLI (on this Mac on 2026-11-20). `jen` says `starting docker...` first. Where `docker desktop` isn't a command, it falls back on macOS to `open -a Docker` when the app is installed. Then it waits for `docker version` to answer, up to a fixed 120 seconds, checking every second. If it can't start the engine, or it doesn't answer in time, it fails saying how to start it by hand: Docker Desktop, or `sudo systemctl start docker` for Docker Engine on Linux, naming the current Docker context when it isn't `default` or `desktop-linux`, since then the engine is something else, such as Colima.
+2. **The engine doesn't answer**: start Docker Desktop if it's installed. `jen` says `starting docker...`, then runs `docker desktop start --detach`, the Docker Desktop CLI, or, where `docker desktop` isn't a command, `open -a Docker` on macOS when the app is installed. Either way it then waits the same way: for `docker version` to answer, up to a fixed 120 seconds, checking every second. `docker desktop start` waits by itself unless detached (its help, on this Mac on 2026-11-20), but one wait for both paths is simpler than two. If it can't start the engine, or it doesn't answer in time, it fails saying how to start it by hand: Docker Desktop, or `sudo systemctl start docker` for Docker Engine on Linux, naming the current Docker context when it isn't `default` or `desktop-linux`, since then the engine is something else, such as Colima.
 3. **The engine is older than 28.0**: fail naming its version and that jen needs 28.0 or later, with how to update. The version is `docker version --format {{.Server.Version}}`. A version that doesn't parse as `x.y` fails the same way, since an engine that isn't Docker's, such as Podman's, doesn't have the isolated gateway the agents' network needs.
 
 `jen stop @<name>` and `jen stop all` call `ensureEngine` without starting Docker. When the engine doesn't answer, they print `docker isn't running, so nothing of jen's is.` and exit 0.
@@ -96,7 +95,7 @@ After that switch, `jen` removes every image of its three registry repositories 
 
 ### The release
 
-A new workflow, `.github/workflows/release.yml`, runs on every push to `main`, one at a time (`concurrency: release`, never cancelled), so releases happen in merge order:
+A new workflow, `.github/workflows/release.yml`, runs on every push to `main`, one at a time (`concurrency: release`, without cancelling a run in progress). GitHub keeps at most one run waiting in a group, so when merges come faster than releases, a waiting run is replaced by the newest, and its merges go out in that release, since `plan` reads everything since the last tag:
 
 1. **`ci`:** today's checks, by calling `ci.yml`, which gains `workflow_call`. `ci.yml`'s own `push` trigger skips `main`, so `main` isn't checked twice.
 2. **`plan`:** `node scripts/release.ts plan` decides whether to release, the version and the notes, from git and the GitHub API, and passes them on as outputs. Its rules are below.
@@ -127,20 +126,22 @@ The rules are in `scripts/release.ts`, a TypeScript script Node runs directly, w
 ### Checks
 
 - **Unit tests** for `release.ts`'s plan, `ensureEngine`'s three cases and the stops without an engine, pulling, the image names for each `VERSION`, removing old images, and uninstall's package name.
-- **The `jen` live check** runs the command as a user installs it: it builds and packs the package at a test version, installs it globally into a temporary npm prefix, and spawns that `jen` instead of `src/cli/main.ts`. Its image names stay overridden with its own tags, so it pulls nothing. `jen config` and `jen uninstall` still run in-process, from source, since they need a terminal.
+- **The `jen` live check** runs the command as a user installs it: it builds and packs the package at a test version, installs it globally into a temporary npm prefix, and spawns that `jen` instead of `src/cli/main.ts`. Its image names stay overridden with its own tags, so it pulls nothing. `jen config` and `jen uninstall` still run in-process, from source, since they need a terminal. `jen uninstall` gets the installed `cli/main.js` as its `mainPath`, with `npm_config_prefix` set to the temporary prefix, so it uninstalls the package it installed, and the check finds `jen` gone from the prefix.
 - **The release's smoke check** above, on every release.
 - **By hand, once, after the first release:** on a Mac with no checkout of jen on the path, `npm install -g jen-ai`, then `jen new`, a query, `jen @<name> open` in the browser, and `jen uninstall`. That's JEN-26's done-when, and only a published package can show it.
 
 ## Risks / Trade-offs
 
 - **The first release can't be checked before it's published.** The smoke check and live check run what will ship, but pulling from GHCR and installing from npm are checked only by the hand check after `0.1.0`. A fault there means a quick `0.1.1`.
-- **`docker desktop start` is measured only on this Mac.** On Linux, Docker Desktop's CLI is the same, but unmeasured. A failure there falls through to saying how to start Docker by hand.
+- **Starting Docker Desktop is unmeasured.** Only `docker desktop start --help` ran, on this Mac, on 2026-11-20. The implementation measures it on macOS, and Linux stays unmeasured. A failure falls through to saying how to start Docker by hand.
 - **A version npm has from a different commit stops releases** until it's sorted by hand. It needs a run that published to npm and then failed to tag, followed by another merge before a rerun. Rerunning a failed release promptly avoids it.
 - **QEMU makes the arm64 workspace image slow to build**, perhaps ten minutes or more per release, since `apt-get` runs emulated.
 - **Removing old images can take an image another runtime name uses.** Only the live checks use other names, and they use their own local tags, never the registry's.
 - **Pushing the local `v0.1.0` to `v0.5.0` tags would break versioning.** The next release would read `v0.5.0` as the last one. The maintainer may want to delete them locally. Nothing in jen pushes tags but the release.
 
 ## Migration Plan
+
+A checkout linked with `npm link` before this change runs it again, and `record/environment.md` says so.
 
 Before the first merge with this change, the maintainer, once:
 
