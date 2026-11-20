@@ -208,8 +208,10 @@ describe("a new image", () => {
 
 describe("jen config", () => {
   test("first settings are saved in a labelled volume with an owner token", async () => {
-    const { docker, ctx } = await setup({ settings: null, answers: ["gpt-y", "https://y.test/v1", "sk-y-123456789"] });
+    const { docker, ctx, err } = await setup({ settings: null, answers: ["gpt-y", "https://y.test/v1", "sk-y-123456789"] });
     await config(ctx);
+    // A blank line between the answers and what follows.
+    expect(err).toEqual([""]);
     expect(docker.volumes_.get("jen-settings")!.labels).toEqual({ "jen.runtime": "jen", "jen.settings": "" });
     expect(docker.settings()).toEqual({ model: "gpt-y", baseURL: "https://y.test/v1", apiKey: "sk-y-123456789", ownerToken: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(runtimeRuns(docker)).toEqual([]);

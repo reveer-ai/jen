@@ -18,7 +18,10 @@ const PACKAGE = "jenai";
 export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: string; npm: Runner }): Promise<number> {
   const { docker, names } = ctx;
   if (!ctx.terminal.interactive) throw new Refusal("jen uninstall asks before it deletes anything, so it needs a terminal.");
-  if ((await ctx.terminal.ask(QUESTION)).trim() !== "y") {
+  const answer = (await ctx.terminal.ask(QUESTION)).trim();
+  // A blank line between the answer and what follows.
+  ctx.say("");
+  if (answer !== "y") {
     ctx.print("nothing was removed.");
     return 1;
   }

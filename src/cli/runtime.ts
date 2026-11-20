@@ -139,6 +139,8 @@ async function settingsOrAsk(ctx: Context): Promise<Settings> {
   if (!ctx.terminal.interactive) throw new Refusal(settings ? "jen's settings have no base URL. Run jen config to set it." : "jen has no settings yet. Run jen config to set the model, its base URL and its key.");
   ctx.say(settings ? "jen needs the model's base URL before it can start." : "jen needs a model, its base URL and its key before it can start.");
   const asked = await askSettings(ctx.terminal, settings);
+  // A blank line between the answers and what follows.
+  ctx.say("");
   await writeSettings(ctx.docker, ctx.names, asked);
   return asked;
 }
@@ -202,6 +204,7 @@ export async function config(ctx: Context): Promise<void> {
   await requireRuntimeImage(ctx);
   const current = await readSettings(ctx.docker, ctx.names);
   const settings = await askSettings(ctx.terminal, current);
+  ctx.say("");
   await writeSettings(ctx.docker, ctx.names, settings);
   ctx.print("saved jen's settings.");
   if (await runningRuntime(ctx.docker, ctx.names)) {

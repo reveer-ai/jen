@@ -65,7 +65,7 @@
 
 ## 12. The maintainer's review
 
-- [x] 12.1 Start every line of `jen`'s own lowercase, write a blank line to stderr before and after a command's output when stderr is a terminal, require the base URL with no default endpoint (asking only for it when settings were saved without one), and say in the usage how to pass an unquoted `?` or `*` in zsh. Verify with `npm test`, and in a pseudo-terminal that the blank lines appear only there.
+- [x] 12.1 Start every line of `jen`'s own lowercase, write a blank line to stderr with a command's first output and as it exits when stderr is a terminal, and after the answers to its questions, require the base URL with no default endpoint (asking only for it when settings were saved without one), and say in the usage how to pass an unquoted `?` or `*` in zsh. Verify with `npm test`, and in a pseudo-terminal that the blank lines appear only there.
 
 ## Workflow follow-up
 

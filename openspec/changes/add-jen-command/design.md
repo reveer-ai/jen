@@ -148,7 +148,7 @@ The first argument decides: `new`, `list`, `stop`, `config`, `uninstall`, `help`
 
 zsh treats an unquoted `?` or `*` as a pattern and, when no file matches, fails the command before `jen` runs, so `jen @home how are you?` never reaches it. `jen` can't see that, so the usage says how to turn it off for `jen` alone: `alias jen='noglob jen'` in `~/.zshrc`. Bash passes an unmatched pattern through as it is.
 
-**Output.** `jen`'s own lines start lowercase, as `jen: ` errors do, and text from an agent or the user is written as it is. In a terminal, a blank line goes to stderr before anything else and another on exit, so each command's output stands apart from the one before. Only stderr carries them, and only when it's a terminal, so redirected output holds none.
+**Output.** `jen`'s own lines start lowercase, as `jen: ` errors do, and text from an agent or the user is written as it is. In a terminal, a blank line goes to stderr with the first output or question, so it arrives with what it sets apart rather than as the command starts, and another on exit, so each command's output stands apart from the one before. A blank line also follows the last answer to `jen config`'s or `jen uninstall`'s questions. Only stderr carries them, and only when it's a terminal, so redirected output holds none.
 
 ## Risks / Trade-offs
 

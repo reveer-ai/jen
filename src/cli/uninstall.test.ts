@@ -116,7 +116,8 @@ test("a failure is reported at the end, every other step still runs, and the com
   expect(await uninstall(ctx, { mainPath: installed, npm })).toBe(1);
   expect([...docker.volumes_.keys()].sort()).toEqual(["jen-agent-work", "pgdata"]);
   expect([...docker.images.keys()]).toEqual(["postgres"]);
-  expect(err[0]).toBe("jen: removing volume jen-agent-work: volume is busy");
+  // A blank line after the answer, then the failure.
+  expect(err.slice(0, 2)).toEqual(["", "jen: removing volume jen-agent-work: volume is busy"]);
   expect(calls).toEqual([]);
 });
 

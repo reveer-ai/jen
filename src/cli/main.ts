@@ -137,8 +137,10 @@ export async function run(command: Command, deps: Deps): Promise<number> {
 }
 
 // Asks on stderr, reading from stdin. A hidden answer is read with echo off.
-function terminal(): Terminal {
+// lead() runs before each question is written.
+function terminal(lead: () => void): Terminal {
   const ask = async (question: string) => {
+    lead();
     const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
     try {
       return await rl.question(question);
@@ -148,6 +150,7 @@ function terminal(): Terminal {
   };
   const askHidden = (question: string) =>
     new Promise<string>((resolve) => {
+      lead();
       process.stderr.write(question);
       const stdin = process.stdin;
       emitKeypressEvents(stdin);
@@ -177,11 +180,15 @@ function terminal(): Terminal {
 
 if (import.meta.main) {
   // In a terminal, a blank line sets jen's output apart from the command
-  // typed above it and from the next prompt, however jen exits.
-  if (process.stderr.isTTY) {
+  // typed above it, written with the first output so the two arrive
+  // together, and another from the next prompt, however jen exits.
+  let led = !process.stderr.isTTY;
+  const lead = () => {
+    if (led) return;
+    led = true;
     process.stderr.write("\n");
     process.on("exit", () => process.stderr.write("\n"));
-  }
+  };
   const interrupt = new AbortController();
   const command = parse(process.argv.slice(2));
   // Only a followed query handles Ctrl-C, by leaving the root working.
@@ -189,9 +196,9 @@ if (import.meta.main) {
   const code = await run(command, {
     docker: createDocker(),
     env: process.env,
-    terminal: terminal(),
-    stdout: (text) => process.stdout.write(text),
-    stderr: (text) => process.stderr.write(text),
+    terminal: terminal(lead),
+    stdout: (text) => (lead(), process.stdout.write(text)),
+    stderr: (text) => (lead(), process.stderr.write(text)),
     fetch: globalThis.fetch,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: Date.now,

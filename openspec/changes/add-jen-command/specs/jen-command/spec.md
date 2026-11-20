@@ -217,11 +217,15 @@ On Ctrl-C, `jen @<name> <query>` SHALL stop reading and exit 130. Once the query
 - **THEN** it prints the usage and exits 2
 
 ### Requirement: jen's own output starts lowercase and is set apart in a terminal
-Every line `jen` writes of its own SHALL start with a lowercase letter; text from an agent or the user SHALL be written as it is. When stderr is a terminal, `jen` SHALL write a blank line to it before anything else and another as it exits, however it exits, and none when stderr isn't a terminal.
+Every line `jen` writes of its own SHALL start with a lowercase letter; text from an agent or the user SHALL be written as it is. When stderr is a terminal, `jen` SHALL write a blank line to it just before its first output or question, not before, and another as it exits, however it exits, and none when stderr isn't a terminal. After the last answer to its questions, `jen` SHALL write a blank line before what follows.
 
 #### Scenario: In a terminal
 - **WHEN** the user runs `jen list` in a terminal
 - **THEN** a blank line separates its output from the command above it and from the next prompt
+
+#### Scenario: After the questions
+- **WHEN** the user answers `jen config`'s last question
+- **THEN** a blank line separates the answers from what `jen` writes next
 
 #### Scenario: Piped
 - **WHEN** `jen @home <query>` runs with stdout and stderr redirected
