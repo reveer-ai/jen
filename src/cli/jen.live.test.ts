@@ -127,7 +127,7 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
 
     const uninstalled = await scripted(["uninstall"], ["y"]);
     expect(uninstalled.code, uninstalled.stderr).toBe(0);
-    expect(uninstalled.stdout).toMatch(/^Removed 1 agent with/);
+    expect(uninstalled.stdout).toMatch(/^removed 1 agent with/);
     expect(uninstalled.stdout).toMatch(/wasn't installed with npm install -g/);
     expect(left()).toEqual({ containers: "", volumes: "", network: "", images: [] });
   } finally {
