@@ -63,6 +63,10 @@
 - [x] 11.2 The command's live check passes, and the runtime, UI, behavior, container and boundary checks still pass with named roots.
 - [x] 11.3 By hand, from the checkout after `npm link`: `jen new home`, a query with progress, `jen @home open` in the browser, `jen config` with a new model while `home` runs, a rebuilt `jen-agent` stopping and restarting `home` on its next query, and `jen uninstall` leaving nothing of jen's in Docker.
 
+## 12. The maintainer's review
+
+- [x] 12.1 Start every line of `jen`'s own lowercase, write a blank line to stderr before and after a command's output when stderr is a terminal, require the base URL with no default endpoint (asking only for it when settings were saved without one), and say in the usage how to pass an unquoted `?` or `*` in zsh. Verify with `npm test`, and in a pseudo-terminal that the blank lines appear only there.
+
 ## Workflow follow-up
 
 - Review the implementation with `review-change` until a re-review finds nothing new, then hand it to the maintainer with `deliver-change`.

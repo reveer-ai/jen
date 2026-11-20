@@ -37,7 +37,7 @@ describe("ensureRuntime", () => {
       "jen-runtime",
     ]);
     expect(run!.options.secrets).toEqual({ JEN_OWNER_TOKEN: SETTINGS.ownerToken, JEN_API_KEY: SETTINGS.apiKey });
-    expect(run!.options.env).toMatchObject({ JEN_MODEL: "gpt-x", JEN_BASE_URL: "", JEN_RUNTIME_NAME: "jen", JEN_AGENT_IMAGE: "jen-agent", JEN_WORKSPACE_IMAGE: "jen-workspace" });
+    expect(run!.options.env).toMatchObject({ JEN_MODEL: "gpt-x", JEN_BASE_URL: "https://api.test/v1", JEN_RUNTIME_NAME: "jen", JEN_AGENT_IMAGE: "jen-agent", JEN_WORKSPACE_IMAGE: "jen-workspace" });
     expect(client.base).toBe(`http://127.0.0.1:${api.port}`);
     expect(docker.settings().port).toBe(api.port);
     expect(docker.find("jen-runtime")!.state).toBe("running");
@@ -106,11 +106,24 @@ describe("ensureRuntime", () => {
   });
 
   test("with no settings and a terminal, it asks, saves them and starts", async () => {
-    const { docker, ctx, asked } = await setup({ settings: null, answers: ["gpt-z", "", "sk-z-123456789"] });
+    const { docker, ctx, asked } = await setup({ settings: null, answers: ["gpt-z", "https://z.test/v1", "sk-z-123456789"] });
     await ensureRuntime(ctx);
     expect(asked).toHaveLength(3);
     expect(docker.settings()).toMatchObject({ model: "gpt-z", apiKey: "sk-z-123456789", ownerToken: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(docker.volumes_.get("jen-settings")!.labels).toEqual({ "jen.runtime": "jen", "jen.settings": "" });
+  });
+
+  test("settings saved without a base URL ask only for it, keeping the rest and the token", async () => {
+    const { docker, ctx, asked } = await setup({ settings: { ...SETTINGS, baseURL: "" }, answers: ["", "https://b.test/v1", ""] });
+    await ensureRuntime(ctx);
+    expect(asked).toHaveLength(3);
+    expect(docker.settings()).toMatchObject({ ...SETTINGS, baseURL: "https://b.test/v1" });
+  });
+
+  test("settings saved without a base URL and no terminal fail saying to run jen config, and start nothing", async () => {
+    const { docker, ctx } = await setup({ settings: { ...SETTINGS, baseURL: "" }, interactive: false });
+    await expect(ensureRuntime(ctx)).rejects.toThrow(/no base URL\. Run jen config/);
+    expect(runtimeRuns(docker)).toEqual([]);
   });
 
   test("with no settings and no terminal, it fails saying to run jen config, and starts nothing", async () => {
@@ -195,10 +208,10 @@ describe("a new image", () => {
 
 describe("jen config", () => {
   test("first settings are saved in a labelled volume with an owner token", async () => {
-    const { docker, ctx } = await setup({ settings: null, answers: ["gpt-y", "", "sk-y-123456789"] });
+    const { docker, ctx } = await setup({ settings: null, answers: ["gpt-y", "https://y.test/v1", "sk-y-123456789"] });
     await config(ctx);
     expect(docker.volumes_.get("jen-settings")!.labels).toEqual({ "jen.runtime": "jen", "jen.settings": "" });
-    expect(docker.settings()).toEqual({ model: "gpt-y", baseURL: "", apiKey: "sk-y-123456789", ownerToken: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(docker.settings()).toEqual({ model: "gpt-y", baseURL: "https://y.test/v1", apiKey: "sk-y-123456789", ownerToken: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(runtimeRuns(docker)).toEqual([]);
   });
 
@@ -239,7 +252,7 @@ describe("jen stop all", () => {
   test("with nothing running, it says so", async () => {
     const { docker, ctx, out } = await setup();
     await stopAll(ctx);
-    expect(out).toEqual(["Nothing of jen's is running."]);
+    expect(out).toEqual(["nothing of jen's is running."]);
     expect(docker.runs).toEqual([]);
   });
 
@@ -254,7 +267,7 @@ describe("jen stop all", () => {
     expect(api.requests.filter((r) => r.includes("/stop"))).toHaveLength(1);
     expect(docker.find("jen-runtime")).toBeUndefined();
     expect([...docker.volumes_.keys()].sort()).toEqual(["jen-agent-x", "jen-settings"]);
-    expect(out.at(-1)).toBe("Stopped 1 root agent and everything under it, and the runtime. Their conversations and files are kept.");
+    expect(out.at(-1)).toBe("stopped 1 root agent and everything under it, and the runtime. Their conversations and files are kept.");
   });
 
   test("more than one root stopped is counted as them", async () => {
@@ -263,7 +276,7 @@ describe("jen stop all", () => {
     api.add({ name: "home" });
     api.add({ name: "work" });
     await stopAll(ctx);
-    expect(out.at(-1)).toBe("Stopped 2 root agents and everything under them, and the runtime. Their conversations and files are kept.");
+    expect(out.at(-1)).toBe("stopped 2 root agents and everything under them, and the runtime. Their conversations and files are kept.");
   });
 
   test("agents running without a runtime are stopped through one started for it", async () => {

@@ -47,7 +47,7 @@ A `docker` that's missing, or an engine that doesn't answer, is an error saying 
 
 The settings live in a Docker volume of the command's own, `<name>-settings`, labelled `jen.runtime=<name>` and `jen.settings`, holding one file, `settings.json`:
 
-- `model`, `apiKey` and `baseURL`, which may be empty, meaning OpenAI's endpoint
+- `model`, `apiKey` and `baseURL`, each required: jen assumes no provider's endpoint. Settings saved before it was required, without one, ask only for it at the next start, keeping the rest and the token
 - `ownerToken`: 32 random bytes as hex, made up the first time settings are saved, and kept
 - `port`: the host port the runtime was last published on
 
@@ -57,7 +57,7 @@ The runtime never mounts or reads the volume, so it keeps no state of its own. I
 
 **Writing.** `docker volume create` with the labels, which leaves an existing volume as it is. Then a short-lived container of the runtime's image, with no network and the volume mounted, writes the JSON it reads from stdin to a temporary file and renames it over `settings.json`. A write cut short leaves the old settings, and the key never appears on a command line. A write happens when `jen config` saves, and when the runtime's port changes.
 
-**`jen config`** asks for the model, the base URL and the key, in that order, showing each current value with the key masked. An empty answer keeps the current value. The key is read with echo off. Once it's saved, a running runtime is replaced with one that has the new settings (see below). Agents keep running through that: the runtime sets the model on every call itself, so they follow the new settings at once. Without a terminal on stdin, `jen config` fails, since it can't ask. It needs the runtime's image to read and write the volume, so a missing one is the same error as at start (step 1 below).
+**`jen config`** asks for the model, the base URL and the key, in that order, showing each current value with the key masked. An empty answer keeps the current value, and asks again when there is none. The key is read with echo off. Once it's saved, a running runtime is replaced with one that has the new settings (see below). Agents keep running through that: the runtime sets the model on every call itself, so they follow the new settings at once. Without a terminal on stdin, `jen config` fails, since it can't ask. It needs the runtime's image to read and write the volume, so a missing one is the same error as at start (step 1 below).
 
 The first command that needs the runtime and finds no settings runs `jen config`'s questions first when stdin is a terminal. Otherwise it fails, saying to run `jen config`.
 
@@ -145,6 +145,10 @@ It doesn't go through the runtime, which is being removed too, so it works when 
 ### Arguments
 
 The first argument decides: `new`, `list`, `stop`, `config`, `uninstall`, `help`, or `@<name>`. After `@<name>`, a single argument `open` opens the UI, and anything else is the query: the remaining arguments joined with spaces. No arguments, or a word jen doesn't know, prints the usage and exits 2. A name that isn't a root's is an error suggesting `jen new <name>`.
+
+zsh treats an unquoted `?` or `*` as a pattern and, when no file matches, fails the command before `jen` runs, so `jen @home how are you?` never reaches it. `jen` can't see that, so the usage says how to turn it off for `jen` alone: `alias jen='noglob jen'` in `~/.zshrc`. Bash passes an unmatched pattern through as it is.
+
+**Output.** `jen`'s own lines start lowercase, as `jen: ` errors do, and text from an agent or the user is written as it is. In a terminal, a blank line goes to stderr before anything else and another on exit, so each command's output stands apart from the one before. Only stderr carries them, and only when it's a terminal, so redirected output holds none.
 
 ## Risks / Trade-offs
 

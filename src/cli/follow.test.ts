@@ -199,7 +199,7 @@ test("Ctrl-C before the query is sent says nothing was sent, and neither starts 
   const { log, run, interrupt } = await setup("work", () => {}, { state: "stopped" });
   interrupt.abort();
   expect(await run()).toBe(130);
-  expect(log).toEqual(["err Nothing was sent to @home."]);
+  expect(log).toEqual(["err nothing was sent to @home."]);
   expect(runtime.requests).toEqual([]);
 });
 
@@ -210,7 +210,7 @@ test("Ctrl-C while the stream won't open says nothing was sent", async () => {
   await new Promise((resolve) => setTimeout(resolve, 100));
   interrupt.abort();
   expect(await done).toBe(130);
-  expect(log).toEqual(["err Nothing was sent to @home."]);
+  expect(log).toEqual(["err nothing was sent to @home."]);
   expect(runtime.messages).toEqual([]);
 });
 

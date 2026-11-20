@@ -15,12 +15,12 @@ test("a missing docker command is unreachable", async () => {
   const { docker } = stub(() => ({ code: -1, stderr: "spawn docker ENOENT" }));
   const error = await docker.ping().catch((e) => e);
   expect(error).toBeInstanceOf(Unreachable);
-  expect(error.message).toMatch(/Docker isn't reachable.*ENOENT/);
+  expect(error.message).toMatch(/docker isn't reachable.*ENOENT/);
 });
 
 test("an engine that doesn't answer is unreachable", async () => {
   const { docker, calls } = stub(() => ({ code: 1, stderr: "failed to connect to the docker API at unix:///x.sock" }));
-  await expect(docker.ping()).rejects.toThrow(/Docker isn't reachable.*failed to connect/);
+  await expect(docker.ping()).rejects.toThrow(/docker isn't reachable.*failed to connect/);
   expect(calls[0]!.args).toEqual(["version", "--format", "{{.Server.Version}}"]);
 });
 

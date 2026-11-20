@@ -29,7 +29,12 @@ export const USAGE = `jen runs your agents.
   jen uninstall           delete everything of jen's, then the command itself
   jen help                show this
 
-To remove jen, run jen uninstall: npm uninstall alone leaves every agent and setting in Docker.`;
+to remove jen, run jen uninstall: npm uninstall alone leaves every agent and setting in Docker.
+
+in zsh, a ? or * in an unquoted query is a pattern, and zsh stops before jen runs
+when no file matches it. To pass them as typed, add this to ~/.zshrc:
+
+  alias jen='noglob jen'`;
 
 export type Command =
   | { kind: "help" }
@@ -171,6 +176,12 @@ function terminal(): Terminal {
 }
 
 if (import.meta.main) {
+  // In a terminal, a blank line sets jen's output apart from the command
+  // typed above it and from the next prompt, however jen exits.
+  if (process.stderr.isTTY) {
+    process.stderr.write("\n");
+    process.on("exit", () => process.stderr.write("\n"));
+  }
   const interrupt = new AbortController();
   const command = parse(process.argv.slice(2));
   // Only a followed query handles Ctrl-C, by leaving the root working.

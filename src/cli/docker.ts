@@ -43,7 +43,7 @@ export class DockerError extends Error {
 // The engine can't be reached: no docker command, or no engine answering it.
 export class Unreachable extends Error {
   constructor(reason: string) {
-    super(`Docker isn't reachable, so jen can't run: ${reason.trim()}. Start Docker and try again.`);
+    super(`docker isn't reachable, so jen can't run: ${reason.trim()}. Start Docker and try again.`);
     this.name = "Unreachable";
   }
 }

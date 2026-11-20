@@ -112,11 +112,11 @@ async function connect(ctx: Context): Promise<Api> {
       const details = await ctx.docker.inspect(container);
       if (details && (details.state === "exited" || details.state === "dead")) {
         const logs = await ctx.docker.logs(container, 20);
-        throw new Refusal(`The runtime exited as it started${logs ? `:\n${logs}` : "."}`);
+        throw new Refusal(`the runtime exited as it started${logs ? `:\n${logs}` : "."}`);
       }
-      if (!details) throw new Refusal("The runtime's container was removed as it started. Try again.");
+      if (!details) throw new Refusal("the runtime's container was removed as it started. Try again.");
     }
-    if (ctx.now() >= deadline) throw new Refusal(`The runtime didn't answer within ${READY_MS / 1000} seconds. Its output is in: docker logs ${container}`);
+    if (ctx.now() >= deadline) throw new Refusal(`the runtime didn't answer within ${READY_MS / 1000} seconds. Its output is in: docker logs ${container}`);
     await ctx.sleep(POLL_MS);
   }
 }
@@ -131,13 +131,14 @@ async function answers(ctx: Context, api: Api): Promise<boolean> {
   }
 }
 
-// The settings, asking for them from a terminal when there are none.
+// The settings, asking for them from a terminal when there are none, or no
+// base URL, from before it was required. The rest are kept, the token too.
 async function settingsOrAsk(ctx: Context): Promise<Settings> {
   const settings = await readSettings(ctx.docker, ctx.names);
-  if (settings) return settings;
-  if (!ctx.terminal.interactive) throw new Refusal("jen has no settings yet. Run jen config to set the model and its key.");
-  ctx.say("jen needs a model and its key before it can start.");
-  const asked = await askSettings(ctx.terminal);
+  if (settings && settings.baseURL !== "") return settings;
+  if (!ctx.terminal.interactive) throw new Refusal(settings ? "jen's settings have no base URL. Run jen config to set it." : "jen has no settings yet. Run jen config to set the model, its base URL and its key.");
+  ctx.say(settings ? "jen needs the model's base URL before it can start." : "jen needs a model, its base URL and its key before it can start.");
+  const asked = await askSettings(ctx.terminal, settings);
   await writeSettings(ctx.docker, ctx.names, asked);
   return asked;
 }
@@ -202,11 +203,11 @@ export async function config(ctx: Context): Promise<void> {
   const current = await readSettings(ctx.docker, ctx.names);
   const settings = await askSettings(ctx.terminal, current);
   await writeSettings(ctx.docker, ctx.names, settings);
-  ctx.print("Saved jen's settings.");
+  ctx.print("saved jen's settings.");
   if (await runningRuntime(ctx.docker, ctx.names)) {
     await ctx.docker.remove(runtimeContainer(ctx.names.name));
     await start(ctx);
-    ctx.print("Restarted the runtime with them. Running agents keep running.");
+    ctx.print("restarted the runtime with them. Running agents keep running.");
   }
 }
 
@@ -218,11 +219,11 @@ export async function stopAll(ctx: Context): Promise<void> {
   const agents = (await docker.containers([`jen.runtime=${names.name}`, "jen.agent"])).filter((c) => alive(c.state));
   if (!(runtime && alive(runtime.state)) && agents.length === 0) {
     if (runtime) await docker.remove(runtimeContainer(names.name));
-    return ctx.print("Nothing of jen's is running.");
+    return ctx.print("nothing of jen's is running.");
   }
   const api = await ensureRuntime(ctx);
   const stopped = await stopRoots(api);
   await docker.remove(runtimeContainer(names.name));
   const roots = stopped === 1 ? "1 root agent and everything under it" : `${stopped} root agents and everything under them`;
-  ctx.print(`Stopped ${roots}, and the runtime. Their conversations and files are kept.`);
+  ctx.print(`stopped ${roots}, and the runtime. Their conversations and files are kept.`);
 }

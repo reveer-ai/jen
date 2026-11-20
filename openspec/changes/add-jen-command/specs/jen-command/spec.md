@@ -12,7 +12,7 @@ The `jen` command: how a user creates, talks to, opens, lists and stops their ro
 - **THEN** it exits non-zero with an error saying Docker isn't reachable
 
 ### Requirement: Settings are asked for and kept by the command
-`jen config` SHALL ask for the model, the optional base URL and the model key, with the key not echoed. An empty answer SHALL keep the current value. It SHALL keep them, with an owner token it makes up once, in a Docker volume labelled as jen's, replaced whole on each save, and SHALL write nothing of jen's outside Docker. The key SHALL never appear on a command line. Without a terminal on stdin, `jen config` SHALL fail.
+`jen config` SHALL ask for the model, the base URL and the model key, with the key not echoed. An empty answer SHALL keep the current value. It SHALL keep them, with an owner token it makes up once, in a Docker volume labelled as jen's, replaced whole on each save, and SHALL write nothing of jen's outside Docker. The key SHALL never appear on a command line. Without a terminal on stdin, `jen config` SHALL fail.
 
 #### Scenario: First settings
 - **WHEN** the user runs `jen config` and answers each question
@@ -25,6 +25,13 @@ The `jen` command: how a user creates, talks to, opens, lists and stops their ro
 #### Scenario: No terminal
 - **WHEN** `jen config` runs with stdin from a pipe
 - **THEN** it exits non-zero, and the settings are unchanged
+
+### Requirement: Every setting is required
+The model, the base URL and the key SHALL each be required, with no default endpoint. An empty answer with no current value SHALL be asked again, and settings saved without a base URL SHALL ask only for it, keeping the other settings and the owner token.
+
+#### Scenario: No base URL
+- **WHEN** the user leaves the base URL empty and none is saved
+- **THEN** `jen config` asks for it again
 
 ### Requirement: A running runtime is reached without reading the settings volume
 While the runtime is running, a command SHALL get the owner token and the runtime's port from the runtime's container, and SHALL start no container to read the settings.
@@ -203,11 +210,22 @@ On Ctrl-C, `jen @<name> <query>` SHALL stop reading and exit 130. Once the query
 - **THEN** everything of jen's in Docker is removed, the checkout is untouched, and jen says the command was installed another way
 
 ### Requirement: Usage is printed for anything else
-`jen` with no arguments, `jen help`, or a first argument that isn't a command or `@<name>` SHALL print the usage. Only `jen help` SHALL exit 0; the others SHALL exit 2.
+`jen` with no arguments, `jen help`, or a first argument that isn't a command or `@<name>` SHALL print the usage. Only `jen help` SHALL exit 0; the others SHALL exit 2. The usage SHALL say how to pass an unquoted `?` or `*` in zsh, which otherwise fails the command before `jen` runs.
 
 #### Scenario: An unknown command
 - **WHEN** the user runs `jen start`
 - **THEN** it prints the usage and exits 2
+
+### Requirement: jen's own output starts lowercase and is set apart in a terminal
+Every line `jen` writes of its own SHALL start with a lowercase letter; text from an agent or the user SHALL be written as it is. When stderr is a terminal, `jen` SHALL write a blank line to it before anything else and another as it exits, however it exits, and none when stderr isn't a terminal.
+
+#### Scenario: In a terminal
+- **WHEN** the user runs `jen list` in a terminal
+- **THEN** a blank line separates its output from the command above it and from the next prompt
+
+#### Scenario: Piped
+- **WHEN** `jen @home <query>` runs with stdout and stderr redirected
+- **THEN** neither holds a blank line jen added
 
 ### Requirement: The command is checked against a real runtime
 A live check SHALL run `jen` against real Docker and a real model, under a runtime name and image tags of its own. It SHALL create a root, get a reply, see a tool call's progress line, open the UI without a browser and fetch its page, list, stop the root, stop everything and uninstall, finding nothing of its runtime left, and remove whatever it started even when it fails. It SHALL skip without model credentials, as the other live checks do.

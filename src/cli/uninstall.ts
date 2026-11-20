@@ -9,7 +9,7 @@ import type { Runner } from "./docker.ts";
 import type { Context } from "./runtime.ts";
 import { Refusal, runtimeContainer, TARGETS } from "./settings.ts";
 
-export const QUESTION = "This deletes every agent's conversation and files, and can't be undone. Continue? [y/N] ";
+export const QUESTION = "this deletes every agent's conversation and files, and can't be undone. Continue? [y/N] ";
 // The package's name on npm.
 const PACKAGE = "jenai";
 
@@ -19,7 +19,7 @@ export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: str
   const { docker, names } = ctx;
   if (!ctx.terminal.interactive) throw new Refusal("jen uninstall asks before it deletes anything, so it needs a terminal.");
   if ((await ctx.terminal.ask(QUESTION)).trim() !== "y") {
-    ctx.print("Nothing was removed.");
+    ctx.print("nothing was removed.");
     return 1;
   }
 
@@ -56,10 +56,10 @@ export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: str
     });
   }
 
-  ctx.print(`Removed ${agents === 1 ? "1 agent" : `${agents} agents`} with their conversations and files, the runtime, the settings${images.length ? ` and the images ${images.join(", ")}` : ""}.`);
+  ctx.print(`removed ${agents === 1 ? "1 agent" : `${agents} agents`} with their conversations and files, the runtime, the settings${images.length ? ` and the images ${images.join(", ")}` : ""}.`);
   if (failures.length > 0) {
     for (const failure of failures) ctx.say(`jen: ${failure}`);
-    ctx.say("Some of jen is left in Docker, and so is the command, to remove it with. Run jen uninstall again once that's fixed.");
+    ctx.say("some of jen is left in Docker, and so is the command, to remove it with. Run jen uninstall again once that's fixed.");
     return 1;
   }
 
@@ -69,9 +69,9 @@ export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: str
       ctx.say(`jen: npm uninstall -g ${PACKAGE} failed: ${output.stderr.trim()}`);
       return 1;
     }
-    ctx.print(`Uninstalled the ${PACKAGE} package. jen is gone.`);
+    ctx.print(`uninstalled the ${PACKAGE} package. jen is gone.`);
   } else {
-    ctx.print("The jen command itself wasn't installed with npm install -g, so remove it the way it was installed. From a checkout linked with npm link, that's: npm unlink -g jen");
+    ctx.print("the jen command itself wasn't installed with npm install -g, so remove it the way it was installed. From a checkout linked with npm link, that's: npm unlink -g jen");
   }
   return 0;
 }

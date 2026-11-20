@@ -13,7 +13,7 @@ export type Root = Agent & { name: string };
 // The root named name, or a refusal suggesting jen new.
 export async function findRoot(api: Api, name: string): Promise<Root> {
   const root = (await api.list()).find((a) => a.parent === null && a.name === name);
-  if (!root) throw new Refusal(`No root agent is named ${name}. Create it with: jen new ${name}`);
+  if (!root) throw new Refusal(`no root agent is named ${name}. Create it with: jen new ${name}`);
   return root as Root;
 }
 
@@ -21,14 +21,14 @@ export async function findRoot(api: Api, name: string): Promise<Root> {
 export async function newRoot(ctx: Context, name: string): Promise<void> {
   const api = await ensureRuntime(ctx);
   await api.spawn(name, { spawn: true, workspace: true });
-  ctx.print(`Created @${name}. Talk to it with: jen @${name} <query>`);
+  ctx.print(`created @${name}. Talk to it with: jen @${name} <query>`);
 }
 
 // Named roots by name, then roots from before names by ID.
 export async function listRoots(ctx: Context): Promise<void> {
   const api = await ensureRuntime(ctx);
   const roots = (await api.list()).filter((a) => a.parent === null);
-  if (roots.length === 0) return ctx.print("No root agents yet. Create one with: jen new <name>");
+  if (roots.length === 0) return ctx.print("no root agents yet. Create one with: jen new <name>");
   const named = roots.filter((r) => r.name !== null).sort((a, b) => a.name!.localeCompare(b.name!));
   const unnamed = roots.filter((r) => r.name === null).sort((a, b) => a.id.localeCompare(b.id));
   const width = Math.max(...roots.map((r) => (r.name === null ? r.id.length : r.name.length + 1)));
@@ -42,7 +42,7 @@ export async function stopRoot(ctx: Context, name: string): Promise<void> {
   const api = await ensureRuntime(ctx);
   const root = await findRoot(api, name);
   await api.stop(root.id);
-  ctx.print(`Stopped @${name} and everything under it. Its conversation and files are kept.`);
+  ctx.print(`stopped @${name} and everything under it. Its conversation and files are kept.`);
 }
 
 // Prints the URL of the root's page, with the owner token in its fragment,
@@ -54,7 +54,7 @@ export async function openRoot(ctx: Context, name: string, open: (url: string) =
   if (root.state === "stopped") await api.start(root.id);
   const url = `${api.base}/agents/${root.id}/page#token=${api.token}`;
   ctx.print(url);
-  if (!(await open(url))) ctx.say("Open that URL in a browser to see the UI.");
+  if (!(await open(url))) ctx.say("open that URL in a browser to see the UI.");
 }
 
 // Sends the query and follows the root's work until its reply.

@@ -18,7 +18,8 @@ import { parse, run, type Deps } from "./main.ts";
 
 const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
-const baseURL = process.env.JEN_LIVE_BASE_URL ?? "";
+// jen asks for a base URL, so OpenAI's is given when none is set.
+const baseURL = process.env.JEN_LIVE_BASE_URL || "https://api.openai.com/v1";
 const main = join(import.meta.dirname, "main.ts");
 const checkout = join(import.meta.dirname, "../..");
 
@@ -85,7 +86,7 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
     expect(docker(["volume", "inspect", "-f", "{{json .Labels}}", `${name}-settings`]).trim()).toBe(JSON.stringify({ "jen.runtime": name, "jen.settings": "" }));
 
     const created = await jen(["new", "live"]);
-    expect(created, created.stderr).toMatchObject({ code: 0, stdout: "Created @live. Talk to it with: jen @live <query>\n" });
+    expect(created, created.stderr).toMatchObject({ code: 0, stdout: "created @live. Talk to it with: jen @live <query>\n" });
     expect((await jen(["new", "live"])).code).toBe(1);
 
     const heron = await jen(["@live", "Reply with just the word heron."]);
@@ -122,7 +123,7 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
     expect(await jen(["list"])).toMatchObject({ code: 0, stdout: "@live  stopped\n" });
     expect(docker(["port", `${name}-runtime`, "8080/tcp"]).trim()).toBe(port);
     expect(await jen(["stop", "all"])).toMatchObject({ code: 0 });
-    expect(await jen(["stop", "all"])).toMatchObject({ code: 0, stdout: "Nothing of jen's is running.\n" });
+    expect(await jen(["stop", "all"])).toMatchObject({ code: 0, stdout: "nothing of jen's is running.\n" });
 
     const uninstalled = await scripted(["uninstall"], ["y"]);
     expect(uninstalled.code, uninstalled.stderr).toBe(0);

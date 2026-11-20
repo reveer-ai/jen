@@ -36,7 +36,7 @@ export async function follow(o: FollowOptions): Promise<number> {
   // Whether the query may have reached the root.
   let posted = false;
   const interrupted = () => {
-    o.say(posted ? `@${root.name} is still working. To see it, run: jen @${root.name} open` : `Nothing was sent to @${root.name}.`);
+    o.say(posted ? `@${root.name} is still working. To see it, run: jen @${root.name} open` : `nothing was sent to @${root.name}.`);
     return 130;
   };
   if (o.interrupt.aborted) return interrupted();
@@ -132,7 +132,7 @@ async function open(o: FollowOptions, last: number | undefined): Promise<AsyncIt
         if (!(error instanceof Unanswered || (error instanceof ApiError && error.status >= 500))) throw error;
       }
     }
-    if (o.now() >= deadline) throw new Refusal(`The runtime stopped answering while @${o.root.name} worked. Its work goes on; try jen @${o.root.name} open.`);
+    if (o.now() >= deadline) throw new Refusal(`the runtime stopped answering while @${o.root.name} worked. Its work goes on; try jen @${o.root.name} open.`);
     await o.sleep(RETRY_MS);
   }
 }

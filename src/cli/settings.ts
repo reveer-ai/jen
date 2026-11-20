@@ -12,7 +12,6 @@ import { DockerError, type Docker } from "./docker.ts";
 export interface Settings {
   model: string;
   apiKey: string;
-  // Empty for OpenAI's endpoint.
   baseURL: string;
   ownerToken: string;
   port?: number;
@@ -44,7 +43,7 @@ export const runtimeContainer = (name: string) => `${name}-runtime`;
 // An image jen needs that isn't there, named with the command that builds it.
 export class MissingImage extends Error {
   constructor(image: string, target: string) {
-    super(`The image ${image} is missing. Build it from jen's checkout with: docker build --target ${target} -t ${image} .`);
+    super(`the image ${image} is missing. Build it from jen's checkout with: docker build --target ${target} -t ${image} .`);
     this.name = "MissingImage";
   }
 }
@@ -79,6 +78,7 @@ export async function readSettings(docker: Docker, names: Names): Promise<Settin
   }
   try {
     const parsed = JSON.parse(output.stdout);
+    // Settings saved before the base URL was required may have none.
     const { model, apiKey, baseURL = "", ownerToken, port } = parsed ?? {};
     if ([model, apiKey, baseURL, ownerToken].every((v) => typeof v === "string") && (port === undefined || Number.isSafeInteger(port))) {
       return { model, apiKey, baseURL, ownerToken, ...(port === undefined ? {} : { port }) };
@@ -118,8 +118,8 @@ export const alive = (state: string) => state === "running" || state === "restar
 export const mask = (key: string) => (key.length > 8 ? `…${key.slice(-4)}` : "…");
 
 // Asks for the model, the base URL and the key, in that order, showing each
-// current value, and keeping it on an empty answer. The model and the key are
-// required, so with no current value they're asked again. The owner token is
+// current value, and keeping it on an empty answer. All three are required,
+// so with no current value they're asked again. The owner token is
 // made up the first time, and kept.
 export async function askSettings(terminal: Terminal, current?: Settings): Promise<Settings> {
   const required = async (ask: () => Promise<string>, kept: string | undefined) => {
@@ -130,9 +130,9 @@ export async function askSettings(terminal: Terminal, current?: Settings): Promi
     }
   };
   const shown = (value: string | undefined) => (value ? ` [${value}]` : "");
-  const model = await required(() => terminal.ask(`Model${shown(current?.model)}: `), current?.model);
-  const baseURL = (await terminal.ask(`Base URL, empty for OpenAI's${shown(current?.baseURL)}: `)).trim() || current?.baseURL || "";
-  const apiKey = await required(() => terminal.askHidden(`Model key${current?.apiKey ? ` [${mask(current.apiKey)}]` : ""}: `), current?.apiKey);
+  const model = await required(() => terminal.ask(`model${shown(current?.model)}: `), current?.model);
+  const baseURL = await required(() => terminal.ask(`base URL${shown(current?.baseURL)}: `), current?.baseURL);
+  const apiKey = await required(() => terminal.askHidden(`model key${current?.apiKey ? ` [${mask(current.apiKey)}]` : ""}: `), current?.apiKey);
   return {
     model,
     baseURL,

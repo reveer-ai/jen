@@ -58,9 +58,9 @@ test("the questions are the model, the base URL and the key, in that order, the 
   const { terminal, asked } = fakeTerminal(["gpt-y", "https://openrouter.ai/api/v1", "sk-new-key-9999"]);
   const settings = await askSettings(terminal);
   expect(asked.map((a) => [a.question, a.hidden])).toEqual([
-    ["Model: ", false],
-    ["Base URL, empty for OpenAI's: ", false],
-    ["Model key: ", true],
+    ["model: ", false],
+    ["base URL: ", false],
+    ["model key: ", true],
   ]);
   expect(settings).toEqual({ model: "gpt-y", baseURL: "https://openrouter.ai/api/v1", apiKey: "sk-new-key-9999", ownerToken: expect.stringMatching(/^[0-9a-f]{64}$/) });
 });
@@ -69,13 +69,13 @@ test("an empty answer keeps the current value, the key is shown masked, and the 
   const current = { ...SETTINGS, baseURL: "https://x.test/v1", port: 4242 };
   const { terminal, asked } = fakeTerminal(["", "", ""]);
   expect(await askSettings(terminal, current)).toEqual(current);
-  expect(asked.map((a) => a.question)).toEqual(["Model [gpt-x]: ", "Base URL, empty for OpenAI's [https://x.test/v1]: ", `Model key [${mask(SETTINGS.apiKey)}]: `]);
+  expect(asked.map((a) => a.question)).toEqual(["model [gpt-x]: ", "base URL [https://x.test/v1]: ", `model key [${mask(SETTINGS.apiKey)}]: `]);
   expect(asked[2]!.question).not.toContain(SETTINGS.apiKey);
   expect(mask(SETTINGS.apiKey)).toBe("…6789");
 });
 
-test("with nothing to keep, the model and the key are asked again until answered", async () => {
-  const { terminal, asked } = fakeTerminal(["", "m", "", "", "k"]);
-  expect(await askSettings(terminal)).toMatchObject({ model: "m", baseURL: "", apiKey: "k" });
-  expect(asked).toHaveLength(5);
+test("with nothing to keep, the model, the base URL and the key are asked again until answered", async () => {
+  const { terminal, asked } = fakeTerminal(["", "m", "", "https://u.test/v1", "", "k"]);
+  expect(await askSettings(terminal)).toMatchObject({ model: "m", baseURL: "https://u.test/v1", apiKey: "k" });
+  expect(asked).toHaveLength(6);
 });

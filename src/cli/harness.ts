@@ -19,7 +19,7 @@ export function fakeTerminal(answers: string[] = [], interactive = true) {
   return { terminal, asked, answers };
 }
 
-export const SETTINGS: Settings = { model: "gpt-x", apiKey: "sk-test-0123456789", baseURL: "", ownerToken: "a".repeat(64) };
+export const SETTINGS: Settings = { model: "gpt-x", apiKey: "sk-test-0123456789", baseURL: "https://api.test/v1", ownerToken: "a".repeat(64) };
 
 // settings null means there are none yet.
 export async function harness({ settings = SETTINGS as Settings | null, answers = [] as string[], interactive = true, env = {} as NodeJS.ProcessEnv } = {}) {

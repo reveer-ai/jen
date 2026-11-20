@@ -70,7 +70,7 @@ test("on y, every container, volume and network of jen's goes, with the settings
   expect([...docker.volumes_.keys()]).toEqual(["pgdata"]);
   expect(docker.networks.size).toBe(0);
   expect([...docker.images.keys()]).toEqual(["postgres"]);
-  expect(out[0]).toBe("Removed 3 agents with their conversations and files, the runtime, the settings and the images jen-runtime, jen-agent, jen-workspace.");
+  expect(out[0]).toBe("removed 3 agents with their conversations and files, the runtime, the settings and the images jen-runtime, jen-agent, jen-workspace.");
 });
 
 test("the runtime is removed before any agent", async () => {
@@ -86,7 +86,7 @@ test.each(["n", "", "yes", "Y "])("answering %j removes nothing", async (answer)
   const before = [docker.containers_.size, docker.volumes_.size, docker.images.size];
   expect(await uninstall(ctx, { mainPath: "/nowhere", npm: stubNpm("/none").npm })).toBe(1);
   expect([docker.containers_.size, docker.volumes_.size, docker.images.size]).toEqual(before);
-  expect(out).toEqual(["Nothing was removed."]);
+  expect(out).toEqual(["nothing was removed."]);
 });
 
 test("without a terminal it fails, removing nothing", async () => {
@@ -126,7 +126,7 @@ test("installed globally with npm, the jenai package is uninstalled too", async 
   const { calls, npm } = stubNpm(root);
   expect(await uninstall(ctx, { mainPath: installed, npm })).toBe(0);
   expect(calls).toEqual([["root", "-g"], ["uninstall", "-g", "jenai"]]);
-  expect(out.at(-1)).toBe("Uninstalled the jenai package. jen is gone.");
+  expect(out.at(-1)).toBe("uninstalled the jenai package. jen is gone.");
 });
 
 test("run through npm link from a checkout, the checkout is left and jen says how the command remains", async () => {

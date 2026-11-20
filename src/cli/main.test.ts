@@ -60,7 +60,7 @@ test("jen help prints the usage, pointing to jen uninstall, and exits 0 without 
   h.docker.reachable = false;
   expect(await run({ kind: "help" }, d)).toBe(0);
   expect(out.join("")).toBe(`${USAGE}\n`);
-  expect(USAGE).toMatch(/To remove jen, run jen uninstall/);
+  expect(USAGE).toMatch(/to remove jen, run jen uninstall/);
 });
 
 test("jen start prints the usage to stderr and exits 2", async () => {
@@ -75,7 +75,7 @@ test("without Docker, every other command fails saying Docker isn't reachable, h
   for (const command of [parse(["list"]), parse(["new", "home"]), parse(["config"]), parse(["uninstall"]), parse(["@home", "hi"])]) {
     expect(await run(command, d)).toBe(1);
   }
-  expect(err.every((line) => /^jen: Docker isn't reachable/.test(line))).toBe(true);
+  expect(err.every((line) => /^jen: docker isn't reachable/.test(line))).toBe(true);
   expect(h.docker.calls.filter((c) => c !== "ping")).toEqual([]);
 });
 
@@ -90,7 +90,7 @@ test("a command's result goes to stdout", async () => {
   const { deps: d, out } = await deps();
   expect(await run(parse(["new", "home"]), d)).toBe(0);
   expect(await run(parse(["list"]), d)).toBe(0);
-  expect(out.join("")).toBe("Created @home. Talk to it with: jen @home <query>\n@home  running\n");
+  expect(out.join("")).toBe("created @home. Talk to it with: jen @home <query>\n@home  running\n");
 });
 
 test("the runtime's refusal is shown and exits 1", async () => {

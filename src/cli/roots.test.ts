@@ -17,7 +17,7 @@ test("jen new creates a running root with spawn and workspace", async () => {
   const { ctx, api, out } = await setup();
   await newRoot(ctx, "home");
   expect([...api.agents.values()]).toEqual([{ id: expect.any(String), parent: null, name: "home", grant: { spawn: true, workspace: true }, state: "running" }]);
-  expect(out).toEqual(["Created @home. Talk to it with: jen @home <query>"]);
+  expect(out).toEqual(["created @home. Talk to it with: jen @home <query>"]);
 });
 
 test("a name in use, or a malformed one, is the runtime's refusal, and creates nothing", async () => {
@@ -42,7 +42,7 @@ test("jen list shows named roots by name with their state, then roots without a 
 test("jen list with no roots says how to make one", async () => {
   const { ctx, out } = await setup();
   await listRoots(ctx);
-  expect(out).toEqual(["No root agents yet. Create one with: jen new <name>"]);
+  expect(out).toEqual(["no root agents yet. Create one with: jen new <name>"]);
 });
 
 test("jen stop @home stops home and its sub-agents, and leaves work and the runtime running", async () => {
@@ -61,7 +61,7 @@ test("an unknown name suggests jen new, and sends nothing", async () => {
   await ensureRuntime(ctx);
   const error = await query(ctx, "work", "hi", { interrupt: new AbortController().signal, columns: 80, write: () => {} }).catch((e) => e);
   expect(error).toBeInstanceOf(Refusal);
-  expect(error.message).toBe("No root agent is named work. Create it with: jen new work");
+  expect(error.message).toBe("no root agent is named work. Create it with: jen new work");
   await expect(stopRoot(ctx, "work")).rejects.toThrow("jen new work");
   expect(api.messages).toEqual([]);
   expect(api.requests.filter((r) => r.startsWith("POST"))).toEqual([]);
@@ -85,7 +85,7 @@ test("with no browser to open, the URL is the result", async () => {
   api.add({ name: "home" });
   await openRoot(ctx, "home", async () => false);
   expect(out).toHaveLength(1);
-  expect(err).toEqual(["Open that URL in a browser to see the UI."]);
+  expect(err).toEqual(["open that URL in a browser to see the UI."]);
 });
 
 test("a query is sent to the root by name and its reply returned", async () => {

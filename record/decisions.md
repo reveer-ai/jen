@@ -4,6 +4,12 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-19
 
+Set by the maintainer in their review of [JEN-25](https://linear.app/reveer/issue/JEN-25):
+
+- **`jen` assumes no provider: the base URL is required, like the model and the key.** *Why:* set by the maintainer; jen is model-agnostic, and an empty answer meaning OpenAI's endpoint made one provider the default. Settings saved without one ask only for it at the next start, keeping the rest and the owner token.
+- **Every line of `jen`'s own starts lowercase, and in a terminal a blank line comes before and after a command's output.** *Why:* set by the maintainer, matching the `jen: ` errors. Text from an agent or the user is written as it is. The blank lines go only to stderr, and only when it's a terminal, so redirected output is unchanged.
+- **An unquoted `?` or `*` in zsh is left to the user's shell: `jen help` says to add `alias jen='noglob jen'` to `~/.zshrc`.** *Why:* zsh fails the command before `jen` runs, so `jen` can't fix it. *Rejected:* editing the user's `~/.zshrc` at install, which `npm link` can't do and which would change a file outside Docker.
+
 Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), fixing its implementation review:
 
 - **A root's notice that it gave up on its model is marked `"gaveUp": true` on its `error` event, and ends a query in `jen` with exit 1.** *Why:* a root that gives up saves nothing, so `jen` otherwise waited forever, as the maintainer's hand check hit with a mistyped base URL. A field on the existing event leaves the UI page, which shows every `error` event's message, unchanged. A message clears the notice, and an agent with a message waiting when its last retry fails tries again rather than giving up, so a notice that reaches a query is about that query. *Rejected:* an event type of its own, which the page would need to learn; and matching the notice's text, which is the agent's own wording.
