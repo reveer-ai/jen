@@ -176,11 +176,14 @@ test.skipIf(!apiKey || !model)("agents behave on the owner's tasks", { timeout: 
   }
 });
 
+let runs = 0;
+
 // Runs one task with a root of its own, watching every agent in its tree, and
 // returns the run's faults and its transcript.
 async function runTask(api: (path: string, init?: RequestInit) => Promise<any>, base: string, owner: Record<string, string>, name: string, task: Task, label: string) {
   const start = Date.now();
-  const root: string = (await api("/agents", { method: "POST", body: JSON.stringify({ grant: task.grant ?? { spawn: true } }) })).id;
+  // Every run gets a root of its own, so a root's name is unique among them.
+  const root: string = (await api("/agents", { method: "POST", body: JSON.stringify({ grant: task.grant ?? { spawn: true }, name: `run-${++runs}` }) })).id;
   const events: Event[] = [];
   const parents = new Map<string, string | null>();
   const watching = new Map<string, AbortController>();

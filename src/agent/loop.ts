@@ -58,8 +58,9 @@ export interface AgentOptions {
 export const POST_DEADLINE_MS = 60_000;
 
 // Emits "saved" after each save, "failure" with the message of each failed
-// model call, and "notice" with a notice when watchers should see it: the
-// give-up notice, or that a reply to the parent couldn't be sent.
+// model call, "gaveUp" with a root's notice that it stopped trying after its
+// model kept failing, and "notice" with the notice that a reply to the parent
+// couldn't be sent.
 export class Agent extends EventEmitter {
   readonly #o: AgentOptions & { delays: readonly number[] };
   readonly #specs: ToolSpec[];
@@ -88,6 +89,11 @@ export class Agent extends EventEmitter {
     return this.#gaveUp ?? this.#unsent;
   }
 
+  // Whether the notice is a root's that it gave up.
+  get gaveUp(): boolean {
+    return this.#gaveUp !== undefined;
+  }
+
   // Posts the outbox, settles the batch a stop interrupted, then runs unless
   // the start is held. An open wait that's the batch's only call stays open.
   start() {
@@ -108,6 +114,8 @@ export class Agent extends EventEmitter {
     const discard = empty && turnEnded(this.#o.store.load());
     this.#o.store.accept(empty ? { ...message, urgent: false } : message, this.#held ? this.#o.wake : undefined, discard);
     this.#held = false;
+    // A message makes a root that gave up try again.
+    if (!empty) this.#gaveUp = undefined;
     if (message.urgent && !empty) this.#inflight?.abort();
     this.#kick();
   }
@@ -150,9 +158,13 @@ export class Agent extends EventEmitter {
             this.emit("failure", message(error));
             if (failures === delays.length) {
               this.#inflight = undefined;
-              await this.#giveUp(message(error));
-              // A message that arrived while it gave up resumes the work.
-              if (!hasMessage(store)) return;
+              // A message that arrived during the retries is tried in full,
+              // so the agent gives up only with none waiting.
+              if (!hasMessage(store)) {
+                await this.#giveUp(message(error));
+                // One that arrived while it gave up resumes the work.
+                if (!hasMessage(store)) return;
+              }
               failures = 0;
             } else {
               await sleep(delays[failures++]!, controller.signal);
@@ -163,7 +175,6 @@ export class Agent extends EventEmitter {
         }
         this.#inflight = undefined;
         failures = 0;
-        this.#gaveUp = undefined;
         if (response.some((item) => item.type === "tool_call")) {
           store.save(response);
           this.#saved();
@@ -239,7 +250,7 @@ export class Agent extends EventEmitter {
       return this.#post();
     }
     this.#gaveUp = text;
-    this.emit("notice", text);
+    this.emit("gaveUp", text);
   }
 
   #result(call: ToolCall, output: string) {

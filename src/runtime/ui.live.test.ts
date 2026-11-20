@@ -45,7 +45,7 @@ test.skipIf(!apiKey)("the agent's published UI shows, and a click in it asks the
       if (attempt === 100) throw new Error("the runtime didn't serve");
       await sleep(300);
     }
-    const spawned = await fetch(`${base}/agents`, { method: "POST", headers: owner, body: JSON.stringify({ grant: { spawn: false, workspace: true } }) });
+    const spawned = await fetch(`${base}/agents`, { method: "POST", headers: owner, body: JSON.stringify({ grant: { spawn: false, workspace: true }, name: "ui" }) });
     const root: string = (await spawned.json()).id;
     void stream(`${base}/agents/${root}/events`, owner, items, watch.signal);
     const latest = async () => (await (await fetch(`${base}/agents/${root}/ui`, { headers: owner })).json()) as { version: number; document: string };

@@ -492,20 +492,50 @@ describe("an agent that gives up tells its parent", () => {
     expect(a.notice).toBeUndefined();
   });
 
-  test("a root agent shows the notice to its watchers instead, until it works again", async () => {
+  test("a root agent shows the notice to its watchers instead, until it is messaged again", async () => {
     const shown: string[] = [];
     const model = failing(4, [[assistant("back")]], "rate limited");
     const a = agent(model);
-    a.on("notice", (text: string) => shown.push(text));
+    a.on("gaveUp", (text: string) => shown.push(text));
     a.start();
     a.accept(plain("go"));
     await a.idle();
     expect(shown).toEqual([notice]);
     expect(a.notice).toBe(notice);
+    expect(a.gaveUp).toBe(true);
+    // At once, while its model may still fail.
     a.accept(plain("try again"));
-    await a.idle();
     expect(a.notice).toBeUndefined();
+    expect(a.gaveUp).toBe(false);
+    await a.idle();
+    expect(store.load().at(-1)).toEqual(assistant("back"));
   });
+
+  for (const kind of ["root", "sub-agent"] as const) {
+    test(`a ${kind} with a message waiting when its last retry fails tries again for it instead of giving up`, async () => {
+      const reported: string[] = [];
+      const shown: string[] = [];
+      const scripted = new ScriptedModel([[assistant("back")]]);
+      let calls = 0;
+      const model: Model = {
+        next(...args) {
+          calls++;
+          if (calls === 4) a.accept(plain("second", kind === "root" ? "owner" : "a1b2c3d4e5f6"));
+          return calls <= 5 ? Promise.reject(new Error("rate limited")) : scripted.next(...args);
+        },
+      };
+      const options = kind === "root" ? {} : { parent: "a1b2c3d4e5f6", post: async (text: string) => (reported.push(text), "delivered" as const) };
+      const a = agent(model, [], options);
+      a.on("gaveUp", (text: string) => shown.push(text));
+      a.start();
+      a.accept(plain("go", kind === "root" ? "owner" : "a1b2c3d4e5f6"));
+      await a.idle();
+      expect(calls).toBe(6);
+      expect(shown).toEqual([]);
+      expect(reported).toEqual(kind === "root" ? [] : ["back"]);
+      expect(store.load().at(-1)).toEqual(assistant("back"));
+    });
+  }
 
   test("a notice that can't be sent stays in the outbox, and the stream says so", async () => {
     const a = agent(failing(4, [], "rate limited"), [], { parent: "a1b2c3d4e5f6", post: () => Promise.reject(new Error("runtime unreachable")) });

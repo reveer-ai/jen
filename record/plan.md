@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-16.
+Last updated 2026-11-19.
 
 ## Current project: Agent harness & UI engine
 
@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-19 | [JEN-25](https://linear.app/reveer/issue/JEN-25) | [#21](https://github.com/reveer-ai/jen/pull/21) | The `jen` command: it keeps its settings in Docker, starts the runtime on demand, creates, lists, stops and opens named roots, follows a query's progress to its reply, and uninstalls everything of jen's. Publishing it to npm is [JEN-26](https://linear.app/reveer/issue/JEN-26). |
 | 2026-11-16 | [JEN-21](https://linear.app/reveer/issue/JEN-21) | [#20](https://github.com/reveer-ai/jen/pull/20) | The runtime holds the model key and proxies agents' model calls, accepting only the Responses adapter's request, and agents sit on an internal network that reaches only the runtime and each other. Completed the Agent workspace milestone. |
 | 2026-11-16 | [JEN-4](https://linear.app/reveer/issue/JEN-4) | [#19](https://github.com/reveer-ai/jen/pull/19) | Recorded that an agent is jen's unit and that jen ships as the `jenai` npm package, and scoped the Distribution milestone, the package only, into [JEN-25](https://linear.app/reveer/issue/JEN-25). |
 | 2026-11-15 | [JEN-22](https://linear.app/reveer/issue/JEN-22) | [#17](https://github.com/reveer-ai/jen/pull/17) | A click's ask reaches the agent in Safari: the bridge keeps focus in a text field during a press, and the sandbox check runs in Chromium and WebKit. Completed the UI engine milestone. |
@@ -54,5 +55,5 @@ These are recorded so they aren't lost. Don't settle them ahead of the task that
 - **Auth, beyond the runtime's tokens:** [JEN-10](https://linear.app/reveer/issue/JEN-10) built an owner token and a per-agent token renewed on every start (see [decisions.md](decisions.md), 2026-11-02). Still open: human login, TLS on the runtime's port, and how a browser's `EventSource` gets a token, which wait for hosting, after this project. [JEN-18](https://linear.app/reveer/issue/JEN-18) needs a browser to reach an agent's UI, but only locally (see [decisions.md](decisions.md), 2026-11-10). Agents call the runtime with their own tokens since [JEN-11](https://linear.app/reveer/issue/JEN-11).
 - **Model access isn't narrowable yet.** Since [JEN-21](https://linear.app/reveer/issue/JEN-21), the key stays in the runtime, which checks and proxies every agent's model call, and agents are offline. Still open: model access as a grant (which models, how much spend) and spend as a recursion bound, which would extend the proxy's check.
 - **Whether the Luna-class requirement covers generative UI** (see [decisions.md](decisions.md), 2026-11-10). Evidence so far: on 2026-11-13 the maintainer tried [JEN-18](https://linear.app/reveer/issue/JEN-18)'s UI by hand on `openai/gpt-6-sol` and `openai/gpt-6-luna`, and found their UIs very similar in quality and generation time, Luna perhaps a little slower. The UI live check runs only on Sol.
-- **Organizing and cleaning up agents.** Persistent sub-agents are kept until a parent deletes them, and every agent counts toward the runtime's limit until deleted. How agents stay organized and get cleaned up over time needs more thought once real trees exist.
+- **Organizing and cleaning up agents.** Persistent sub-agents are kept until a parent deletes them, and every agent counts toward the runtime's limit until deleted. How agents stay organized and get cleaned up over time needs more thought once real trees exist. Since [JEN-25](https://linear.app/reveer/issue/JEN-25), `jen` can't delete, rename or organize roots either: a root made by mistake stays until it's deleted through the API by hand.
 - **Hosting, after this project:** each account gets its own runtime ([JEN-10](https://linear.app/reveer/issue/JEN-10)). That isolates accounts only if each runtime also has its own Docker engine, typically one VM per account, because controlling an engine means controlling everything on it. Hosting must also leave any application able to connect to jen as a service (see [product.md](product.md)), and decide how.

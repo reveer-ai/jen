@@ -136,7 +136,7 @@ An agent started with `JEN_WAKE` SHALL NOT run its loop until it has saved a mes
 - **THEN** that message ends the hold and the loop runs
 
 ### Requirement: A failed model call is retried, then the agent waits
-A failed model call SHALL save nothing, and the agent SHALL retry it after 1, 5 and 25 seconds. If every retry fails, the agent SHALL stop its loop until a message is accepted or it starts again, either of which SHALL resume the work where it stopped.
+A failed model call SHALL save nothing, and the agent SHALL retry it after 1, 5 and 25 seconds. If every retry fails, the agent SHALL stop its loop until a message is accepted or it starts again, either of which SHALL resume the work where it stopped. If a message is waiting when the last retry fails, the agent SHALL NOT stop, but SHALL deliver the message and retry from the start.
 
 #### Scenario: Transient failure
 - **WHEN** a model call fails once and its first retry succeeds
@@ -145,6 +145,10 @@ A failed model call SHALL save nothing, and the agent SHALL retry it after 1, 5 
 #### Scenario: Persistent failure
 - **WHEN** a model call and all three retries fail
 - **THEN** the loop stops, and a later message resumes it with a model call
+
+#### Scenario: A message arrives during the retries
+- **WHEN** a message is accepted while the last retry is in flight, and that retry fails
+- **THEN** the agent doesn't give up, and calls the model again with the message delivered
 
 ### Requirement: An agent that gives up tells its parent
 When an agent stops its loop after its model kept failing, an agent with a parent agent SHALL put `My model is failing, so I've stopped working. Error: <error>. Message me to try again.` in its outbox. A root SHALL instead show that notice on its own event stream.

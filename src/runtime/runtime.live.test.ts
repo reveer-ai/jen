@@ -70,8 +70,8 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     expect((await fetch(`${base}/agents`)).status).toBe(401);
 
     // The owner spawns a root agent, and the root's token spawns a child.
-    const root = await call(base, "/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: true } }) });
-    expect(root).toMatchObject({ status: 201, body: { parent: null, grant: { spawn: true }, state: "running" } });
+    const root = await call(base, "/agents", { method: "POST", body: JSON.stringify({ grant: { spawn: true }, name: "home" }) });
+    expect(root).toMatchObject({ status: 201, body: { parent: null, name: "home", grant: { spawn: true }, state: "running" } });
     const rootId: string = root.body.id;
     const child = await call(base, "/agents", { method: "POST", headers: { Authorization: `Bearer ${tokenOf(rootId)}` }, body: JSON.stringify({ grant: { spawn: false } }) });
     expect(child).toMatchObject({ status: 201, body: { parent: rootId, grant: { spawn: false } } });
@@ -176,7 +176,7 @@ test.skipIf(!apiKey || !model)("an agent delegates and converses in both directi
     base = `http://127.0.0.1:${port}`;
     await until(async () => !!(await fetch(base).catch(() => undefined)), "the runtime to serve");
 
-    const root = await fetch(`${base}/agents`, { method: "POST", headers: owner, body: JSON.stringify({ grant: { spawn: true } }) });
+    const root = await fetch(`${base}/agents`, { method: "POST", headers: owner, body: JSON.stringify({ grant: { spawn: true }, name: "home" }) });
     expect(root.status).toBe(201);
     rootId = (await root.json()).id;
 
