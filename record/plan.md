@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-16.
+Last updated 2026-11-19.
 
 ## Current project: Agent harness & UI engine
 
@@ -28,6 +28,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-19 | [JEN-25](https://linear.app/reveer/issue/JEN-25) | [#21](https://github.com/reveer-ai/jen/pull/21) | The `jen` command: it keeps its settings in Docker, starts the runtime on demand, creates, lists, stops and opens named roots, follows a query's progress to its reply, and uninstalls everything of jen's. Publishing it to npm is [JEN-26](https://linear.app/reveer/issue/JEN-26). |
 | 2026-11-16 | [JEN-21](https://linear.app/reveer/issue/JEN-21) | [#20](https://github.com/reveer-ai/jen/pull/20) | The runtime holds the model key and proxies agents' model calls, accepting only the Responses adapter's request, and agents sit on an internal network that reaches only the runtime and each other. Completed the Agent workspace milestone. |
 | 2026-11-16 | [JEN-4](https://linear.app/reveer/issue/JEN-4) | [#19](https://github.com/reveer-ai/jen/pull/19) | Recorded that an agent is jen's unit and that jen ships as the `jenai` npm package, and scoped the Distribution milestone, the package only, into [JEN-25](https://linear.app/reveer/issue/JEN-25). |
 | 2026-11-15 | [JEN-22](https://linear.app/reveer/issue/JEN-22) | [#17](https://github.com/reveer-ai/jen/pull/17) | A click's ask reaches the agent in Safari: the bridge keeps focus in a text field during a press, and the sandbox check runs in Chromium and WebKit. Completed the UI engine milestone. |

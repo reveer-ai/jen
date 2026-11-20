@@ -16,7 +16,7 @@ Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), fixing its implementat
 
 ## 2026-11-18
 
-Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), aligning on its proposal with the maintainer. The proposal is in `openspec/changes/add-jen-command/`:
+Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), aligning on its proposal with the maintainer. The proposal is in `openspec/changes/archive/2026-11-19-add-jen-command/`:
 
 - **The Distribution milestone is two tasks: the `jen` command and its interactions ([JEN-25](https://linear.app/reveer/issue/JEN-25)), and publishing it as `jenai` ([JEN-26](https://linear.app/reveer/issue/JEN-26)).** *Why:* set by the maintainer. The command is a task of its own, and publishing can run beside it.
 - **The user addresses every root by name, with `@<name>`, and creates roots with `jen new <name>`.** The commands are `jen new <name>`, `jen @<name> <query>`, `jen @<name> open`, `jen list`, `jen stop @<name>` and `jen stop all`. *Why:* set by the maintainer. A user has several roots, each keeping its sub-agents over time. A current or default root can come later.
@@ -25,7 +25,7 @@ Made in [JEN-25](https://linear.app/reveer/issue/JEN-25), aligning on its propos
 - **All of jen lives in Docker, settings included, and `jen uninstall` deletes all of it, npm package too.** `jen` asks for its settings and keeps them, with the owner token, in a Docker volume of its own, which the runtime never reads. While the runtime runs, `jen` reads the token from the runtime's container. *Why:* set by the maintainer: everything of jen's in one place, and nothing left behind when jen is deleted. npm runs no script of a package at uninstall (npm v7 and later), so only a command of jen's can clean up Docker. *Rejected:* a file in `~/.config/jen/`, the one piece of jen outside Docker. The installed package's folder, which every upgrade replaces. The system keychain, which Node has no API for and is a second place again. A volume the runtime owns, which would make the runtime stateful.
 - **`jen @<name> <query>` shows a line for each step of progress, then the reply.** *Why:* set by the maintainer.
 
-Made in [JEN-25](https://linear.app/reveer/issue/JEN-25)'s design (`openspec/changes/add-jen-command/design.md`):
+Made in [JEN-25](https://linear.app/reveer/issue/JEN-25)'s design (`openspec/changes/archive/2026-11-19-add-jen-command/design.md`):
 
 - **`jen` reaches the engine through the user's `docker` command, not the Engine API over a socket.** *Why:* only the command resolves the user's Docker context and `DOCKER_HOST`; the socket's path differs between Docker Desktop, Colima, OrbStack and remote engines. *Rejected:* running `src/runtime/docker.ts` on the host, which would reimplement contexts.
 - **Settings are asked for in the terminal, not edited in `$VISUAL` or `$EDITOR`.** *Why:* an editor puts the key in a file on the host, and may copy it into swap, backup or undo files that `jen uninstall` can't find. Discussed with the maintainer. An editor becomes worth it once there are enough settings that aren't secret.
