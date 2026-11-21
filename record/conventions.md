@@ -39,6 +39,7 @@ How work is done on this project. These apply to anyone working on it.
 ## Git and verification
 
 - **Every push carries the record.** Commit any pending `record/` changes with the task's own files.
-- **Pull requests are squash-merged.**
-- **Git history should read the way the work should have happened.** Rewriting history to fix it is acceptable: take a backup ref first and confirm with the maintainer before force-pushing. Linear's history is an audit trail, so never replay statuses on it; add a comment or attachment instead.
+- **Pull requests are squash-merged.** The `main` ruleset allows nothing else, and refuses any push to `main` that isn't a merged pull request (see `environment.md`).
+- **An outside pull request gets the maintainer's review.** Its CI runs only once the maintainer approves its workflows, after reading what it changes. Agents review it with `review-change` when the maintainer asks.
+- **Git history should read the way the work should have happened.** Rewriting a branch's history to fix it is acceptable, and `main`'s can't be rewritten: take a backup ref first and confirm with the maintainer before force-pushing. Linear's history is an audit trail, so never replay statuses on it; add a comment or attachment instead.
 - **Nothing is done until the check that could prove it wrong has run.** If a live check is still outstanding, say the work is unverified and name what that check could still find. A command handed forward by earlier work is a claim too: run its read-only half and compare before repeating it.

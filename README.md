@@ -42,6 +42,10 @@ jen uninstall
 
 It deletes every agent, its conversation and files, jen's settings and images, and then the command itself. `npm uninstall -g jen-ai` alone would leave all of that in Docker.
 
+## Contributing
+
+Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Report a security problem privately, as [SECURITY.md](SECURITY.md) says.
+
 ## License
 
-jen is free to install and use, for any purpose. Its code isn't open source: see [LICENSE](LICENSE).
+jen is open source, under the [Apache License 2.0](LICENSE). Copyright 2026 reveer.

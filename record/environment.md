@@ -2,7 +2,7 @@
 
 ## Project
 
-- **Repo:** `reveer-ai/jen` on GitHub.
+- **Repo:** `reveer-ai/jen` on GitHub, public, with `main` protected (see [The repo](#the-repo)).
 - **Linear:** workspace `reveer`. The `jen` team (key `JEN`) is the product. Linear's GitHub integration has been connected to `reveer-ai` since 2026-10-24. It links a PR to an issue automatically when the issue ID appears in the branch name or the PR title, so don't attach PRs by hand.
 - **OpenSpec** 1.15.0, initialized for Claude Code and Codex with the `spec-driven` schema. Its config is in `openspec/config.yaml`. Its skills live in `.claude/skills/` and `.agents/skills/`, and its `/opsx:*` commands in `.claude/commands/opsx/`. All of these are generated, so refresh them with `openspec update` rather than editing them by hand.
 
@@ -74,11 +74,20 @@ Commands:
 
 Every push to `main` runs `.github/workflows/release.yml`: CI (`ci.yml`, which skips `main` on its own), then `node scripts/release.ts plan`, then the images, then the package, then the tag and the GitHub release, one run at a time. A release publishes `ghcr.io/reveer-ai/jen-agent`, `jen-runtime` and `jen-workspace` at its version for amd64 and arm64, and `jen-ai` to npm through trusted publishing, with no npm token. Nothing is ever released from a laptop, and no release commits to `main`.
 
-- **What ships.** A push releases only when a commit since the last `v<x.y.z>` tag reachable from it changes what's in `SHIPS` in `scripts/release.ts`: `src/` but its tests, `package.json`, `package-lock.json`, the `Dockerfile`, `README.md` or `LICENSE`. Otherwise the run's `plan` job says nothing ships. `GITHUB_TOKEN=$(gh auth token) node scripts/release.ts plan` prints what a merge of the current branch would release.
+- **What ships.** A push releases only when a commit since the last `v<x.y.z>` tag reachable from it changes what's in `SHIPS` in `scripts/release.ts`: `src/` but its tests, `package.json`, `package-lock.json`, the `Dockerfile`, `README.md`, `LICENSE` or `NOTICE`. Otherwise the run's `plan` job says nothing ships. `GITHUB_TOKEN=$(gh auth token) node scripts/release.ts plan` prints what a merge of the current branch would release.
 - **The version.** The patch number rises, unless a released pull request is labelled `minor` or `major`: label it before merging. The notes are the squash-merged commits' subjects.
 - **A failed release** is rerun from GitHub Actions. It pushes the images again, keeps a version npm has from the same commit, and skips a release that exists. A version npm has from another commit fails the run: that takes a run that published but didn't tag, then another merge before the rerun, so rerun promptly. To sort it by hand, create the missing GitHub release on the commit npm names (`npm view jen-ai@<version> gitHead`) with `gh release create v<version> --target <commit>`, and rerun.
 - **Standing setup, done on 2026-11-20:** `jen-ai`'s trusted publisher on npmjs.com is `reveer-ai/jen`'s `release.yml`, with no environment and `npm publish` allowed (`npm trust list jen-ai`, which asks for the maintainer's one-time password). The `minor` and `major` labels exist. The `reveer-ai` organization allows public packages, and the three GHCR packages are public, which GitHub can't undo. npm's `0.0.0` is a hand-published placeholder, and `0.0.0-stage` a stub npm made for it.
-- **Never push the maintainer's local tags `v0.1.0` to `v0.5.0`**, from an earlier jen, or `git push --tags` from that clone: the next release would read `v0.5.0` as the last. Only the release makes tags.
+- **Never push the maintainer's local tags `v0.1.0` to `v0.5.0`**, from an earlier jen, or `git push --tags` from that clone: the next release would read `v0.5.0` as the last. Only the release makes tags, and the `releases` ruleset refuses anyone else's.
+
+## The repo
+
+`reveer-ai/jen` is public since [JEN-28](https://linear.app/reveer/issue/JEN-28), under Apache-2.0. Its rulesets are under the repo's Settings → Rules, and `gh api repos/reveer-ai/jen/rulesets` lists them. Rulesets need a public repo on GitHub's Free plan: a private one answers 403.
+
+- **`main`** takes changes only by a squash-merged pull request, once CI's `check`, `boundary` and `sandbox` pass and its review conversations are resolved. A direct push, a force-push and deleting the branch are refused, for everyone, the maintainer included. No approval is required, since GitHub refuses the author's own and the maintainer is the only writer. Merge commits and rebase merging are off in the repo's settings too.
+- **When CI itself is broken**, the fix can't pass `check`. Set the `main` ruleset's enforcement to disabled, merge the fix, and set it back to active at once.
+- **`v*` tags** are made only by the release workflow: the `releases` ruleset refuses creating, moving or deleting one, with GitHub Actions as its only bypass.
+- **Outside pull requests** come from forks. Every workflow run a fork starts waits for the maintainer's approval (Settings → Actions → General), and gets a read-only token and no secrets. Security reports arrive through private vulnerability reporting, under the Security tab.
 
 ## Tool quirks
 
