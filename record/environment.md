@@ -78,7 +78,7 @@ Every push to `main` runs `.github/workflows/release.yml`: CI (`ci.yml`, which s
 - **The version.** The patch number rises, unless a released pull request is labelled `minor` or `major`: label it before merging. The notes are the squash-merged commits' subjects.
 - **A failed release** is rerun from GitHub Actions. It pushes the images again, keeps a version npm has from the same commit, and skips a release that exists. A version npm has from another commit fails the run: that takes a run that published but didn't tag, then another merge before the rerun, so rerun promptly. To sort it by hand, create the missing GitHub release on the commit npm names (`npm view jen-ai@<version> gitHead`) with `gh release create v<version> --target <commit>`, and rerun.
 - **Standing setup, done on 2026-11-20:** `jen-ai`'s trusted publisher on npmjs.com is `reveer-ai/jen`'s `release.yml`, with no environment and `npm publish` allowed (`npm trust list jen-ai`, which asks for the maintainer's one-time password). The `minor` and `major` labels exist. The `reveer-ai` organization allows public packages, and the three GHCR packages are public, which GitHub can't undo. npm's `0.0.0` is a hand-published placeholder, and `0.0.0-stage` a stub npm made for it.
-- **Never push the maintainer's local tags `v0.1.0` to `v0.5.0`**, from an earlier jen, or `git push --tags` from that clone: the next release would read `v0.5.0` as the last. Only the release makes tags, and the `releases` ruleset refuses anyone else's.
+- **Never push the maintainer's local tags `v0.1.0` to `v0.5.0`**, from an earlier jen, or `git push --tags` from that clone: the next release would read `v0.5.0` as the last. Only the release makes tags. Nothing refuses a pushed one, and the `releases` ruleset then refuses deleting it: disable the ruleset, delete the tag, and enable it again.
 
 ## The repo
 
@@ -86,7 +86,7 @@ Every push to `main` runs `.github/workflows/release.yml`: CI (`ci.yml`, which s
 
 - **`main`** takes changes only by a squash-merged pull request, once CI's `check`, `boundary` and `sandbox` pass and its review conversations are resolved. A direct push, a force-push and deleting the branch are refused, for everyone, the maintainer included. No approval is required, since GitHub refuses the author's own and the maintainer is the only writer. Merge commits and rebase merging are off in the repo's settings too.
 - **When CI itself is broken**, the fix can't pass `check`. Set the `main` ruleset's enforcement to disabled, merge the fix, and set it back to active at once.
-- **`v*` tags** are made only by the release workflow: the `releases` ruleset refuses creating, moving or deleting one, with GitHub Actions as its only bypass.
+- **`v*` tags** can't be moved or deleted: the `releases` ruleset refuses both, for everyone. Creating one isn't refused, since a repository ruleset can't exempt the release workflow's `GITHUB_TOKEN`.
 - **Outside pull requests** come from forks. Every workflow run a fork starts waits for the maintainer's approval (Settings → Actions → General), and gets a read-only token and no secrets. Security reports arrive through private vulnerability reporting, under the Security tab.
 
 ## Tool quirks

@@ -49,7 +49,9 @@ The repo's own merge settings match: merge commits and rebase merging are turned
 
 ### The ruleset on release tags
 
-One tag ruleset, `releases`, on `refs/tags/v*`, refusing creation, update and deletion, with GitHub Actions (integration 15368) as its only bypass actor. Only the release workflow then makes tags. That also enforces the record's rule never to push the maintainer's local tags `v0.1.0` to `v0.5.0`, which would make the next release read `v0.5.0` as the last.
+One tag ruleset, `releases`, on `refs/tags/v*`, refusing update and deletion, with no bypass actors. A release's tag then stays on the commit it was made for, and the next release always finds it.
+
+*Built differently from the design:* the design also refused creating a `v*` tag, with GitHub Actions (integration 15368) as the only bypass, so that only the release workflow could make one. GitHub refused that bypass when the ruleset was created on 2026-11-21: "Actor GitHub Actions integration must be part of the ruleset source or owner organization". A repository ruleset can only exempt an app installed on the organization, and `GITHUB_TOKEN` is not one. Refusing creation without a bypass would stop the release from tagging, so creating a tag stays open to anyone who can push. The record's rule never to push the maintainer's local tags `v0.1.0` to `v0.5.0` stays a convention. *Rejected:* tagging through a deploy key, which would exempt the release, at the cost of a new secret for one stray-tag risk.
 
 ### Outside pull requests
 
@@ -60,7 +62,7 @@ One tag ruleset, `releases`, on `refs/tags/v*`, refusing creation, update and de
 ## Risks / Trade-offs
 
 - **[Going public can't really be undone]** → Forks, clones, GH Archive's event log and search caches keep what was public. The maintainer reads `record/`, `ideas.md` in particular, before approving this change. The git history was scanned on 2026-11-20 and holds no secrets.
-- **[The tag ruleset might refuse the release workflow]** → the first release after it, `0.1.1`, shows it. That release would have published to npm before its tag step failed, and a rerun keeps that version. So fix the bypass and rerun the release.
+- **[A stray `v*` tag]** → anyone who can push can still create one, and the next release would read it as the last. Only the maintainer's sessions can push, and the record says never to push the old local tags. A stray tag can't be deleted while the ruleset holds: disable it, delete the tag, and enable it again.
 - **[No bypass on `main`]** → a broken CI blocks every merge, fixes to CI included, since they need `check` to pass. An admin can disable the ruleset for that fix and turn it on again.
 - **[A ruleset that doesn't hold]** → the probe after applying it pushes an empty commit straight to `main` and expects a refusal. If it's accepted, the empty commit changes nothing that ships and releases nothing, and the ruleset gets fixed before anything else merges.
 
@@ -71,7 +73,7 @@ This order lets the merge itself test the rulesets:
 1. The maintainer approves the pull request.
 2. The repo is made public.
 3. The two rulesets, the merge settings, fork workflow approval and private vulnerability reporting are applied.
-4. Probes: an empty commit pushed to `main`, a force-push to `main` and a pushed `v9.9.9-probe` tag are each refused.
-5. The pull request is merged through the ruleset, and the release of `0.1.1` creates its tag past the tag ruleset. npm attaches provenance to `0.1.1`, now that the repo is public.
+4. Probes: an empty commit pushed to `main` and a force-push to `main` are each refused. The tag ruleset is read back rather than probed: probing it means moving or deleting a real release tag, or leaving a probe tag that can't be deleted.
+5. The pull request is merged through the ruleset, and the release of `0.1.1` creates its tag. npm attaches provenance to `0.1.1`, now that the repo is public.
 
 For a moment between steps 2 and 5 the public repo still carries the old license. Its terms are stricter, so nobody gains a right in that window.
