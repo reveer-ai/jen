@@ -19,7 +19,7 @@ npm run check   # types
 npm test        # unit tests
 ```
 
-The live checks (`npm run test:live`) run real agents and need a model key, so CI doesn't run them, and you needn't either. Say in your pull request if your change could affect them.
+The live checks (`npm run test:live`) run jen in Docker, and some call a real model, so they need a key in `.env`. CI runs two of them on every pull request, the workspace's boundary and the UI's sandbox, which need no key. You needn't run the others: say in your pull request if your change could affect them.
 
 ## Pull requests
 

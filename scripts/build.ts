@@ -3,8 +3,9 @@
 //   npm run build -- <x.y.z>
 //
 // It holds src/cli/ compiled to JavaScript, with the version written into
-// cli/release.js, a package.json of its own, README.md, LICENSE and NOTICE. The repo's
-// package.json stays private, so only this folder can be published.
+// cli/release.js, a package.json of its own, README.md, LICENSE and NOTICE.
+// The repo's package.json stays private, so only this folder can be
+// published.
 
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

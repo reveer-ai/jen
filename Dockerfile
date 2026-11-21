@@ -17,7 +17,8 @@ EXPOSE 8080
 ENTRYPOINT ["node", "src/agent/main.ts"]
 
 # The runtime: only src/runtime/, which uses Node's built-ins alone, with
-# jen's LICENSE and NOTICE, run as root so it can use the engine's socket. package.json makes it an ES module.
+# jen's LICENSE and NOTICE, run as root so it can use the engine's socket.
+# package.json makes it an ES module.
 FROM node:26-slim AS runtime
 WORKDIR /app
 COPY package.json ./
