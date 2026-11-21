@@ -279,6 +279,14 @@ describe("an installed jen's images", () => {
     expect([...old.docker.images.keys()].sort()).toEqual([image("agent"), "ghcr.io/reveer-ai/jen-other:0.0.9", image("runtime"), image("workspace"), "postgres"].sort());
   });
 
+  test("an upgrade with nothing running removes the other versions' images once it pulls its own", async () => {
+    const { docker, ctx } = await setup({ version: V });
+    docker.images.set(image("agent", "0.0.9"), "sha256:old-agent");
+    docker.images.set(image("workspace", "0.0.9"), "sha256:old-workspace");
+    await ensureRuntime(ctx);
+    expect([...docker.images.keys()].sort()).toEqual([image("agent"), image("runtime"), image("workspace")]);
+  });
+
   test("an old version's image a container still uses is passed over", async () => {
     const { docker, ctx } = await setup({ version: V });
     docker.images.set(image("agent", "0.0.9"), "sha256:old");

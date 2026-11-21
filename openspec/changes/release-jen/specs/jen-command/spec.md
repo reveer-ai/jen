@@ -58,11 +58,19 @@ When an image an installed `jen` names by default is missing, every command that
 - **THEN** it exits non-zero with Docker's reason the pull failed, and no container of jen's exists
 
 ### Requirement: Old versions' images are removed after an upgrade
-After a command moves the agents and the runtime onto a new version's images, an installed `jen` SHALL remove every image of `ghcr.io/reveer-ai/jen-runtime`, `jen-agent` and `jen-workspace` tagged with another version, passing over any that a container still uses.
+After a command moves the agents and the runtime onto a new version's images, or pulls a new version's image with nothing of jen's running on an old one, an installed `jen` SHALL remove every image of `ghcr.io/reveer-ai/jen-runtime`, `jen-agent` and `jen-workspace` tagged with another version, passing over any that a container still uses. It SHALL leave alone the registry's images of a repository whose image the environment names, which it also never pulls.
 
 #### Scenario: Upgrading from 0.1.0 to 0.1.1
 - **WHEN** the user upgrades to 0.1.1 and runs a query
 - **THEN** the agents stop and the root answers on the 0.1.1 images, and no 0.1.0 image is left
+
+#### Scenario: Upgrading with nothing running
+- **WHEN** the user runs `jen stop all`, upgrades to 0.1.1 and runs `jen list`
+- **THEN** jen pulls the 0.1.1 images, and no 0.1.0 image is left
+
+#### Scenario: Images the environment names
+- **WHEN** `jen` 0.1.1 runs with `JEN_AGENT_IMAGE`, `JEN_RUNTIME_IMAGE` and `JEN_WORKSPACE_IMAGE` set, and the registry's 0.1.0 images are present
+- **THEN** it pulls nothing, and the 0.1.0 images are still there
 
 ## MODIFIED Requirements
 
@@ -81,7 +89,7 @@ When an image the runtime needs is missing and isn't one an installed `jen` pull
 - **THEN** it exits non-zero naming `jen-workspace` and the `docker build` command that makes it
 
 ### Requirement: Uninstalling deletes everything of jen's
-`jen uninstall` SHALL ask for confirmation, and do nothing unless the user answers `y`; without a terminal on stdin it SHALL fail. On `y`, it SHALL remove every container, volume and network that's jen's, the settings and jen's images, every version of the registry's included, without needing the runtime to start, carrying on past a failure and reporting each one. When `jen` was installed globally with npm, it SHALL then uninstall the `jen-ai` package; otherwise it SHALL say how the command remains.
+`jen uninstall` SHALL ask for confirmation, and do nothing unless the user answers `y`; without a terminal on stdin it SHALL fail. On `y`, it SHALL remove every container, volume and network that's jen's, the settings and jen's images, every version of the registry's included, without needing the runtime to start, carrying on past a failure and reporting each one. It SHALL leave alone the registry's images of a repository whose image the environment names. When `jen` was installed globally with npm, it SHALL then uninstall the `jen-ai` package; otherwise it SHALL say how the command remains.
 
 #### Scenario: Uninstalling
 - **WHEN** the user runs `jen uninstall` with two roots, a sub-agent and a workspace, and answers `y`

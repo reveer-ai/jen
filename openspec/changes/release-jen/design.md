@@ -89,9 +89,11 @@ A pull that fails says why, from `docker pull`'s stderr, and stops the command. 
 
 Upgrading the package changes `VERSION`, so the images' names change and their IDs differ from the containers'. `ensureRuntime`'s existing rule stops every agent and restarts the runtime on the new version, and each agent starts on its new image at its next message.
 
-After that switch, `jen` removes every image of its three registry repositories whose tag isn't its own version: `docker image ls --filter reference=ghcr.io/reveer-ai/jen-*` lists them. Docker refuses to remove an image a container still uses, and `jen` passes over that refusal. The workspace image alone is several hundred megabytes, so without this every upgrade leaves a full set behind.
+After that switch, or after pulling an image of its own with nothing running on an old one, as when the user stopped everything before upgrading, `jen` removes every image of its three registry repositories whose tag isn't its own version: `docker image ls --filter reference=ghcr.io/reveer-ai/jen-*` lists them. Docker refuses to remove an image a container still uses, and `jen` passes over that refusal. The workspace image alone is several hundred megabytes, so without this every upgrade leaves a full set behind.
 
-`jen uninstall` removes the same list as well as the images under its current names, so a set an earlier version left is removed too. It runs `npm uninstall -g jen-ai`, the package's new name.
+`jen uninstall` removes the same list as well as the images under its current names, so a set an earlier version left is removed too.
+
+Neither touches the registry's images of a repository whose image the environment names, just as `jen` never pulls one. The live check is an installed `jen` whose names are all overridden, so it leaves a real install's images alone. It runs `npm uninstall -g jen-ai`, the package's new name.
 
 ### The release
 
