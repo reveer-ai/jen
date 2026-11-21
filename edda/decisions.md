@@ -2,6 +2,13 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-21
+
+Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
+
+- **edda keeps the project record, which moves from `record/` to `edda/`, with `edda/index.md` as its index.** `npx edda-ai init` put edda's pointer in `AGENTS.md` in place of the record section the project wrote, and the record's own rules for keeping it stay in the index. Agents still keep the record, with `tend` doing its upkeep each cycle. *Why:* set by the maintainer. Supersedes 2026-10-24's "`record/` is the project's source of truth" and 2026-11-09's "`context/` is renamed `record/`".
+- **clare is adopted, as installed by `npx clare-ai init`.** *Why:* set by the maintainer.
+
 ## 2026-11-20
 
 Set by the maintainer, aligning on [JEN-28](https://linear.app/reveer/issue/JEN-28)'s proposal. The proposal and design are in `openspec/changes/archive/2026-11-21-open-source-jen/`:
@@ -158,7 +165,7 @@ Made in [JEN-3](https://linear.app/reveer/issue/JEN-3), designing the UI engine 
 Made in [JEN-15](https://linear.app/reveer/issue/JEN-15), building the skills and docs that keep the project understood and maintained:
 
 - **The record is kept by intent, with no size limits.** *Why:* set by the maintainer. The old line budget was both arbitrary and dodged: `plan.md` passed it at 68 lines while holding 25 KB, mostly a status log that copied its pull requests.
-- **`context/` is renamed `record/`.** *Why:* set by the maintainer. `AGENTS.md` names the project record as part of every agent's role, so skills can say "the project record" without explaining it, and a directory named for what it is makes that plain. "Context" also collided with OpenSpec's `context` setting and with context files in general.
+- **`context/` is renamed `record/`.** *Superseded 2026-11-21:* the record is `edda/`. *Why:* set by the maintainer. `AGENTS.md` names the project record as part of every agent's role, so skills can say "the project record" without explaining it, and a directory named for what it is makes that plain. "Context" also collided with OpenSpec's `context` setting and with context files in general.
 - **The record and docs hold only what the primary source can't tell, said briefly.** *Why:* a study of repository context files ([Gloaguen et al., 2026](https://arxiv.org/abs/2602.11988)) found LLM-written ones lowered agents' task success and raised cost by over 20%, mostly by repeating what agents could find themselves. Every copy is also one more thing to drift.
 - **Every jen convention lives in the project, and nothing about a particular user does.** *Why:* set by the maintainer. Thirteen conventions had lived only in one assistant's private memory, where Codex and engineers never see them.
 - **`docs/` is for understanding, and nothing loads it by default.** Each view names the files it describes, so `tend` can find drift. The interactions view replays recorded runs of the behavior check. *Why:* detail there costs no agent tokens unless it's needed, and a recording can't drift from how agents behave.
@@ -286,7 +293,7 @@ Made in [JEN-1](https://linear.app/reveer/issue/JEN-1), designing the jen agent:
 ## 2026-10-24
 
 - **The agent is the project's manager. The maintainer is its lead and customer.** The lead sets direction and makes the calls that shape jen. The agent owns everything else: Linear, the record, conventions, skills and prompts. *Why:* the maintainer works on the project only through agents. One general role statement covers duties nobody has listed yet, so the prompt doesn't have to enumerate them.
-- **`record/` (named `context/` until 2026-11-09) is the project's source of truth.** Agents keep it. `AGENTS.md` points to it, and `CLAUDE.md` imports `AGENTS.md`. *Why:* all work goes through agents. Any agent (Claude Code, Codex or another) or engineer who checks out the repo should get the full picture without depending on one tool's private memory.
+- **`record/` (named `context/` until 2026-11-09) is the project's source of truth.** *Superseded 2026-11-21:* edda keeps it, in `edda/`. Agents keep it. `AGENTS.md` points to it, and `CLAUDE.md` imports `AGENTS.md`. *Why:* all work goes through agents. Any agent (Claude Code, Codex or another) or engineer who checks out the repo should get the full picture without depending on one tool's private memory.
 - **OpenSpec is initialized in the repo** (1.15.0, `spec-driven` schema) for Claude Code and Codex, under [JEN-5](https://linear.app/reveer/issue/JEN-5). How it's used gets settled the first time a task needs it.
 - **Fresh start.** A new Linear workspace (`reveer`), team `jen` and repo `reveer-ai/jen`, with no "v2" naming.
 - **The first project is "Agent harness & UI engine"**, with four milestones in this order: Agent container, Agent delegation, UI engine, Distribution and hosting. *Why:* a project is a bounded effort, and the team already stands for the product. Delegation is its own milestone because a sub-agent is the same kind of agent; what's new is the relationship between agents. The UI engine comes before hosting because it's how a user uses jen at all. Local use falls out of building it, and hosting is mostly a question of transport.

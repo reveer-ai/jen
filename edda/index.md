@@ -1,6 +1,6 @@
 # Project record: index
 
-Read this file first. Then read only the files your task needs.
+Read only the files your task needs.
 
 | File | Holds | Read when |
 |---|---|---|
@@ -22,10 +22,13 @@ The project's own skills live in `.agents/skills/<name>/`, where Codex finds the
 | `review-change` | To review a pull request, or re-review it after fixes |
 | `deliver-change` | When the agent review of a change finds nothing new, to hand it to the maintainer, and again once it's approved |
 | `tend` | At the end of each cycle, to keep the project record, docs and skills accurate and propose code cleanups |
+| `clare` | To explain one subject as a single HTML page. It comes from the `clare-ai` package (see [environment.md](environment.md)), not this project |
 
 When you catch yourself doing the same workflow by hand a second time, capture it as a skill and add it here.
 
 ## Keeping the record
+
+Record what a future agent would need before you report work done. If newer evidence contradicts the record, the evidence wins: fix the record and say so.
 
 - **Only what this project established.** Record what came out of work on this project, including every convention the maintainer sets, wherever it was first noted. Something a tool kept in its private memory belongs here once you've checked it still holds. Don't import knowledge from earlier versions of jen.
 - **Only jen.** The repo and its record are public. They hold jen, the open-source harness, and nothing about reveer's products beyond it: their plans, features, customers or business. An idea that belongs to such a product goes to the maintainer, not into `ideas.md`. When something could be either, ask.

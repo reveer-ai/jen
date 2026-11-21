@@ -2,7 +2,7 @@
 # GHCR, then the package to npm, then the tag and the GitHub release, so a
 # published package never names images that don't exist, and a tag always
 # means a complete release. A failed run is rerun from GitHub, and finishes
-# what it started. How releases work is in record/environment.md.
+# what it started. How releases work is in edda/environment.md.
 name: Release
 
 on:

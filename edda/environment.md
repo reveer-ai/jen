@@ -5,6 +5,8 @@
 - **Repo:** `reveer-ai/jen` on GitHub, public, with `main` protected (see [The repo](#the-repo)).
 - **Linear:** workspace `reveer`. The `jen` team (key `JEN`) is the product. Linear's GitHub integration has been connected to `reveer-ai` since 2026-10-24. It links a PR to an issue automatically when the issue ID appears in the branch name or the PR title, so don't attach PRs by hand.
 - **OpenSpec** 1.15.0, initialized for Claude Code and Codex with the `spec-driven` schema. Its config is in `openspec/config.yaml`. Its skills live in `.claude/skills/` and `.agents/skills/`, and its `/opsx:*` commands in `.claude/commands/opsx/`. All of these are generated, so refresh them with `openspec update` rather than editing them by hand.
+- **edda** 0.2.0 (npm `edda-ai`, from `reveer-ai/edda`), set up on 2026-11-21. It owns the block between `<!-- edda:begin -->` and `<!-- edda:end -->` in `AGENTS.md`, which `npx edda-ai@latest init` rewrites on every run, so change that block only by updating edda. The block imports `edda/index.md`, so Claude Code loads the index into every session. `CLAUDE.md` gets it through its `@AGENTS.md` import. Everything else in `edda/` is the project's.
+- **clare** 0.2.0 (npm `clare-ai`, from `reveer-ai/clare`), set up on 2026-11-21. `.agents/skills/clare/` is its copy, linked from `.claude/skills/clare`. `npx clare-ai@latest init` updates it and overwrites any edits there, so don't edit it by hand. Its pages go to `clare/` at the repo root.
 
 ## Code
 

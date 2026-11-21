@@ -14,7 +14,7 @@ Every push to `main` SHALL release jen when a commit since the last release chan
 - **THEN** a new version of jen is released
 
 #### Scenario: A change to the record only
-- **WHEN** a pull request that changes only `record/` and `openspec/` is merged to `main`
+- **WHEN** a pull request that changes only `edda/` and `openspec/` is merged to `main`
 - **THEN** no version is released, and the run says nothing ships
 
 #### Scenario: A failing check

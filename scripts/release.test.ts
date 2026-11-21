@@ -44,7 +44,7 @@ const deps: Deps = {
 
 test("the first release is 0.1.0, with every shipped merge in its notes", async () => {
   merge("JEN-1: Start (#1)", ["src/cli/main.ts", "package.json"]);
-  merge("JEN-2: Plan it (#2)", ["record/plan.md"]);
+  merge("JEN-2: Plan it (#2)", ["edda/plan.md"]);
   merge("JEN-3: Add the agent (#3)", ["src/agent/main.ts"], ["major"]);
   expect(await plan(deps)).toEqual({ release: true, version: "0.1.0", notes: "- JEN-3: Add the agent (#3)\n- JEN-1: Start (#1)" });
 });
@@ -81,7 +81,7 @@ test("several merges in one release take the largest label", async () => {
 test("a merge of only the record, docs, skills, OpenSpec or tests releases nothing", async () => {
   merge("JEN-1: Start (#1)", ["src/cli/main.ts"]);
   git("tag", "v0.1.0");
-  merge("JEN-10: Record it (#10)", ["record/plan.md", "openspec/changes/x/proposal.md"]);
+  merge("JEN-10: Record it (#10)", ["edda/plan.md", "openspec/changes/x/proposal.md"]);
   merge("JEN-11: Tend (#11)", ["docs/architecture.html", ".agents/skills/tend/SKILL.md", "AGENTS.md"]);
   merge("JEN-12: Test more (#12)", ["src/cli/main.test.ts", "src/agent/loop.live.test.ts"]);
   expect(await plan(deps)).toEqual({ release: false, last: "0.1.0" });
@@ -99,8 +99,8 @@ test.each([["package.json"], ["package-lock.json"], ["Dockerfile"], ["README.md"
 test("the notes are the shipped merges' subjects, one line each, leaving out what doesn't ship", async () => {
   merge("JEN-1: Start (#1)", ["src/cli/main.ts"]);
   git("tag", "v0.1.0");
-  merge("JEN-30: Show sub-agents in jen list (#40)", ["src/cli/roots.ts", "src/cli/roots.test.ts", "record/plan.md"]);
-  merge("JEN-31: Plan the next cycle (#41)", ["record/plan.md"]);
+  merge("JEN-30: Show sub-agents in jen list (#40)", ["src/cli/roots.ts", "src/cli/roots.test.ts", "edda/plan.md"]);
+  merge("JEN-31: Plan the next cycle (#41)", ["edda/plan.md"]);
   const planned = await plan(deps);
   expect(planned).toMatchObject({ notes: "- JEN-30: Show sub-agents in jen list (#40)" });
   // GitHub links #40 to its pull request in a release's notes.
