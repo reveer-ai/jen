@@ -3,8 +3,9 @@
 //   npm run build -- <x.y.z>
 //
 // It holds src/cli/ compiled to JavaScript, with the version written into
-// cli/release.js, a package.json of its own, README.md and LICENSE. The repo's
-// package.json stays private, so only this folder can be published.
+// cli/release.js, a package.json of its own, README.md, LICENSE and NOTICE.
+// The repo's package.json stays private, so only this folder can be
+// published.
 
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -35,7 +36,7 @@ export function manifest(version: string) {
     // npm's trusted publishing compares this exactly with the repo a release
     // runs from.
     repository: { type: "git", url: "git+https://github.com/reveer-ai/jen.git" },
-    license: "SEE LICENSE IN LICENSE",
+    license: "Apache-2.0",
   };
 }
 
@@ -57,7 +58,7 @@ export function build(version: string, out = join(ROOT, "dist")): void {
   }
   writeFileSync(join(out, "cli", "release.js"), releaseModule(version));
   writeFileSync(join(out, "package.json"), `${JSON.stringify(manifest(version), null, 2)}\n`);
-  for (const file of ["README.md", "LICENSE"]) cpSync(join(ROOT, file), join(out, file));
+  for (const file of ["README.md", "LICENSE", "NOTICE"]) cpSync(join(ROOT, file), join(out, file));
 }
 
 if (import.meta.main) {

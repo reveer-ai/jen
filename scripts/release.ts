@@ -14,9 +14,9 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 
-// What ships: the package and the images. README.md and LICENSE are in the
-// package and on its npm page.
-export const SHIPS = ["src", ":(exclude,glob)src/**/*.test.ts", "package.json", "package-lock.json", "Dockerfile", "README.md", "LICENSE"];
+// What ships: the package and the images. README.md, LICENSE and NOTICE are
+// in the package, and LICENSE and NOTICE in the images too.
+export const SHIPS = ["src", ":(exclude,glob)src/**/*.test.ts", "package.json", "package-lock.json", "Dockerfile", "README.md", "LICENSE", "NOTICE"];
 export const FIRST = "0.1.0";
 
 export type Bump = "major" | "minor" | "patch";

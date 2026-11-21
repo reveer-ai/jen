@@ -74,7 +74,9 @@ jobs:
           push: true
           tags: ghcr.io/reveer-ai/jen-${{ matrix.target }}:${{ needs.plan.outputs.version }}
           # Ties each GHCR package to the repo.
-          labels: org.opencontainers.image.source=https://github.com/reveer-ai/jen
+          labels: |
+            org.opencontainers.image.source=https://github.com/reveer-ai/jen
+            org.opencontainers.image.licenses=Apache-2.0
 
   publish:
     needs: [plan, images]

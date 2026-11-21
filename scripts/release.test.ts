@@ -89,7 +89,7 @@ test("a merge of only the record, docs, skills, OpenSpec or tests releases nothi
   expect(describePlan(await plan(deps))).toBe("nothing that ships changed since v0.1.0, so nothing is released.");
 });
 
-test.each([["package.json"], ["package-lock.json"], ["Dockerfile"], ["README.md"], ["LICENSE"], ["src/agent/ui/page.html"]])("a change to %s ships", async (file) => {
+test.each([["package.json"], ["package-lock.json"], ["Dockerfile"], ["README.md"], ["LICENSE"], ["NOTICE"], ["src/agent/ui/page.html"]])("a change to %s ships", async (file) => {
   merge("JEN-1: Start (#1)", ["src/cli/main.ts"]);
   git("tag", "v0.1.0");
   merge("JEN-13: Change it (#13)", [file]);

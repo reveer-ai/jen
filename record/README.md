@@ -28,6 +28,7 @@ When you catch yourself doing the same workflow by hand a second time, capture i
 ## Keeping the record
 
 - **Only what this project established.** Record what came out of work on this project, including every convention the maintainer sets, wherever it was first noted. Something a tool kept in its private memory belongs here once you've checked it still holds. Don't import knowledge from earlier versions of jen.
+- **Only jen.** The repo and its record are public. They hold jen, the open-source harness, and nothing about reveer's products beyond it: their plans, features, customers or business. An idea that belongs to such a product goes to the maintainer, not into `ideas.md`. When something could be either, ask.
 - **Only what the primary source can't tell.** If the code, a spec, git history, a pull request or Linear already says it, link there or leave it out. A copy costs every reader tokens and is one more thing to drift. The record holds intent, decisions, conventions and facts no file shows.
 - **Each fact lives in one place.** Link to it rather than copying it.
 - **Write for an agent with no context.** Use absolute dates. Give things their full name the first time they appear.

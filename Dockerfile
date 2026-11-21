@@ -2,24 +2,28 @@
 # docker build --target runtime -t jen-runtime . and
 # docker build --target workspace -t jen-workspace .
 
-# An agent: only src/agent/ and its dependencies, run as uid 1000.
+# An agent: only src/agent/ and its dependencies, with jen's LICENSE and
+# NOTICE, run as uid 1000.
 FROM node:26-slim AS agent
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src/agent ./src/agent
+COPY LICENSE NOTICE ./
 RUN mkdir /state && chown node:node /state
 USER node
 VOLUME /state
 EXPOSE 8080
 ENTRYPOINT ["node", "src/agent/main.ts"]
 
-# The runtime: only src/runtime/, which uses Node's built-ins alone, run as
-# root so it can use the engine's socket. package.json makes it an ES module.
+# The runtime: only src/runtime/, which uses Node's built-ins alone, with
+# jen's LICENSE and NOTICE, run as root so it can use the engine's socket.
+# package.json makes it an ES module.
 FROM node:26-slim AS runtime
 WORKDIR /app
 COPY package.json ./
 COPY src/runtime ./src/runtime
+COPY LICENSE NOTICE ./
 EXPOSE 8080
 ENTRYPOINT ["node", "src/runtime/main.ts"]
 

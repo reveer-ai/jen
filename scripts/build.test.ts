@@ -12,7 +12,7 @@ beforeAll(() => {
 }, 120_000);
 afterAll(() => rmSync(join(out, ".."), { recursive: true, force: true }));
 
-test("the manifest is jen-ai at the version, with the command, no dependencies and jen's own license", () => {
+test("the manifest is jen-ai at the version, with the command, no dependencies and the Apache-2.0 license", () => {
   expect(manifest("1.2.3")).toEqual({
     name: "jen-ai",
     version: "1.2.3",
@@ -20,19 +20,20 @@ test("the manifest is jen-ai at the version, with the command, no dependencies a
     bin: { jen: "cli/jen.js" },
     engines: { node: ">=26" },
     repository: { type: "git", url: "git+https://github.com/reveer-ai/jen.git" },
-    license: "SEE LICENSE IN LICENSE",
+    license: "Apache-2.0",
   });
   expect(JSON.parse(readFileSync(join(out, "package.json"), "utf8"))).toEqual(manifest("1.2.3"));
 });
 
-test("the package holds the compiled command, README.md and LICENSE, and no tests, fakes or TypeScript", () => {
-  expect(readdirSync(out).sort()).toEqual(["LICENSE", "README.md", "cli", "package.json"]);
+test("the package holds the compiled command, README.md, LICENSE and NOTICE, and no tests, fakes or TypeScript", () => {
+  expect(readdirSync(out).sort()).toEqual(["LICENSE", "NOTICE", "README.md", "cli", "package.json"]);
   const cli = readdirSync(join(out, "cli")).sort();
   expect(cli).toContain("jen.js");
   expect(cli).toContain("main.js");
   expect(cli.filter((f) => !f.endsWith(".js") || /test|fake|harness/.test(f))).toEqual([]);
   expect(readFileSync(join(out, "README.md"), "utf8")).toBe(readFileSync(join(import.meta.dirname, "..", "README.md"), "utf8"));
   expect(readFileSync(join(out, "LICENSE"), "utf8")).toBe(readFileSync(join(import.meta.dirname, "..", "LICENSE"), "utf8"));
+  expect(readFileSync(join(out, "NOTICE"), "utf8")).toBe(readFileSync(join(import.meta.dirname, "..", "NOTICE"), "utf8"));
 });
 
 test("the version is written into cli/release.js, which the command reads it from", async () => {
