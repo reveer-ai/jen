@@ -1,18 +1,24 @@
-// Runs the jen command against real Docker and a real model, under a runtime
-// name and image tags of its own, so it touches nothing of the user's jen. It
-// sets the settings with jen config, creates a root, gets a reply and a tool
-// call's progress line, opens the UI with no browser and fetches its page,
-// lists, stops the root, stops everything and uninstalls, then finds nothing
-// of its runtime left. jen config and jen uninstall ask in a terminal, so they
-// run in-process with a scripted one; every other command runs as the real
-// jen. Skipped when the key or model is missing; with them set, a missing
-// Docker fails the check.
+// Runs the jen command as a user installs it, against real Docker and a real
+// model, under a runtime name and image tags of its own, so it touches nothing
+// of the user's jen. It builds and packs the package at a test version and
+// installs it globally into a temporary npm prefix. It sets the settings with
+// jen config, creates a root, gets a reply and a tool call's progress line,
+// opens the UI with no browser and fetches its page, lists, stops the root,
+// stops everything and uninstalls, then finds nothing of its runtime left and
+// the package gone from the prefix. jen config and jen uninstall ask in a
+// terminal, so they run in-process, from source, with a scripted one; every
+// other command runs as the installed jen. Its image names are overridden, so
+// it pulls nothing. Skipped when the key or model is missing; with them set, a
+// missing Docker fails the check.
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { createDocker, runProcess } from "./docker.ts";
+import { build } from "../../scripts/build.ts";
+import { createDocker, runProcess, type Runner } from "./docker.ts";
 import { fakeTerminal } from "./harness.ts";
 import { parse, run, type Deps } from "./main.ts";
 
@@ -20,13 +26,25 @@ const apiKey = process.env.JEN_LIVE_API_KEY;
 const model = process.env.JEN_LIVE_MODEL;
 // jen asks for a base URL, so OpenAI's is given when none is set.
 const baseURL = process.env.JEN_LIVE_BASE_URL || "https://api.openai.com/v1";
-const main = join(import.meta.dirname, "main.ts");
 const checkout = join(import.meta.dirname, "../..");
+// The version the package is built at.
+const VERSION = "0.0.1";
 
 test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and uninstalls a root", { timeout: 900_000 }, async () => {
   const tag = `live-${randomBytes(4).toString("hex")}`;
   const name = `jen-${tag}`;
   const images = { runtime: `jen-runtime:${tag}`, agent: `jen-agent:${tag}`, workspace: `jen-workspace:${tag}` };
+  // The package, installed as npm install -g installs it, into a prefix of
+  // the check's own.
+  const temp = mkdtempSync(join(tmpdir(), "jen-live-"));
+  const prefix = join(temp, "prefix");
+  build(VERSION, join(temp, "dist"));
+  npm(["pack", join(temp, "dist"), "--pack-destination", temp]);
+  npm(["install", "-g", "--prefix", prefix, join(temp, `jen-ai-${VERSION}.tgz`)]);
+  const bin = join(prefix, "bin", "jen");
+  const installed = join(prefix, "lib", "node_modules", "jen-ai");
+  // npm acts on the check's prefix, not the user's global folder.
+  const npmInPrefix: Runner = (program, args, options = {}) => runProcess(program, args, { ...options, env: { ...options.env, npm_config_prefix: prefix } });
   for (const [target, image] of Object.entries(images)) {
     docker(["build", "-q", "--target", target, "-t", `jen-${target}`, checkout], 300_000);
     docker(["tag", `jen-${target}`, image]);
@@ -39,10 +57,10 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
   if (process.platform === "darwin") env.BROWSER = "false";
   else delete env.BROWSER;
 
-  // jen as the user runs it.
+  // jen as the user runs it: the installed command, on the path.
   const jen = (args: string[], timeoutMs = 300_000) =>
     new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-      const child = spawn(process.execPath, [main, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(bin, args, { env, stdio: ["ignore", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       child.stdout.setEncoding("utf8").on("data", (c: string) => (stdout += c));
@@ -68,8 +86,8 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
       now: Date.now,
       columns: 120,
       interrupt: new AbortController().signal,
-      mainPath: main,
-      npm: runProcess,
+      mainPath: join(installed, "cli", "main.js"),
+      npm: npmInPrefix,
     };
     return { code: await run(parse(args), deps), stdout: out.join(""), stderr: err.join("") };
   };
@@ -128,8 +146,9 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
     const uninstalled = await scripted(["uninstall"], ["y"]);
     expect(uninstalled.code, uninstalled.stderr).toBe(0);
     expect(uninstalled.stdout).toMatch(/^removed 1 agent with/);
-    expect(uninstalled.stdout).toMatch(/wasn't installed with npm install -g/);
+    expect(uninstalled.stdout).toMatch(/uninstalled the jen-ai package\. jen is gone\.\n$/);
     expect(left()).toEqual({ containers: "", volumes: "", network: "", images: [] });
+    expect([existsSync(installed), existsSync(bin)]).toEqual([false, false]);
   } finally {
     const quiet = (args: string[]) => spawnSync("docker", args, { encoding: "utf8", timeout: 60_000 });
     const ids = (args: string[]) => quiet(args).stdout.split("\n").filter(Boolean);
@@ -139,8 +158,14 @@ test.skipIf(!apiKey || !model)("jen creates, talks to, opens, lists, stops and u
     if (volumes.length > 0) quiet(["volume", "rm", ...volumes]);
     quiet(["network", "rm", name]);
     quiet(["image", "rm", ...Object.values(images)]);
+    rmSync(temp, { recursive: true, force: true });
   }
 });
+
+function npm(args: string[]) {
+  const result = spawnSync("npm", args, { encoding: "utf8", timeout: 120_000 });
+  if (result.status !== 0) throw new Error(`npm ${args.join(" ")} failed: ${result.stderr || result.error?.message}`);
+}
 
 function docker(args: string[], timeout = 60_000): string {
   const result = spawnSync("docker", args, { encoding: "utf8", timeout });

@@ -133,7 +133,7 @@ The rules are in `scripts/release.ts`, a TypeScript script Node runs directly, w
 ## Risks / Trade-offs
 
 - **The first release can't be checked before it's published.** The smoke check and live check run what will ship, but pulling from GHCR and installing from npm are checked only by the hand check after `0.1.0`. A fault there means a quick `0.1.1`.
-- **Starting Docker Desktop is unmeasured.** Only `docker desktop start --help` ran, on this Mac, on 2026-11-20. The implementation measures it on macOS, and Linux stays unmeasured. A failure falls through to saying how to start Docker by hand.
+- **Starting Docker Desktop is measured only on one Mac.** On 2026-11-20, on the maintainer's Mac (Docker Desktop with Engine 29.4.1), with Docker Desktop quit, `jen stop all` left it quit and exited 0, and `jen list` said `starting docker...`, started it with `docker desktop start --detach` and listed, 4 seconds in all, the runtime's start included. The `open -a Docker` path and Linux are unmeasured. A failure falls through to saying how to start Docker by hand.
 - **A version npm has from a different commit stops releases** until it's sorted by hand. It needs a run that published to npm and then failed to tag, followed by another merge before a rerun. Rerunning a failed release promptly avoids it.
 - **QEMU makes the arm64 workspace image slow to build**, perhaps ten minutes or more per release, since `apt-get` runs emulated.
 - **Removing old images can take an image another runtime name uses.** Only the live checks use other names, and they use their own local tags, never the registry's.

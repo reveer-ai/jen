@@ -8,13 +8,18 @@ import { DockerError } from "./docker.ts";
 import {
   alive,
   askSettings,
+  IMAGE_KEYS,
   MissingImage,
+  pulls,
   readSettings,
   Refusal,
+  REGISTRY,
+  registryRepository,
   runningRuntime,
   runtimeContainer,
   TARGETS,
   writeSettings,
+  type ImageKey,
   type Names,
   type Settings,
   type Terminal,
@@ -37,35 +42,44 @@ export interface Context {
 export const READY_MS = 15_000;
 const POLL_MS = 200;
 
-type Images = Record<keyof typeof TARGETS, string>;
+type Images = Record<ImageKey, string>;
 
-// The three images' current IDs, failing on the first that's missing.
-async function images(ctx: Context): Promise<Images> {
-  const ids = {} as Images;
-  for (const key of Object.keys(TARGETS) as (keyof typeof TARGETS)[]) {
-    const image = ctx.names[key];
-    const id = await ctx.docker.imageId(image);
-    if (id === undefined) throw new MissingImage(image, TARGETS[key]);
-    ids[key] = id;
-  }
-  return ids;
+// An image's current ID, pulling an installed jen's own when it's missing,
+// and failing for any other that's missing. pulled is set when it pulled.
+async function image(ctx: Context, key: ImageKey, pulled?: { any: boolean }): Promise<string> {
+  const name = ctx.names[key];
+  const id = await ctx.docker.imageId(name);
+  if (id !== undefined) return id;
+  if (!pulls(ctx.names, key)) throw new MissingImage(name, TARGETS[key]);
+  ctx.say(`pulling ${name}...`);
+  await ctx.docker.pull(name);
+  if (pulled) pulled.any = true;
+  const fetched = await ctx.docker.imageId(name);
+  if (fetched === undefined) throw new MissingImage(name, TARGETS[key]);
+  return fetched;
 }
 
-// Fails naming the runtime's image when it's missing, since the settings are
-// read and written with it.
+// Fails naming the runtime's image when it's missing and isn't pulled, since
+// the settings are read and written with it.
 export async function requireRuntimeImage(ctx: Context) {
-  if ((await ctx.docker.imageId(ctx.names.runtimeImage)) === undefined) throw new MissingImage(ctx.names.runtimeImage, TARGETS.runtimeImage);
+  await image(ctx, "runtimeImage");
 }
 
 // A client of the running runtime, once it's up.
 export async function ensureRuntime(ctx: Context): Promise<Api> {
   const { docker, names } = ctx;
-  const ids = await images(ctx);
+  const pulled = { any: false };
+  const ids = {} as Images;
+  for (const key of IMAGE_KEYS) ids[key] = await image(ctx, key, pulled);
   const runtime = await docker.inspect(runtimeContainer(names.name));
   const running = runtime !== undefined && alive(runtime.state);
   const theirs = (await docker.containers([`jen.runtime=${names.name}`])).filter((c) => alive(c.state));
   const stale = staleImages(ids, names, running ? runtime : undefined, theirs);
-  if (stale.length === 0) return running ? connect(ctx) : start(ctx);
+  if (stale.length === 0) {
+    const api = running ? await connect(ctx) : await start(ctx);
+    if (pulled.any) await removeOtherVersions(ctx);
+    return api;
+  }
 
   // Agents started from an image that has since changed are stopped, through
   // the runtime, since the tree is its to change. Each starts on the current
@@ -77,7 +91,25 @@ export async function ensureRuntime(ctx: Context): Promise<Api> {
     api = await start(ctx);
   }
   ctx.say(`${stale.join(" and ")} changed, so jen stopped every agent${running && runtime.image !== ids.runtimeImage ? " and restarted the runtime" : ""}. Each agent starts on the new image at its next message.`);
+  await removeOtherVersions(ctx);
   return api;
+}
+
+// Once nothing runs on them, an installed jen removes the registry's images
+// of its other versions, which an upgrade leaves behind. One a container
+// still uses is passed over, as is any other failure: it's tidying, and the
+// next upgrade tries again.
+async function removeOtherVersions(ctx: Context) {
+  const { names } = ctx;
+  if (names.version === undefined) return;
+  const keep = IMAGE_KEYS.filter((key) => pulls(names, key));
+  if (keep.length === 0) return;
+  try {
+    for (const listed of await ctx.docker.listImages(`${REGISTRY}/jen-*`)) {
+      const ours = keep.some((key) => listed.startsWith(`${registryRepository(key)}:`));
+      if (ours && !listed.endsWith(`:${names.version}`)) await ctx.docker.removeImage(listed).catch(() => {});
+    }
+  } catch {}
 }
 
 // The names of the images a running container of jen's isn't on any more.

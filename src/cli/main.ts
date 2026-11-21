@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // The jen command, run on the user's machine, outside any container. It parses
 // its arguments and dispatches to the module for each command. It's a client
 // of the runtime's API as the owner, and reaches the engine only through the
@@ -11,7 +10,7 @@ import { emitKeypressEvents } from "node:readline";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { ApiError, Unanswered } from "./api.ts";
-import { createDocker, DockerError, runProcess, Unreachable, type Docker, type Runner } from "./docker.ts";
+import { createDocker, DockerError, EngineError, runProcess, type Docker, type Runner } from "./docker.ts";
 import { listRoots, newRoot, openRoot, query, stopRoot } from "./roots.ts";
 import { config, stopAll, type Context } from "./runtime.ts";
 import { MissingImage, namesFrom, Refusal, type Terminal } from "./settings.ts";
@@ -101,8 +100,15 @@ export async function run(command: Command, deps: Deps): Promise<number> {
     sleep: deps.sleep,
     now: deps.now,
   };
+  const engine = { say: ctx.say, sleep: deps.sleep, now: deps.now };
   try {
-    await deps.docker.ping();
+    // Stopping starts no Docker: with the engine down, nothing of jen's runs.
+    if (command.kind === "stop" || command.kind === "stop-all") {
+      if (!(await deps.docker.ensureEngine({ ...engine, start: false }))) {
+        ctx.print("docker isn't running, so nothing of jen's is.");
+        return 0;
+      }
+    } else await deps.docker.ensureEngine({ ...engine, start: true });
     switch (command.kind) {
       case "new":
         await newRoot(ctx, command.name);
@@ -128,7 +134,7 @@ export async function run(command: Command, deps: Deps): Promise<number> {
         return await query(ctx, command.name, command.text, { interrupt: deps.interrupt, columns: deps.columns, write: deps.stdout });
     }
   } catch (error) {
-    if ([Refusal, MissingImage, Unreachable, ApiError, DockerError, Unanswered].some((type) => error instanceof type)) {
+    if ([Refusal, MissingImage, EngineError, ApiError, DockerError, Unanswered].some((type) => error instanceof type)) {
       deps.stderr(`jen: ${(error as Error).message}\n`);
       return 1;
     }
@@ -178,7 +184,8 @@ function terminal(lead: () => void): Terminal {
   return { interactive: process.stdin.isTTY === true, ask, askHidden };
 }
 
-if (import.meta.main) {
+// Runs the command in process.argv, as jen.ts does once Node's version passes.
+export async function start(): Promise<void> {
   // In a terminal, a blank line sets jen's output apart from the command
   // typed above it, written with the first output so the two arrive
   // together, and another from the next prompt, however jen exits.

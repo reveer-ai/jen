@@ -1,0 +1,14 @@
+// The package's build: src/cli/ compiled to JavaScript, from its entry, so
+// tests and fakes, which nothing there imports, aren't in it. Run by
+// scripts/build.ts, which keeps only cli/ of what this writes.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "files": ["src/cli/jen.ts"],
+  "include": []
+}

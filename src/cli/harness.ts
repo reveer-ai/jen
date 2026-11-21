@@ -5,7 +5,7 @@
 import { FakeDocker } from "./fake-docker.ts";
 import { FakeRuntime } from "./fake-runtime.ts";
 import type { Context } from "./runtime.ts";
-import { namesFrom, type Settings, type Terminal } from "./settings.ts";
+import { IMAGE_KEYS, namesFrom, type Settings, type Terminal } from "./settings.ts";
 
 // A terminal that gives answers in order, recording each question.
 export function fakeTerminal(answers: string[] = [], interactive = true) {
@@ -22,10 +22,13 @@ export function fakeTerminal(answers: string[] = [], interactive = true) {
 export const SETTINGS: Settings = { model: "gpt-x", apiKey: "sk-test-0123456789", baseURL: "https://api.test/v1", ownerToken: "a".repeat(64) };
 
 // settings null means there are none yet.
-export async function harness({ settings = SETTINGS as Settings | null, answers = [] as string[], interactive = true, env = {} as NodeJS.ProcessEnv } = {}) {
-  const docker = new FakeDocker();
+// version makes it an installed jen's, whose images are the registry's, none
+// of them pulled yet.
+export async function harness({ settings = SETTINGS as Settings | null, answers = [] as string[], interactive = true, env = {} as NodeJS.ProcessEnv, version = undefined as string | undefined } = {}) {
+  const names = namesFrom(env, version);
+  const docker = new FakeDocker({ images: version === undefined });
+  if (version !== undefined) for (const key of IMAGE_KEYS) docker.registry.add(names[key]);
   const api = new FakeRuntime();
-  const names = namesFrom(env);
   docker.onRuntime = async (container, asked) => {
     api.token = container.env.find((e) => e.startsWith("JEN_OWNER_TOKEN="))!.slice("JEN_OWNER_TOKEN=".length);
     await api.close();

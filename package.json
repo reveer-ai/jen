@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "bin": {
-    "jen": "src/cli/main.ts"
+    "jen": "src/cli/jen.ts"
   },
   "engines": {
     "node": ">=26"
   },
   "scripts": {
     "check": "tsc",
+    "build": "node scripts/build.ts",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts"
   },

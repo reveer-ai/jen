@@ -4,7 +4,7 @@
 // with a stand-in of the runtime's API on a port of its own.
 
 import { randomBytes } from "node:crypto";
-import { Unreachable, type ContainerInfo, type Docker, type Output, type RunOptions } from "./docker.ts";
+import { DockerError, EngineError, type ContainerInfo, type Docker, type EngineOptions, type Output, type RunOptions } from "./docker.ts";
 
 export interface FakeContainer extends ContainerInfo {
   // The host port its 8080 is published on, once it's started.
@@ -23,9 +23,13 @@ export interface RuntimeRun {
 }
 
 export class FakeDocker implements Docker {
+  // Whether the engine answers, and whether jen can start it when it doesn't.
   reachable = true;
+  startable = false;
   // Image names to IDs.
   readonly images = new Map<string, string>();
+  // The images a pull finds, by name.
+  readonly registry = new Set<string>();
   readonly containers_ = new Map<string, FakeContainer>();
   // Volumes, with their labels and files.
   readonly volumes_ = new Map<string, { labels: Record<string, string>; files: Map<string, string> }>();
@@ -81,9 +85,14 @@ export class FakeDocker implements Docker {
     this.calls.push(call);
   }
 
-  async ping() {
-    this.#log("ping");
-    if (!this.reachable) throw new Unreachable("failed to connect to the docker API");
+  async ensureEngine({ start, say }: EngineOptions) {
+    this.#log(start ? "ensureEngine" : "checkEngine");
+    if (this.reachable) return true;
+    if (!start) return false;
+    say("starting docker...");
+    if (!this.startable) throw new EngineError("docker isn't running, and jen couldn't start it. Start Docker Desktop and try again.");
+    this.reachable = true;
+    return true;
   }
   async imageId(image: string) {
     this.#log("imageId");
@@ -134,7 +143,21 @@ export class FakeDocker implements Docker {
   }
   async removeImage(image: string) {
     this.#log("removeImage");
+    const id = this.images.get(image);
+    if (id !== undefined && [...this.containers_.values()].some((c) => c.image === id)) {
+      throw new DockerError(["image"], { code: 1, stdout: "", stderr: `Error response from daemon: conflict: unable to remove repository reference "${image}" - container is using its referenced image` });
+    }
     this.images.delete(image);
+  }
+  async pull(image: string) {
+    this.#log("pull");
+    if (!this.registry.has(image)) throw new DockerError(["pull"], { code: 1, stdout: "", stderr: `Error response from daemon: manifest unknown: ${image}` });
+    this.build(image);
+  }
+  async listImages(pattern: string) {
+    this.#log("listImages");
+    const glob = new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.?+^$()[\]{}|\\/]/g, "\\$&")).join("[^/:]*")}$`);
+    return [...this.images.keys()].filter((image) => glob.test(image.replace(/:[^/:]*$/, "")));
   }
 
   async run(args: string[], options: RunOptions = {}): Promise<Output> {

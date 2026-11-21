@@ -40,12 +40,28 @@ export class DockerError extends Error {
   }
 }
 
-// The engine can't be reached: no docker command, or no engine answering it.
-export class Unreachable extends Error {
-  constructor(reason: string) {
-    super(`docker isn't reachable, so jen can't run: ${reason.trim()}. Start Docker and try again.`);
-    this.name = "Unreachable";
+// Docker can't run jen: there's no docker command, its engine doesn't answer
+// and jen couldn't start it, or the engine is too old.
+export class EngineError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EngineError";
   }
+}
+
+// The oldest engine jen runs on: agents' network needs an isolated gateway.
+export const MIN_ENGINE = [28, 0] as const;
+// How long a started Docker may take to answer, and how often it's asked.
+export const START_MS = 120_000;
+const START_POLL_MS = 1_000;
+
+export interface EngineOptions {
+  // Whether to start Docker Desktop when the engine doesn't answer.
+  start: boolean;
+  // Writes a line to stderr.
+  say: (line: string) => void;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
 }
 
 export interface ContainerInfo {
@@ -59,8 +75,11 @@ export interface ContainerInfo {
 }
 
 export interface Docker {
-  // Fails with Unreachable unless the engine answers.
-  ping(): Promise<void>;
+  // Answers once an engine jen can run on answers, starting Docker Desktop
+  // first when start is set, and fails with EngineError when there's none. With
+  // start unset, a missing docker command or an engine that doesn't answer
+  // answers false instead.
+  ensureEngine(options: EngineOptions): Promise<boolean>;
   // An image's ID by its name, or undefined when there's no such image.
   imageId(image: string): Promise<string | undefined>;
   // A container by name or ID, or undefined when there's none.
@@ -85,6 +104,10 @@ export interface Docker {
   // A network that's gone already is no failure.
   removeNetwork(name: string): Promise<void>;
   removeImage(image: string): Promise<void>;
+  // docker pull, quietly.
+  pull(image: string): Promise<void>;
+  // The images, as repository:tag, whose reference matches pattern.
+  listImages(pattern: string): Promise<string[]>;
 }
 
 export interface RunOptions {
@@ -98,7 +121,7 @@ export interface RunOptions {
 
 const missing = (stderr: string) => /no such (container|object|image|volume|network)|not found/i.test(stderr);
 
-export function createDocker(runner: Runner = runProcess): Docker {
+export function createDocker(runner: Runner = runProcess, platform: NodeJS.Platform = process.platform): Docker {
   const docker = async (args: string[], { env = {}, secrets = {}, guard = [], input }: RunOptions = {}) => {
     for (const value of [...Object.values(secrets), ...guard]) {
       if (value !== "" && args.some((arg) => arg.includes(value))) throw new Error("a secret would have been passed as an argument to docker");
@@ -130,10 +153,49 @@ export function createDocker(runner: Runner = runProcess): Docker {
     if (output.code !== 0 && !missing(output.stderr)) throw new DockerError(args, output);
   };
 
+  // How to start the engine by hand, naming a context that isn't Docker's own,
+  // since its engine is something else, such as Colima.
+  const byHand = async () => {
+    const context = (await docker(["context", "show"])).stdout.trim();
+    const how = platform === "darwin" ? "Start Docker Desktop and try again." : "Start Docker Desktop, or Docker Engine with: sudo systemctl start docker. Then try again.";
+    return context && context !== "default" && context !== "desktop-linux" ? `docker's context is ${context}, so start its engine and try again.` : how;
+  };
+
   return {
-    async ping() {
-      const output = await docker(["version", "--format", "{{.Server.Version}}"]);
-      if (output.code !== 0) throw new Unreachable(output.stderr || `docker exited with code ${output.code}`);
+    async ensureEngine({ start, say, sleep, now }) {
+      const version = () => docker(["version", "--format", "{{.Server.Version}}"]);
+      let output = await version();
+      if (output.code === -1) {
+        if (!start) return false;
+        throw new EngineError(platform === "darwin"
+          ? `jen needs Docker, and there's no docker command. Install Docker Desktop: https://docs.docker.com/desktop/setup/install/mac-install/. jen needs Docker Engine ${MIN_ENGINE.join(".")} or later.`
+          : `jen needs Docker, and there's no docker command. Install Docker Engine: https://docs.docker.com/engine/install/. jen needs Docker Engine ${MIN_ENGINE.join(".")} or later.`);
+      }
+      if (output.code !== 0) {
+        if (!start) return false;
+        say("starting docker...");
+        let started = (await docker(["desktop", "start", "--detach"])).code === 0;
+        // Docker Desktop from before its CLI, or one whose CLI isn't on the path.
+        if (!started && platform === "darwin") started = (await runner("open", ["-a", "Docker"])).code === 0;
+        if (started) {
+          const deadline = now() + START_MS;
+          for (;;) {
+            output = await version();
+            if (output.code === 0 || now() >= deadline) break;
+            await sleep(START_POLL_MS);
+          }
+        }
+        if (output.code !== 0) throw new EngineError(`docker isn't running, and jen couldn't start it${started ? ` within ${START_MS / 1000} seconds` : ""}. ${await byHand()}`);
+      }
+      const found = output.stdout.trim();
+      const [, major, minor] = /^(\d+)\.(\d+)(?:\D|$)/.exec(found) ?? [];
+      if (major === undefined || Number(major) < MIN_ENGINE[0] || (Number(major) === MIN_ENGINE[0] && Number(minor) < MIN_ENGINE[1])) {
+        throw new EngineError(
+          `jen needs Docker Engine ${MIN_ENGINE.join(".")} or later, and this engine is ${major === undefined ? `${JSON.stringify(found)}, which isn't Docker's` : found}. ` +
+            (platform === "darwin" ? "Update Docker Desktop to its latest version." : "Update Docker Engine: https://docs.docker.com/engine/install/."),
+        );
+      }
+      return true;
     },
     async imageId(image) {
       const output = await docker(["image", "inspect", "--format", "{{.Id}}", image]);
@@ -174,5 +236,10 @@ export function createDocker(runner: Runner = runProcess): Docker {
     removeVolume: (name) => removing(["volume", "rm", name]),
     removeNetwork: (name) => removing(["network", "rm", name]),
     removeImage: (image) => removing(["image", "rm", image]),
+    pull: async (image) => void (await ok(["pull", "--quiet", image])),
+    async listImages(pattern) {
+      const listed = await ok(["image", "ls", "--filter", `reference=${pattern}`, "--format", "{{.Repository}}:{{.Tag}}"]);
+      return [...new Set(listed.split("\n").filter((line) => line !== "" && !line.endsWith(":<none>")))];
+    },
   };
 }

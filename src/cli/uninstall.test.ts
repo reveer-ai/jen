@@ -16,10 +16,10 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-// A global npm folder in dir, with jenai installed in it, and a checkout.
+// A global npm folder in dir, with jen-ai installed in it, and a checkout.
 function folders() {
   const root = join(dir, "lib", "node_modules");
-  const installed = join(root, "jenai", "src", "cli", "main.ts");
+  const installed = join(root, "jen-ai", "cli", "main.js");
   const checkout = join(dir, "checkout", "src", "cli", "main.ts");
   for (const file of [installed, checkout]) {
     mkdirSync(join(file, ".."), { recursive: true });
@@ -121,13 +121,34 @@ test("a failure is reported at the end, every other step still runs, and the com
   expect(calls).toEqual([]);
 });
 
-test("installed globally with npm, the jenai package is uninstalled too", async () => {
+test("installed globally with npm, the jen-ai package is uninstalled too", async () => {
   const { ctx, out } = await populated(["y"]);
   const { root, installed } = folders();
   const { calls, npm } = stubNpm(root);
   expect(await uninstall(ctx, { mainPath: installed, npm })).toBe(0);
-  expect(calls).toEqual([["root", "-g"], ["uninstall", "-g", "jenai"]]);
-  expect(out.at(-1)).toBe("uninstalled the jenai package. jen is gone.");
+  expect(calls).toEqual([["root", "-g"], ["uninstall", "-g", "jen-ai"]]);
+  expect(out.at(-1)).toBe("uninstalled the jen-ai package. jen is gone.");
+});
+
+test("every version of the registry's images goes, with an earlier version's, and none another image's", async () => {
+  const h = await harness({ answers: ["y"], version: "0.1.1" });
+  close = () => h.api.close();
+  const { docker, ctx, out } = h;
+  for (const image of ["runtime:0.1.1", "agent:0.1.1", "workspace:0.1.1", "agent:0.1.0", "workspace:0.1.0"]) docker.build(`ghcr.io/reveer-ai/jen-${image}`);
+  docker.build("ghcr.io/reveer-ai/jen-other:0.1.0");
+  docker.build("postgres");
+  expect(await uninstall(ctx, { mainPath: "/nowhere", npm: stubNpm("/none").npm })).toBe(0);
+  expect([...docker.images.keys()].sort()).toEqual(["ghcr.io/reveer-ai/jen-other:0.1.0", "postgres"]);
+  expect(out[0]).toMatch(/the images ghcr\.io\/reveer-ai\/jen-runtime:0\.1\.1, .*jen-agent:0\.1\.0/);
+});
+
+test("images the environment names are removed by those names, leaving the registry's", async () => {
+  const h = await harness({ answers: ["y"], version: "0.1.1", env: { JEN_RUNTIME_IMAGE: "r:t", JEN_AGENT_IMAGE: "a:t", JEN_WORKSPACE_IMAGE: "w:t" } });
+  close = () => h.api.close();
+  const { docker, ctx } = h;
+  for (const image of ["r:t", "a:t", "w:t", "ghcr.io/reveer-ai/jen-agent:0.1.1"]) docker.build(image);
+  expect(await uninstall(ctx, { mainPath: "/nowhere", npm: stubNpm("/none").npm })).toBe(0);
+  expect([...docker.images.keys()]).toEqual(["ghcr.io/reveer-ai/jen-agent:0.1.1"]);
 });
 
 test("run through npm link from a checkout, the checkout is left and jen says how the command remains", async () => {

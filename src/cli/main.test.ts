@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
@@ -69,14 +68,34 @@ test("jen start prints the usage to stderr and exits 2", async () => {
   expect(err.join("")).toBe(`${USAGE}\n`);
 });
 
-test("without Docker, every other command fails saying Docker isn't reachable, having changed nothing", async () => {
+test("without Docker, every other command fails saying so, having changed nothing", async () => {
   const { deps: d, err, h } = await deps();
   h.docker.reachable = false;
-  for (const command of [parse(["list"]), parse(["new", "home"]), parse(["config"]), parse(["uninstall"]), parse(["@home", "hi"])]) {
+  for (const command of [parse(["list"]), parse(["new", "home"]), parse(["config"]), parse(["uninstall"]), parse(["@home", "hi"]), parse(["@home", "open"])]) {
     expect(await run(command, d)).toBe(1);
   }
-  expect(err.every((line) => /^jen: docker isn't reachable/.test(line))).toBe(true);
-  expect(h.docker.calls.filter((c) => c !== "ping")).toEqual([]);
+  expect(err.filter((line) => line !== "starting docker...\n").every((line) => /^jen: docker isn't running, and jen couldn't start it/.test(line))).toBe(true);
+  expect(h.docker.calls.filter((c) => c !== "ensureEngine")).toEqual([]);
+});
+
+test("a command that needs the engine starts Docker when it can, and carries on", async () => {
+  const { deps: d, out, err, h } = await deps();
+  h.docker.reachable = false;
+  h.docker.startable = true;
+  expect(await run(parse(["list"]), d)).toBe(0);
+  expect(err[0]).toBe("starting docker...\n");
+  expect(out.join("")).toBe("no root agents yet. Create one with: jen new <name>\n");
+});
+
+test.each([[["stop", "all"]], [["stop", "@home"]]])("jen %j with Docker down starts nothing, says nothing of jen's is running and exits 0", async (args) => {
+  const { deps: d, out, err, h } = await deps();
+  h.docker.reachable = false;
+  h.docker.startable = true;
+  expect(await run(parse(args), d)).toBe(0);
+  expect(out.join("")).toBe("docker isn't running, so nothing of jen's is.\n");
+  expect(err).toEqual([]);
+  expect(h.docker.reachable).toBe(false);
+  expect(h.docker.calls).toEqual(["checkEngine"]);
 });
 
 test("a missing image fails naming it and its docker build command", async () => {
@@ -108,13 +127,4 @@ test("src/cli imports only types from src/runtime and src/agent", () => {
       expect(statement, `${file}: ${statement}`).toMatch(/^import type /);
     }
   }
-});
-
-test("main.ts runs as jen from node, with no arguments printing the usage and exiting 2", () => {
-  const main = join(import.meta.dirname, "main.ts");
-  expect(readFileSync(main, "utf8").startsWith("#!/usr/bin/env node\n")).toBe(true);
-  const help = spawnSync(process.execPath, [main, "help"], { encoding: "utf8" });
-  expect([help.status, help.stdout]).toEqual([0, `${USAGE}\n`]);
-  const none = spawnSync(process.execPath, [main], { encoding: "utf8" });
-  expect([none.status, none.stderr]).toEqual([2, `${USAGE}\n`]);
 });

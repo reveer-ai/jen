@@ -7,11 +7,11 @@ import { realpathSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { Runner } from "./docker.ts";
 import type { Context } from "./runtime.ts";
-import { Refusal, runtimeContainer, TARGETS } from "./settings.ts";
+import { IMAGE_KEYS, Refusal, REGISTRY, registryRepository, runtimeContainer } from "./settings.ts";
 
 export const QUESTION = "this deletes every agent's conversation and files, and can't be undone. Continue? [y/N] ";
 // The package's name on npm.
-const PACKAGE = "jenai";
+const PACKAGE = "jen-ai";
 
 // The exit code: 0 once everything is removed, 1 when the user declined or a
 // step failed.
@@ -49,9 +49,19 @@ export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: str
     for (const v of await docker.volumes([label])) await step(`removing volume ${v}`, () => docker.removeVolume(v));
   });
   await step(`removing network ${names.name}`, () => docker.removeNetwork(names.name));
+  // The images by their current names, and every version of the registry's
+  // that the environment doesn't name others in place of, such as one an
+  // earlier version left.
+  const named = IMAGE_KEYS.map((key) => names[key]);
+  const registry = IMAGE_KEYS.filter((key) => !names.overridden.includes(key)).map(registryRepository);
+  await step("listing jen's images", async () => {
+    if (registry.length === 0) return;
+    for (const listed of await docker.listImages(`${REGISTRY}/jen-*`)) {
+      if (registry.some((repository) => listed.startsWith(`${repository}:`)) && !named.includes(listed)) named.push(listed);
+    }
+  });
   const images: string[] = [];
-  for (const key of Object.keys(TARGETS) as (keyof typeof TARGETS)[]) {
-    const image = names[key];
+  for (const image of named) {
     await step(`removing image ${image}`, async () => {
       if ((await docker.imageId(image)) === undefined) return;
       await docker.removeImage(image);
@@ -79,7 +89,8 @@ export async function uninstall(ctx: Context, { mainPath, npm }: { mainPath: str
   return 0;
 }
 
-// Whether the running main.ts is inside the global npm folder's package.
+// Whether the running main.ts, or the package's main.js, is inside the
+// global npm folder's package.
 async function installedWithNpm(mainPath: string, npm: Runner): Promise<boolean> {
   const output = await npm("npm", ["root", "-g"]);
   if (output.code !== 0) return false;
