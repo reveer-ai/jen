@@ -33,7 +33,7 @@
 ## 6. Checks
 
 - [x] 6.1 Run `npm run check`, `npm test` and every live check with model credentials, and compare any failure with the known flakes in `record/environment.md`.
-- [ ] 6.2 Review the implementation with `review-change` until a re-review finds nothing new.
+- [x] 6.2 Review the implementation with `review-change` until a re-review finds nothing new.
 
 ## Workflow follow-up
 
