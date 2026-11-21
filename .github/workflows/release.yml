@@ -1,0 +1,129 @@
+# Releases jen on every push to main that changes what ships: the images to
+# GHCR, then the package to npm, then the tag and the GitHub release, so a
+# published package never names images that don't exist, and a tag always
+# means a complete release. A failed run is rerun from GitHub, and finishes
+# what it started. How releases work is in record/environment.md.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time, never cancelling one in progress. GitHub keeps one
+# run waiting, the newest, which takes the merges of any it replaced, since
+# plan reads everything since the last tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # Whether to release, the version and the notes, from the last v<x.y.z>
+  # tag, the commits since it that change what ships, and their pull
+  # requests' labels.
+  plan:
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      notes: ${{ steps.plan.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every commit and tag, to find the last release.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - id: plan
+        run: node scripts/release.ts plan >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  images:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: [agent, runtime, workspace]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # A rerun pushes the same tag again.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/reveer-ai/jen-${{ matrix.target }}:${{ needs.plan.outputs.version }}
+          # Ties each GHCR package to the repo.
+          labels: org.opencontainers.image.source=https://github.com/reveer-ai/jen
+
+  publish:
+    needs: [plan, images]
+    runs-on: ubuntu-latest
+    permissions:
+      # The tag and the GitHub release.
+      contents: write
+      # npm's trusted publishing, which needs npm 11.5.1 or later.
+      id-token: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run build -- "$VERSION"
+      # The package runs from node_modules as a user installs it, or nothing
+      # is published.
+      - name: Install the packed package and run it
+        run: |
+          npm pack ./dist --pack-destination "$RUNNER_TEMP"
+          npm install -g --prefix "$RUNNER_TEMP/prefix" "$RUNNER_TEMP/jen-ai-$VERSION.tgz"
+          "$RUNNER_TEMP/prefix/bin/jen" help
+      # A version npm has from this commit is an earlier run's, and is kept.
+      # One from another commit stops the release, to be sorted by hand.
+      - name: Publish to npm
+        run: |
+          npm --version
+          if [ -n "$(npm view "jen-ai@$VERSION" version 2>/dev/null)" ]; then
+            published=$(npm view "jen-ai@$VERSION" gitHead)
+            if [ "$published" != "$GITHUB_SHA" ]; then
+              echo "::error::npm already has jen-ai $VERSION, from commit ${published:-unknown}, not $GITHUB_SHA."
+              exit 1
+            fi
+            echo "npm already has jen-ai $VERSION from this commit."
+          else
+            npm publish ./dist --access public
+          fi
+      - name: Tag the merge and create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ needs.plan.outputs.notes }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION is already released."
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes "$NOTES"
+          fi

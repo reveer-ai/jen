@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  # main is checked by the release workflow, which calls this one first.
   push:
+    branches-ignore: [main]
   pull_request:
+  workflow_call:
 
 jobs:
   check:

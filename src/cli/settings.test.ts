@@ -1,13 +1,37 @@
 import { expect, test } from "vitest";
 import { FakeDocker } from "./fake-docker.ts";
 import { fakeTerminal, SETTINGS } from "./harness.ts";
-import { askSettings, mask, namesFrom, readSettings, runningRuntime, writeSettings } from "./settings.ts";
+import { VERSION } from "./release.ts";
+import { askSettings, IMAGE_KEYS, mask, namesFrom, pulls, readSettings, runningRuntime, writeSettings } from "./settings.ts";
 
 const names = namesFrom({});
 
-test("the names default to jen's, and the environment overrides each", () => {
-  expect(names).toEqual({ name: "jen", runtimeImage: "jen-runtime", agentImage: "jen-agent", workspaceImage: "jen-workspace" });
-  expect(namesFrom({ JEN_RUNTIME_NAME: "t", JEN_RUNTIME_IMAGE: "r:t", JEN_AGENT_IMAGE: "a:t", JEN_WORKSPACE_IMAGE: "w:t" })).toEqual({ name: "t", runtimeImage: "r:t", agentImage: "a:t", workspaceImage: "w:t" });
+test("in a checkout, the names are the images it builds, and the environment overrides each", () => {
+  expect(names).toEqual({ name: "jen", runtimeImage: "jen-runtime", agentImage: "jen-agent", workspaceImage: "jen-workspace", overridden: [] });
+  expect(namesFrom({ JEN_RUNTIME_NAME: "t", JEN_RUNTIME_IMAGE: "r:t", JEN_AGENT_IMAGE: "a:t", JEN_WORKSPACE_IMAGE: "w:t" })).toEqual({
+    name: "t", runtimeImage: "r:t", agentImage: "a:t", workspaceImage: "w:t", overridden: ["runtimeImage", "agentImage", "workspaceImage"],
+  });
+  expect(IMAGE_KEYS.some((key) => pulls(names, key))).toBe(false);
+});
+
+test("installed, the names are the registry's images at its own version, and the environment overrides each", () => {
+  const installed = namesFrom({}, "0.1.0");
+  expect(installed).toEqual({
+    name: "jen",
+    runtimeImage: "ghcr.io/reveer-ai/jen-runtime:0.1.0",
+    agentImage: "ghcr.io/reveer-ai/jen-agent:0.1.0",
+    workspaceImage: "ghcr.io/reveer-ai/jen-workspace:0.1.0",
+    version: "0.1.0",
+    overridden: [],
+  });
+  expect(IMAGE_KEYS.every((key) => pulls(installed, key))).toBe(true);
+  const overridden = namesFrom({ JEN_AGENT_IMAGE: "a:t" }, "0.1.0");
+  expect(overridden).toMatchObject({ runtimeImage: "ghcr.io/reveer-ai/jen-runtime:0.1.0", agentImage: "a:t", overridden: ["agentImage"] });
+  expect(IMAGE_KEYS.filter((key) => pulls(overridden, key))).toEqual(["runtimeImage", "workspaceImage"]);
+});
+
+test("the command's own version is undefined in a checkout", () => {
+  expect(VERSION).toBeUndefined();
 });
 
 test("no volume means no settings, and reading creates no volume", async () => {

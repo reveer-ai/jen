@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-19.
+Last updated 2026-11-20.
 
 ## Current project: Agent harness & UI engine
 
@@ -15,8 +15,9 @@ This project builds the first working jen, end to end. Agents run in containers,
 | 3 | Agent workspace | A jen agent has a workspace that survives its restarts, and runs commands and reads and writes files in it, without holding its owner's model key or reaching the internet | none: scoped on 2026-11-10 while aligning [JEN-18](https://linear.app/reveer/issue/JEN-18)'s proposal | JEN-1 | 3–4 (Nov 9 – 22) |
 | 4 | UI engine | A jen agent presents itself to the user through UI it generates | [JEN-3](https://linear.app/reveer/issue/JEN-3) Design and scope the UI engine | JEN-1; JEN-18 by [JEN-19](https://linear.app/reveer/issue/JEN-19) | 3 (Nov 9 – 15) |
 | 5 | Distribution | A user installs jen from npm and uses it through the `jen` command | [JEN-4](https://linear.app/reveer/issue/JEN-4) Design and scope distribution | JEN-2, JEN-3 | 4 (Nov 16 – 22) |
+| 6 | Foundation | jen's first iteration is cleaned up so the next project builds on it: how it displays and the commands it offers, the prompts its agents get, and its correctness and performance | [JEN-27](https://linear.app/reveer/issue/JEN-27) Design and scope cleaning up jen's first iteration | none | 5 (Nov 23 – 29) |
 
-Cycle 5 (Nov 23 – 29) is slack.
+The maintainer added the Foundation milestone on 2026-11-20, in cycle 5, which had been slack. If it needs more than that cycle, JEN-27 says so and the target date is the maintainer's call.
 
 **After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped. So is the UI work after JEN-18, a data layer for agents' apps and jen's shell (see [ideas.md](ideas.md) and [decisions.md](decisions.md), 2026-11-14), which likely needs a project of its own. So is hosting: where agents that several people share run, with login and TLS (see [decisions.md](decisions.md), 2026-11-16).
 
@@ -28,6 +29,7 @@ Finished work, newest first. The pull request holds the reviews and verification
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-20 | [JEN-26](https://linear.app/reveer/issue/JEN-26) | [#22](https://github.com/reveer-ai/jen/pull/22) | jen ships as the npm package `jen-ai`: `jen` checks Node and Docker, starts Docker Desktop, and pulls its version's images from GHCR. Every merge to `main` that changes what ships releases the images, the package, a tag and a GitHub release. The first release, `0.1.0`, still needs the hand check from an install. |
 | 2026-11-19 | [JEN-25](https://linear.app/reveer/issue/JEN-25) | [#21](https://github.com/reveer-ai/jen/pull/21) | The `jen` command: it keeps its settings in Docker, starts the runtime on demand, creates, lists, stops and opens named roots, follows a query's progress to its reply, and uninstalls everything of jen's. Publishing it to npm is [JEN-26](https://linear.app/reveer/issue/JEN-26). |
 | 2026-11-16 | [JEN-21](https://linear.app/reveer/issue/JEN-21) | [#20](https://github.com/reveer-ai/jen/pull/20) | The runtime holds the model key and proxies agents' model calls, accepting only the Responses adapter's request, and agents sit on an internal network that reaches only the runtime and each other. Completed the Agent workspace milestone. |
 | 2026-11-16 | [JEN-4](https://linear.app/reveer/issue/JEN-4) | [#19](https://github.com/reveer-ai/jen/pull/19) | Recorded that an agent is jen's unit and that jen ships as the `jenai` npm package, and scoped the Distribution milestone, the package only, into [JEN-25](https://linear.app/reveer/issue/JEN-25). |

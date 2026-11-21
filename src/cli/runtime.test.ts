@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { harness, SETTINGS } from "./harness.ts";
 import { config, ensureRuntime, READY_MS, stopAll } from "./runtime.ts";
-import { MissingImage, Refusal } from "./settings.ts";
+import { DockerError } from "./docker.ts";
+import { IMAGE_KEYS, MissingImage, namesFrom, Refusal } from "./settings.ts";
 
 let close: (() => Promise<void>) | undefined;
 async function setup(options: Parameters<typeof harness>[0] = {}) {
@@ -203,6 +204,108 @@ describe("a new image", () => {
     await ensureRuntime(ctx);
     expect(api.agents.get(home.id)!.state).toBe("stopped");
     expect(err.join("\n")).toMatch(/jen-workspace changed/);
+  });
+});
+
+describe("an installed jen's images", () => {
+  const V = "0.1.0";
+  const image = (target: string, version = V) => `ghcr.io/reveer-ai/jen-${target}:${version}`;
+
+  test("missing ones are pulled from the registry, saying so, before the runtime starts on them", async () => {
+    const { docker, ctx, err } = await setup({ version: V });
+    await ensureRuntime(ctx);
+    expect(err.slice(0, 3)).toEqual([`pulling ${image("runtime")}...`, `pulling ${image("agent")}...`, `pulling ${image("workspace")}...`]);
+    expect(docker.calls.indexOf("pull")).toBeLessThan(docker.calls.indexOf("run"));
+    const [run] = runtimeRuns(docker);
+    expect(run!.args.at(-1)).toBe(image("runtime"));
+    expect(run!.options.env).toMatchObject({ JEN_AGENT_IMAGE: image("agent"), JEN_WORKSPACE_IMAGE: image("workspace") });
+    // Once pulled, they're used as they are.
+    err.length = 0;
+    await ensureRuntime(ctx);
+    expect(err).toEqual([]);
+  });
+
+  test("a pull that fails stops the command with Docker's reason, having started nothing", async () => {
+    const { docker, ctx } = await setup({ version: V });
+    docker.registry.delete(image("agent"));
+    const error = await ensureRuntime(ctx).catch((e) => e);
+    expect(error).toBeInstanceOf(DockerError);
+    expect(error.message).toBe(`docker pull failed: Error response from daemon: manifest unknown: ${image("agent")}`);
+    expect(docker.runs).toEqual([]);
+    expect(docker.containers_.size).toBe(0);
+  });
+
+  test("an image the environment names is never pulled, and a missing one is named with its docker build command", async () => {
+    const { docker, ctx } = await setup({ version: V, env: { JEN_WORKSPACE_IMAGE: "w:t" } });
+    docker.registry.add("w:t");
+    const error = await ensureRuntime(ctx).catch((e) => e);
+    expect(error).toBeInstanceOf(MissingImage);
+    expect(error.message).toContain("docker build --target workspace -t w:t .");
+    expect(docker.images.has("w:t")).toBe(false);
+  });
+
+  test("jen config pulls the runtime's image it keeps the settings with", async () => {
+    const { docker, ctx, err } = await setup({ version: V, answers: ["", "", ""] });
+    await config(ctx);
+    expect(err[0]).toBe(`pulling ${image("runtime")}...`);
+    expect(docker.images.has(image("runtime"))).toBe(true);
+  });
+
+  test("jen config fails with Docker's reason when that pull fails", async () => {
+    const { docker, ctx } = await setup({ version: V, answers: ["", "", ""] });
+    docker.registry.clear();
+    await expect(config(ctx)).rejects.toThrow(`docker pull failed: Error response from daemon: manifest unknown: ${image("runtime")}`);
+  });
+
+  test("an upgrade stops every agent onto the new version, then removes the other versions' images, and nothing else", async () => {
+    const old = await setup({ version: "0.0.9" });
+    await ensureRuntime(old.ctx);
+    const home = old.api.add({ name: "home" });
+    old.docker.add({ name: `jen-agent-${home.id}`, image: old.docker.images.get(image("agent", "0.0.9"))!, labels: { "jen.runtime": "jen", "jen.agent": home.id } });
+    // The agent's container goes as the runtime stops it.
+    old.api.intercept = (method, path) => {
+      const c = path.endsWith("/stop") ? old.docker.find(`jen-agent-${path.split("/")[2]}`) : undefined;
+      if (c) old.docker.containers_.delete(c.id);
+      return undefined;
+    };
+    old.docker.images.set("ghcr.io/reveer-ai/jen-other:0.0.9", "sha256:other");
+    old.docker.images.set("postgres", "sha256:pg");
+    // 0.1.0, installed over it, on the same engine.
+    const ctx = { ...old.ctx, names: namesFrom({}, V) };
+    for (const key of IMAGE_KEYS) old.docker.registry.add(ctx.names[key]);
+    await ensureRuntime(ctx);
+    expect(old.api.agents.get(home.id)!.state).toBe("stopped");
+    expect(old.docker.find("jen-runtime")!.image).toBe(old.docker.images.get(image("runtime")));
+    expect([...old.docker.images.keys()].sort()).toEqual([image("agent"), "ghcr.io/reveer-ai/jen-other:0.0.9", image("runtime"), image("workspace"), "postgres"].sort());
+  });
+
+  test("an upgrade with nothing running removes the other versions' images once it pulls its own", async () => {
+    const { docker, ctx } = await setup({ version: V });
+    docker.images.set(image("agent", "0.0.9"), "sha256:old-agent");
+    docker.images.set(image("workspace", "0.0.9"), "sha256:old-workspace");
+    await ensureRuntime(ctx);
+    expect([...docker.images.keys()].sort()).toEqual([image("agent"), image("runtime"), image("workspace")]);
+  });
+
+  test("an old version's image a container still uses is passed over", async () => {
+    const { docker, ctx } = await setup({ version: V });
+    docker.images.set(image("agent", "0.0.9"), "sha256:old");
+    docker.add({ name: "someone", image: "sha256:old" });
+    await ensureRuntime(ctx);
+    expect(docker.images.has(image("agent", "0.0.9"))).toBe(true);
+    expect(docker.find("jen-runtime")!.state).toBe("running");
+  });
+
+  test("a checkout, or an installed jen whose images the environment names, removes no registry image", async () => {
+    for (const options of [{}, { version: V, env: { JEN_RUNTIME_IMAGE: "r:t", JEN_AGENT_IMAGE: "a:t", JEN_WORKSPACE_IMAGE: "w:t" } }]) {
+      const { docker, ctx } = await setup(options);
+      for (const name of ["r:t", "a:t", "w:t"]) docker.build(name);
+      docker.images.set(image("agent", "0.0.9"), "sha256:old");
+      docker.build("jen-agent");
+      await ensureRuntime(ctx);
+      expect(docker.images.has(image("agent", "0.0.9"))).toBe(true);
+      await close?.();
+    }
   });
 });
 

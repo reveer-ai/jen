@@ -8,6 +8,7 @@
 
 import { randomBytes } from "node:crypto";
 import { DockerError, type Docker } from "./docker.ts";
+import { VERSION } from "./release.ts";
 
 export interface Settings {
   model: string;
@@ -17,30 +18,52 @@ export interface Settings {
   port?: number;
 }
 
-// What jen's runtime and images are called, from the environment.
+// The Dockerfile target each image is built from.
+export const TARGETS = { runtimeImage: "runtime", agentImage: "agent", workspaceImage: "workspace" } as const;
+export type ImageKey = keyof typeof TARGETS;
+export const IMAGE_KEYS = Object.keys(TARGETS) as ImageKey[];
+
+// Where a release's images are published, as <REGISTRY>/jen-<target>:<version>.
+export const REGISTRY = "ghcr.io/reveer-ai";
+export const registryRepository = (key: ImageKey) => `${REGISTRY}/jen-${TARGETS[key]}`;
+
+// What jen's runtime and images are called.
 export interface Names {
   name: string;
   runtimeImage: string;
   agentImage: string;
   workspaceImage: string;
+  // The release, whose images an installed jen pulls from the registry, or
+  // undefined in a checkout, which uses the images it builds.
+  version?: string;
+  // The images the environment names, which jen never pulls and whose
+  // registry versions it leaves alone.
+  overridden: ImageKey[];
 }
 
-export function namesFrom(env: NodeJS.ProcessEnv): Names {
+// An installed jen names its own release's images in the registry, and a
+// checkout the images it builds. The environment overrides either.
+export function namesFrom(env: NodeJS.ProcessEnv, version: string | undefined = VERSION): Names {
+  const given = { runtimeImage: env.JEN_RUNTIME_IMAGE, agentImage: env.JEN_AGENT_IMAGE, workspaceImage: env.JEN_WORKSPACE_IMAGE };
+  const image = (key: ImageKey) => given[key] || (version === undefined ? `jen-${TARGETS[key]}` : `${registryRepository(key)}:${version}`);
   return {
     name: env.JEN_RUNTIME_NAME || "jen",
-    runtimeImage: env.JEN_RUNTIME_IMAGE || "jen-runtime",
-    agentImage: env.JEN_AGENT_IMAGE || "jen-agent",
-    workspaceImage: env.JEN_WORKSPACE_IMAGE || "jen-workspace",
+    runtimeImage: image("runtimeImage"),
+    agentImage: image("agentImage"),
+    workspaceImage: image("workspaceImage"),
+    ...(version === undefined ? {} : { version }),
+    overridden: IMAGE_KEYS.filter((key) => given[key]),
   };
 }
 
-// The Dockerfile target each image is built from.
-export const TARGETS = { runtimeImage: "runtime", agentImage: "agent", workspaceImage: "workspace" } as const;
+// Whether jen pulls the image when it's missing: an installed jen's own.
+export const pulls = (names: Names, key: ImageKey) => names.version !== undefined && !names.overridden.includes(key);
 
 export const settingsVolume = (name: string) => `${name}-settings`;
 export const runtimeContainer = (name: string) => `${name}-runtime`;
 
-// An image jen needs that isn't there, named with the command that builds it.
+// An image jen needs that isn't there and doesn't pull, named with the
+// command that builds it.
 export class MissingImage extends Error {
   constructor(image: string, target: string) {
     super(`the image ${image} is missing. Build it from jen's checkout with: docker build --target ${target} -t ${image} .`);
