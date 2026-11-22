@@ -2,6 +2,12 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-22
+
+Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
+
+- **flo's `flo-review` replaces `review-change` as the agent review, and `review-change` is deleted.** It's installed by `npx flo-ai init`. Only an implementation gets an agent review. A design goes straight to the maintainer, until flo reviews designs. The review goes in the handoff, not on the pull request, and the record says only what flo doesn't, so it doesn't override flo. *Why:* set by the maintainer. flo is meant to handle the whole workflow, and a design review is coming to it. Supersedes the conventions that reviewed every design and posted every review on the pull request.
+
 ## 2026-11-21
 
 Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
@@ -173,7 +179,7 @@ Made in [JEN-15](https://linear.app/reveer/issue/JEN-15), building the skills an
 - **`tend` fixes the project record, docs and skills itself, but decides nothing.** Decisions, conventions and direction stay the maintainer's; where the evidence doesn't settle something, it asks. Each pass is one Linear issue labeled `tend`, outside cycles, and everything it produces goes in one pull request, with no issue of its own. A pull request of fixes only merges without review. New views, new or changed skills, code cleanups and questions are proposals, and any one of them puts the whole pull request up for the maintainer's review. *Why:* set by the maintainer. Fixes aren't code, and the boundary keeps a silent merge from changing what agents are told to do. One issue per pass keeps upkeep visible in Linear even when it finds nothing, while an issue per finding added nothing the pull request doesn't already carry. *Refined in part 2026-11-16:* an approved proposal that needs a design gets an issue of its own.
 - **`tend` changes something only when it can say what's wrong without the change, and an empty pass is the expected result.** *Why:* set by the maintainer. An agent running an upkeep skill will otherwise find something to change.
 - **`tend` looks at code only for how it's organized and reads, and only proposes.** Each cleanup is carried out as its own change that alters no requirement or test assertion. Bugs, performance and tests belong to a separate skill. *Why:* the maintainer wants few proposals, each worth a change of its own. Agents also score about 70% on refactorings specified in detail and under 8% on open-ended cleanup ([CodeTaste](https://arxiv.org/pdf/2603.04177)).
-- **The maintainer reviews a change only after the agent review has settled.** The agent reviews and fixes until a re-review finds nothing new, then hands off with a briefing and the record and docs brought up to date. The pull request stays a draft until that handoff. The archive comes after approval, just before merge. *Why:* set by the maintainer. They trust the agent with the review back-and-forth as they do with the code, and review the finished result in one pass.
+- **The maintainer reviews a change only after the agent review has settled.** The agent reviews and fixes until a re-review finds nothing new, then hands off with a briefing and the record and docs brought up to date. The pull request stays a draft until that handoff. The archive comes after approval, just before merge. *Why:* set by the maintainer. They trust the agent with the review back-and-forth as they do with the code, and review the finished result in one pass. *Refined 2026-11-22:* `flo-review` runs the agent review, by its own rules for when to stop.
 - **Upkeep runs once a cycle, not nightly.** *Why:* at about two merged pull requests a week, most nightly runs would find nothing. It's run by hand until it has proven itself, then scheduled.
 - **Nested `AGENTS.md` only where a directory has rules of its own.** `src/agent/` is the first. *Why:* Codex reads one only when started inside its directory (checked 2026-11-09), and Claude Code, by its documentation, only once it reads a file there, so the root's pointers stay the main guide.
 

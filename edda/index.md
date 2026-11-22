@@ -19,10 +19,12 @@ The project's own skills live in `.agents/skills/<name>/`, where Codex finds the
 
 | Skill | Use it |
 |---|---|
-| `review-change` | To review a pull request, or re-review it after fixes |
-| `deliver-change` | When the agent review of a change finds nothing new, to hand it to the maintainer, and again once it's approved |
+| `deliver-change` | To hand a change to the maintainer once `flo-review` has reviewed it, and again once it's approved |
 | `tend` | At the end of each cycle, to keep the project record, docs and skills accurate and propose code cleanups |
-| `clare` | To explain one subject as a single HTML page. It comes from the `clare-ai` package (see [environment.md](environment.md)), not this project |
+| `flo-review` | Once an implementation is verified, to have a fresh agent review it before the handoff |
+| `clare` | To explain one subject as a single HTML page |
+
+`flo-review` and `clare` come from packages, not this project. [environment.md](environment.md) says how to update them.
 
 When you catch yourself doing the same workflow by hand a second time, capture it as a skill and add it here.
 

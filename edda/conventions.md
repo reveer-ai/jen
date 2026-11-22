@@ -21,8 +21,7 @@ How work is done on this project. These apply to anyone working on it.
 - **Keep `docs/` current.** A change that alters what a view in `docs/` describes updates that view in the same pull request.
 - **The pull request opens as a draft once the design is written.** Commit the proposal and design, push the task's branch and open a draft pull request titled with the Linear issue ID, so the maintainer can review the artifacts with inline comments. Later artifacts and the implementation land on the same pull request.
 - **Every apply ends with a commit and push to the pull request**, without asking. Stop and ask instead if implementation paused, a task was narrowed or deferred, a check failed, or a question is still open.
-- **The agent review runs before the maintainer's, twice.** Review the change with `review-change` once its design is written, and again once its implementation is verified. Each time, fix what it finds until a re-review finds nothing new, then hand it to the maintainer: the design for their review, and the implementation through `deliver-change`, which marks the pull request ready for review. Until then it stays a draft. Once the maintainer approves, `deliver-change` archives the change and merges it.
-- **Post reviews directly on the pull request.** Publish the review summary and actionable inline findings without asking first; a chat-only review is not enough. The maintainer can read and delete reviews they disagree with.
+- **A fresh agent reviews the implementation before the maintainer does.** Once the implementation is verified, run `flo-review`. Its handoff is `deliver-change`, which marks the pull request ready for review. Until then it stays a draft. Designs go to the maintainer with no agent review. Once the maintainer approves, `deliver-change` archives the change and merges it.
 
 ## Design
 
@@ -40,6 +39,6 @@ How work is done on this project. These apply to anyone working on it.
 
 - **Every push carries the record.** Commit any pending `edda/` changes with the task's own files.
 - **Pull requests are squash-merged.** The `main` ruleset allows nothing else, and refuses any push to `main` that isn't a merged pull request (see `environment.md`).
-- **An outside pull request gets the maintainer's review.** Its CI runs only once the maintainer approves its workflows, after reading what it changes. Agents review it with `review-change` when the maintainer asks.
+- **An outside pull request gets the maintainer's review.** Its CI runs only once the maintainer approves its workflows, after reading what it changes. Agents review it when the maintainer asks.
 - **Git history should read the way the work should have happened.** Rewriting a branch's history to fix it is acceptable, and `main`'s can't be rewritten: take a backup ref first and confirm with the maintainer before force-pushing. Linear's history is an audit trail, so never replay statuses on it; add a comment or attachment instead.
 - **Nothing is done until the check that could prove it wrong has run.** If a live check is still outstanding, say the work is unverified and name what that check could still find. A command handed forward by earlier work is a claim too: run its read-only half and compare before repeating it.
