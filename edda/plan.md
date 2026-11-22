@@ -1,6 +1,6 @@
 # Plan
 
-Last updated 2026-11-20.
+Last updated 2026-11-22.
 
 ## Current project: Agent harness & UI engine
 
@@ -15,9 +15,9 @@ This project builds the first working jen, end to end. Agents run in containers,
 | 3 | Agent workspace | A jen agent has a workspace that survives its restarts, and runs commands and reads and writes files in it, without holding its owner's model key or reaching the internet | none: scoped on 2026-11-10 while aligning [JEN-18](https://linear.app/reveer/issue/JEN-18)'s proposal | JEN-1 | 3–4 (Nov 9 – 22) |
 | 4 | UI engine | A jen agent presents itself to the user through UI it generates | [JEN-3](https://linear.app/reveer/issue/JEN-3) Design and scope the UI engine | JEN-1; JEN-18 by [JEN-19](https://linear.app/reveer/issue/JEN-19) | 3 (Nov 9 – 15) |
 | 5 | Distribution | A user installs jen from npm and uses it through the `jen` command | [JEN-4](https://linear.app/reveer/issue/JEN-4) Design and scope distribution | JEN-2, JEN-3 | 4 (Nov 16 – 22) |
-| 6 | Foundation | jen's first iteration is cleaned up so the next project builds on it: how it displays and the commands it offers, the prompts its agents get, and its correctness and performance | [JEN-27](https://linear.app/reveer/issue/JEN-27) Design and scope cleaning up jen's first iteration | none | 5 (Nov 23 – 29) |
+| 6 | Foundation | jen's first iteration is cleaned up so the next project builds on it: how it installs, how it displays and the commands it offers, how its agents work together and the prompts they get, and its correctness and performance | [JEN-27](https://linear.app/reveer/issue/JEN-27) Design and scope cleaning up jen's first iteration | none | 5 (Nov 23 – 29) |
 
-The maintainer added the Foundation milestone on 2026-11-20, in cycle 5, which had been slack. If it needs more than that cycle, JEN-27 says so and the target date is the maintainer's call.
+The maintainer added the Foundation milestone on 2026-11-20, in cycle 5, which had been slack, and on 2026-11-22 widened it to a self-contained install in one command ([JEN-31](https://linear.app/reveer/issue/JEN-31)) and hardening how agents, sub-agents and their workspaces work together ([JEN-32](https://linear.app/reveer/issue/JEN-32)). JEN-27 sized it at 15 points against about 9 for the 30 hours the maintainer has that week, and the maintainer kept the target date (see [decisions.md](decisions.md), 2026-11-22).
 
 **After this project:** communication between agents that aren't parent and child, such as two root agents or two siblings, is a milestone of its own. The protocol and the runtime's grants already leave room for it (see [decisions.md](decisions.md), 2026-11-01), but nothing builds it until that milestone is scoped. So is the UI work after JEN-18, a data layer for agents' apps and jen's shell (see [ideas.md](ideas.md) and [decisions.md](decisions.md), 2026-11-14), which likely needs a project of its own. So is hosting: where agents that several people share run, with login and TLS (see [decisions.md](decisions.md), 2026-11-16).
 
@@ -29,6 +29,7 @@ Finished work, newest first. The pull request holds the briefing, the maintainer
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-22 | [JEN-27](https://linear.app/reveer/issue/JEN-27) | [#25](https://github.com/reveer-ai/jen/pull/25) | Scoped the Foundation milestone into seven tasks: checking tools first, then a reliable test suite, a self-contained install, hardened agent architecture, agents' prompts, viewing sub-agents' work, and display and commands last. |
 | 2026-11-22 | [JEN-29](https://linear.app/reveer/issue/JEN-29) | [#24](https://github.com/reveer-ai/jen/pull/24) | The record moved from `record/` to `edda/`, with edda's pointer in `AGENTS.md`. clare is adopted, and flo's `flo-review` replaces `review-change`: only an implementation gets an agent review, and it goes in the handoff. |
 | 2026-11-21 | [JEN-28](https://linear.app/reveer/issue/JEN-28) | [#23](https://github.com/reveer-ai/jen/pull/23) | jen is open source under Apache-2.0, with `NOTICE` in the package and the images, and its repo is public, taking outside pull requests. `main` takes changes only by a squash-merged pull request whose CI passed, with no bypass, and a release tag can't be moved or deleted. |
 | 2026-11-20 | [JEN-26](https://linear.app/reveer/issue/JEN-26) | [#22](https://github.com/reveer-ai/jen/pull/22) | jen ships as the npm package `jen-ai`: `jen` checks Node and Docker, starts Docker Desktop, and pulls its version's images from GHCR. Every merge to `main` that changes what ships releases the images, the package, a tag and a GitHub release. The first release, `0.1.0`, passed the maintainer's hand check from an npm install. |
