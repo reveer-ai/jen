@@ -6,7 +6,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
 
-- **flo's `flo-review` replaces `review-change` as the agent review, and `review-change` is deleted.** It's installed by `npx flo-ai init`. Only an implementation gets an agent review. A design goes straight to the maintainer, until flo reviews designs. The review goes in the handoff, not on the pull request, and the record says only what flo doesn't, so it doesn't override flo. *Why:* set by the maintainer. flo is meant to handle the whole workflow, and a design review is coming to it. Supersedes the conventions that reviewed every design and posted every review on the pull request.
+- **flo's `flo-review` replaces `review-change` as the agent review, and `review-change` is deleted.** It's installed by `npx flo-ai init`. Only an implementation gets an agent review, and a design goes straight to the maintainer. The review goes in the handoff, not on the pull request, and the record says only what flo doesn't, so it doesn't override flo. *Why:* set by the maintainer. Supersedes the conventions that reviewed every design and posted every review on the pull request.
 
 ## 2026-11-21
 

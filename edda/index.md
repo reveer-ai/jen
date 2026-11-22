@@ -9,7 +9,7 @@ Read only the files your task needs.
 | [conventions.md](conventions.md) | How work is done here | Always, before acting |
 | [decisions.md](decisions.md) | Dated decision log with reasons, newest first | Before re-opening a question, or when you need the reason behind something |
 | [ideas.md](ideas.md) | The maintainer's ideas, not yet planned or decided | You're scoping a milestone or designing in an area an idea touches |
-| [environment.md](environment.md) | Repo, code layout and commands, Linear workspace, OpenSpec, tool quirks | You're touching code, git, GitHub, Linear, OpenSpec or the harness |
+| [environment.md](environment.md) | Repo, code layout and commands, Linear workspace, OpenSpec, the tools that own parts of the repo (edda, clare, flo), tool quirks | You're touching code, git, GitHub, Linear, OpenSpec, the harness, `AGENTS.md` or a skill |
 
 `docs/` explains how jen works, for anyone who needs to understand a part of it. Nothing loads it by default; [environment.md](environment.md) lists its views.
 

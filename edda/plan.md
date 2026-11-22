@@ -25,7 +25,7 @@ Each opening issue is done when its decisions are written down and every remaini
 
 ## Status
 
-Finished work, newest first. The pull request holds the reviews and verification, and the archived OpenSpec change the design; the decisions are in [decisions.md](decisions.md). Points and cycles are in Linear.
+Finished work, newest first. The pull request holds the briefing, the maintainer's review and verification, and the archived OpenSpec change the design; the decisions are in [decisions.md](decisions.md). Points and cycles are in Linear.
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
