@@ -7,11 +7,11 @@ Thanks for helping. Bug reports, fixes and ideas are all welcome.
 - **A bug or a small fix:** open a pull request, or an issue if you'd rather describe it.
 - **Anything larger,** such as a new feature or a change to how agents behave: open an issue first, so we can agree on the approach before you spend time on it.
 
-jen's design decisions and the reasons for them are in [`record/`](record/README.md), and its behavior is specified in [`openspec/specs/`](openspec/specs). Reading the parts your change touches saves a round of review.
+jen's design decisions and the reasons for them are in [`edda/`](edda/index.md), and its behavior is specified in [`openspec/specs/`](openspec/specs). Reading the parts your change touches saves a round of review.
 
 ## Working on jen
 
-You need Node 26 or later and Docker with Engine 28.0 or later. `record/environment.md` shows how to build the images and run jen from a checkout, with `npm link`.
+You need Node 26 or later and Docker with Engine 28.0 or later. `edda/environment.md` shows how to build the images and run jen from a checkout, with `npm link`.
 
 ```sh
 npm ci

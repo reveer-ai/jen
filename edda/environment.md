@@ -5,6 +5,9 @@
 - **Repo:** `reveer-ai/jen` on GitHub, public, with `main` protected (see [The repo](#the-repo)).
 - **Linear:** workspace `reveer`. The `jen` team (key `JEN`) is the product. Linear's GitHub integration has been connected to `reveer-ai` since 2026-10-24. It links a PR to an issue automatically when the issue ID appears in the branch name or the PR title, so don't attach PRs by hand.
 - **OpenSpec** 1.15.0, initialized for Claude Code and Codex with the `spec-driven` schema. Its config is in `openspec/config.yaml`. Its skills live in `.claude/skills/` and `.agents/skills/`, and its `/opsx:*` commands in `.claude/commands/opsx/`. All of these are generated, so refresh them with `openspec update` rather than editing them by hand.
+- **edda** 0.2.0 (npm `edda-ai`, from `reveer-ai/edda`), set up on 2026-11-21. It owns the block between `<!-- edda:begin -->` and `<!-- edda:end -->` in `AGENTS.md`, which `npx edda-ai@latest init` rewrites on every run, so change that block only by updating edda. The block imports `edda/index.md`, so Claude Code loads the index into every session. `CLAUDE.md` gets it through its `@AGENTS.md` import. Everything else in `edda/` is the project's.
+- **clare** 0.2.0 (npm `clare-ai`, from `reveer-ai/clare`), set up on 2026-11-21. `.agents/skills/clare/` is its copy, linked from `.claude/skills/clare`. `npx clare-ai@latest init` updates it and overwrites any edits there, so don't edit it by hand. Its pages go to `clare/` at the repo root.
+- **flo** 0.2.1 (npm `flo-ai`, from `reveer-ai/flo`), set up on 2026-11-22. It installs `flo-review` into `.agents/skills/flo-review/`, linked from `.claude/skills/flo-review`. `npx flo-ai@latest init` updates it and overwrites any edits there, so say how jen reviews in the record, never in the skill.
 
 ## Code
 
@@ -94,5 +97,4 @@ Every push to `main` runs `.github/workflows/release.yml`: CI (`ci.yml`, which s
 - **`git push` to `origin` can fail with `Permission denied (publickey)`.** The remote is `git@github.com`, but the maintainer's SSH config reaches the `joshtgi` GitHub account only through the host alias `joshtgi`. Push with `git push joshtgi:reveer-ai/jen.git HEAD:refs/heads/<branch>`; `gh` works as it is. Seen on 2026-11-16.
 - **The Linear MCP can't create cycles or change team settings.** Someone has to do that in the Linear UI. For example, the number of upcoming cycles is set under jen team settings → Cycles.
 - **Adding an issue to a cycle moves it from Backlog to Todo.**
-- **GitHub refuses an approving or changes-requested review from a pull request's author**, and every session acts as the author, so reviews are posted as `COMMENT` with the verdict in the body.
 - **`openspec init` deletes OpenSpec's old global Codex prompts** in `~/.codex/prompts/opsx-*.md`. That's outside the repo, and it does it without asking.

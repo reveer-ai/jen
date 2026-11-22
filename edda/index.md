@@ -1,6 +1,6 @@
 # Project record: index
 
-Read this file first. Then read only the files your task needs.
+Read only the files your task needs.
 
 | File | Holds | Read when |
 |---|---|---|
@@ -9,7 +9,7 @@ Read this file first. Then read only the files your task needs.
 | [conventions.md](conventions.md) | How work is done here | Always, before acting |
 | [decisions.md](decisions.md) | Dated decision log with reasons, newest first | Before re-opening a question, or when you need the reason behind something |
 | [ideas.md](ideas.md) | The maintainer's ideas, not yet planned or decided | You're scoping a milestone or designing in an area an idea touches |
-| [environment.md](environment.md) | Repo, code layout and commands, Linear workspace, OpenSpec, tool quirks | You're touching code, git, GitHub, Linear, OpenSpec or the harness |
+| [environment.md](environment.md) | Repo, code layout and commands, Linear workspace, OpenSpec, the tools that own parts of the repo (edda, clare, flo), tool quirks | You're touching code, git, GitHub, Linear, OpenSpec, the harness, `AGENTS.md` or a skill |
 
 `docs/` explains how jen works, for anyone who needs to understand a part of it. Nothing loads it by default; [environment.md](environment.md) lists its views.
 
@@ -19,13 +19,18 @@ The project's own skills live in `.agents/skills/<name>/`, where Codex finds the
 
 | Skill | Use it |
 |---|---|
-| `review-change` | To review a pull request, or re-review it after fixes |
-| `deliver-change` | When the agent review of a change finds nothing new, to hand it to the maintainer, and again once it's approved |
+| `deliver-change` | To hand a change to the maintainer once `flo-review` has reviewed it, and again once it's approved |
 | `tend` | At the end of each cycle, to keep the project record, docs and skills accurate and propose code cleanups |
+| `flo-review` | Once an implementation is verified, to have a fresh agent review it before the handoff |
+| `clare` | To explain one subject as a single HTML page |
+
+`flo-review` and `clare` come from packages, not this project. [environment.md](environment.md) says how to update them.
 
 When you catch yourself doing the same workflow by hand a second time, capture it as a skill and add it here.
 
 ## Keeping the record
+
+Record what a future agent would need before you report work done. If newer evidence contradicts the record, the evidence wins: fix the record and say so.
 
 - **Only what this project established.** Record what came out of work on this project, including every convention the maintainer sets, wherever it was first noted. Something a tool kept in its private memory belongs here once you've checked it still holds. Don't import knowledge from earlier versions of jen.
 - **Only jen.** The repo and its record are public. They hold jen, the open-source harness, and nothing about reveer's products beyond it: their plans, features, customers or business. An idea that belongs to such a product goes to the maintainer, not into `ideas.md`. When something could be either, ask.

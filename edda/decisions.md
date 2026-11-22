@@ -2,6 +2,19 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-22
+
+Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
+
+- **flo's `flo-review` replaces `review-change` as the agent review, and `review-change` is deleted.** It's installed by `npx flo-ai init`. Only an implementation gets an agent review, and a design goes straight to the maintainer. The review goes in the handoff, not on the pull request, and the record says only what flo doesn't, so it doesn't override flo. *Why:* set by the maintainer. Supersedes the conventions that reviewed every design and posted every review on the pull request.
+
+## 2026-11-21
+
+Set by the maintainer in [JEN-29](https://linear.app/reveer/issue/JEN-29):
+
+- **The project record moves from `record/` to `edda/`, set up by edda, with `edda/index.md` as its index.** `npx edda-ai init` put edda's pointer in `AGENTS.md` in place of the record section the project wrote. edda owns that pointer. The record's contents and its rules for keeping it are the project's, in the index. Agents keep the record as before, with `tend` doing its upkeep each cycle. *Why:* set by the maintainer. Supersedes 2026-10-24's "`record/` is the project's source of truth" and 2026-11-09's "`context/` is renamed `record/`".
+- **clare is adopted, as installed by `npx clare-ai init`.** *Why:* set by the maintainer.
+
 ## 2026-11-20
 
 Set by the maintainer, aligning on [JEN-28](https://linear.app/reveer/issue/JEN-28)'s proposal. The proposal and design are in `openspec/changes/archive/2026-11-21-open-source-jen/`:
@@ -158,7 +171,7 @@ Made in [JEN-3](https://linear.app/reveer/issue/JEN-3), designing the UI engine 
 Made in [JEN-15](https://linear.app/reveer/issue/JEN-15), building the skills and docs that keep the project understood and maintained:
 
 - **The record is kept by intent, with no size limits.** *Why:* set by the maintainer. The old line budget was both arbitrary and dodged: `plan.md` passed it at 68 lines while holding 25 KB, mostly a status log that copied its pull requests.
-- **`context/` is renamed `record/`.** *Why:* set by the maintainer. `AGENTS.md` names the project record as part of every agent's role, so skills can say "the project record" without explaining it, and a directory named for what it is makes that plain. "Context" also collided with OpenSpec's `context` setting and with context files in general.
+- **`context/` is renamed `record/`.** *Superseded 2026-11-21:* the record is `edda/`. *Why:* set by the maintainer. `AGENTS.md` names the project record as part of every agent's role, so skills can say "the project record" without explaining it, and a directory named for what it is makes that plain. "Context" also collided with OpenSpec's `context` setting and with context files in general.
 - **The record and docs hold only what the primary source can't tell, said briefly.** *Why:* a study of repository context files ([Gloaguen et al., 2026](https://arxiv.org/abs/2602.11988)) found LLM-written ones lowered agents' task success and raised cost by over 20%, mostly by repeating what agents could find themselves. Every copy is also one more thing to drift.
 - **Every jen convention lives in the project, and nothing about a particular user does.** *Why:* set by the maintainer. Thirteen conventions had lived only in one assistant's private memory, where Codex and engineers never see them.
 - **`docs/` is for understanding, and nothing loads it by default.** Each view names the files it describes, so `tend` can find drift. The interactions view replays recorded runs of the behavior check. *Why:* detail there costs no agent tokens unless it's needed, and a recording can't drift from how agents behave.
@@ -166,7 +179,7 @@ Made in [JEN-15](https://linear.app/reveer/issue/JEN-15), building the skills an
 - **`tend` fixes the project record, docs and skills itself, but decides nothing.** Decisions, conventions and direction stay the maintainer's; where the evidence doesn't settle something, it asks. Each pass is one Linear issue labeled `tend`, outside cycles, and everything it produces goes in one pull request, with no issue of its own. A pull request of fixes only merges without review. New views, new or changed skills, code cleanups and questions are proposals, and any one of them puts the whole pull request up for the maintainer's review. *Why:* set by the maintainer. Fixes aren't code, and the boundary keeps a silent merge from changing what agents are told to do. One issue per pass keeps upkeep visible in Linear even when it finds nothing, while an issue per finding added nothing the pull request doesn't already carry. *Refined in part 2026-11-16:* an approved proposal that needs a design gets an issue of its own.
 - **`tend` changes something only when it can say what's wrong without the change, and an empty pass is the expected result.** *Why:* set by the maintainer. An agent running an upkeep skill will otherwise find something to change.
 - **`tend` looks at code only for how it's organized and reads, and only proposes.** Each cleanup is carried out as its own change that alters no requirement or test assertion. Bugs, performance and tests belong to a separate skill. *Why:* the maintainer wants few proposals, each worth a change of its own. Agents also score about 70% on refactorings specified in detail and under 8% on open-ended cleanup ([CodeTaste](https://arxiv.org/pdf/2603.04177)).
-- **The maintainer reviews a change only after the agent review has settled.** The agent reviews and fixes until a re-review finds nothing new, then hands off with a briefing and the record and docs brought up to date. The pull request stays a draft until that handoff. The archive comes after approval, just before merge. *Why:* set by the maintainer. They trust the agent with the review back-and-forth as they do with the code, and review the finished result in one pass.
+- **The maintainer reviews a change only after the agent review has settled.** The agent reviews and fixes until a re-review finds nothing new, then hands off with a briefing and the record and docs brought up to date. The pull request stays a draft until that handoff. The archive comes after approval, just before merge. *Why:* set by the maintainer. They trust the agent with the review back-and-forth as they do with the code, and review the finished result in one pass. *Refined 2026-11-22:* `flo-review` runs the agent review, by its own rules for when to stop.
 - **Upkeep runs once a cycle, not nightly.** *Why:* at about two merged pull requests a week, most nightly runs would find nothing. It's run by hand until it has proven itself, then scheduled.
 - **Nested `AGENTS.md` only where a directory has rules of its own.** `src/agent/` is the first. *Why:* Codex reads one only when started inside its directory (checked 2026-11-09), and Claude Code, by its documentation, only once it reads a file there, so the root's pointers stay the main guide.
 
@@ -286,7 +299,7 @@ Made in [JEN-1](https://linear.app/reveer/issue/JEN-1), designing the jen agent:
 ## 2026-10-24
 
 - **The agent is the project's manager. The maintainer is its lead and customer.** The lead sets direction and makes the calls that shape jen. The agent owns everything else: Linear, the record, conventions, skills and prompts. *Why:* the maintainer works on the project only through agents. One general role statement covers duties nobody has listed yet, so the prompt doesn't have to enumerate them.
-- **`record/` (named `context/` until 2026-11-09) is the project's source of truth.** Agents keep it. `AGENTS.md` points to it, and `CLAUDE.md` imports `AGENTS.md`. *Why:* all work goes through agents. Any agent (Claude Code, Codex or another) or engineer who checks out the repo should get the full picture without depending on one tool's private memory.
+- **`record/` (named `context/` until 2026-11-09) is the project's source of truth.** *Superseded 2026-11-21:* the record is `edda/`, and edda owns its pointer. Agents keep it. `AGENTS.md` points to it, and `CLAUDE.md` imports `AGENTS.md`. *Why:* all work goes through agents. Any agent (Claude Code, Codex or another) or engineer who checks out the repo should get the full picture without depending on one tool's private memory.
 - **OpenSpec is initialized in the repo** (1.15.0, `spec-driven` schema) for Claude Code and Codex, under [JEN-5](https://linear.app/reveer/issue/JEN-5). How it's used gets settled the first time a task needs it.
 - **Fresh start.** A new Linear workspace (`reveer`), team `jen` and repo `reveer-ai/jen`, with no "v2" naming.
 - **The first project is "Agent harness & UI engine"**, with four milestones in this order: Agent container, Agent delegation, UI engine, Distribution and hosting. *Why:* a project is a bounded effort, and the team already stands for the product. Delegation is its own milestone because a sub-agent is the same kind of agent; what's new is the relationship between agents. The UI engine comes before hosting because it's how a user uses jen at all. Local use falls out of building it, and hosting is mostly a question of transport.

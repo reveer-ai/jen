@@ -25,10 +25,11 @@ Each opening issue is done when its decisions are written down and every remaini
 
 ## Status
 
-Finished work, newest first. The pull request holds the reviews and verification, and the archived OpenSpec change the design; the decisions are in [decisions.md](decisions.md). Points and cycles are in Linear.
+Finished work, newest first. The pull request holds the briefing, the maintainer's review and verification, and the archived OpenSpec change the design; the decisions are in [decisions.md](decisions.md). Points and cycles are in Linear.
 
 | Done | Issue | Pull request | What it delivered |
 |---|---|---|---|
+| 2026-11-22 | [JEN-29](https://linear.app/reveer/issue/JEN-29) | [#24](https://github.com/reveer-ai/jen/pull/24) | The record moved from `record/` to `edda/`, with edda's pointer in `AGENTS.md`. clare is adopted, and flo's `flo-review` replaces `review-change`: only an implementation gets an agent review, and it goes in the handoff. |
 | 2026-11-21 | [JEN-28](https://linear.app/reveer/issue/JEN-28) | [#23](https://github.com/reveer-ai/jen/pull/23) | jen is open source under Apache-2.0, with `NOTICE` in the package and the images, and its repo is public, taking outside pull requests. `main` takes changes only by a squash-merged pull request whose CI passed, with no bypass, and a release tag can't be moved or deleted. |
 | 2026-11-20 | [JEN-26](https://linear.app/reveer/issue/JEN-26) | [#22](https://github.com/reveer-ai/jen/pull/22) | jen ships as the npm package `jen-ai`: `jen` checks Node and Docker, starts Docker Desktop, and pulls its version's images from GHCR. Every merge to `main` that changes what ships releases the images, the package, a tag and a GitHub release. The first release, `0.1.0`, passed the maintainer's hand check from an npm install. |
 | 2026-11-19 | [JEN-25](https://linear.app/reveer/issue/JEN-25) | [#21](https://github.com/reveer-ai/jen/pull/21) | The `jen` command: it keeps its settings in Docker, starts the runtime on demand, creates, lists, stops and opens named roots, follows a query's progress to its reply, and uninstalls everything of jen's. Publishing it to npm is [JEN-26](https://linear.app/reveer/issue/JEN-26). |

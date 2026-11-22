@@ -25,7 +25,7 @@ For each view, find the commits that touched the paths in its `<meta name="descr
 
 ## The skills
 
-Fix any skill that is out of date with how the project works now, or with the names it uses. A new skill, or a change to how a skill works, changes every agent's behavior, so propose it instead. The evidence for a new skill is in the friction notes of the briefings within scope: the same work done by hand more than once.
+Fix any skill that is out of date with how the project works now, or with the names it uses. A skill or block another tool installs, which the project record names, is that tool's: update it through the tool, never by hand. A new skill, or a change to how a skill works, changes every agent's behavior, so propose it instead. The evidence for a new skill is in the friction notes of the briefings within scope: the same work done by hand more than once.
 
 ## The code
 
