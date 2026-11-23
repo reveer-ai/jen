@@ -27,6 +27,7 @@ button, select { font: inherit; color: var(--fg); background: var(--surface); bo
 button:hover, select:hover { border-color: var(--accent); }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs[hidden] { display: none; }
 .task { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
 .task b { font-weight: 600; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -354,7 +355,7 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     render();
     return;
   }
-  $("from").textContent = `The committed recording: ${data.evaluation ? `evals/${data.evaluation}` : "an earlier check"}, ${data.recorded}, on ${data.model}, each task's first passing run, or its first failing one.`;
+  $("from").textContent = `The committed recording: ${data.evaluation ? `evals/${data.evaluation}` : "an earlier check"}, ${data.recorded}, on ${data.model}, each task's first passing run, or its first failing one, from the evaluated build where it has one.`;
   prepared = data.runs.map(prepare);
   select(Math.max(0, prepared.findIndex((p) => p.run.task === "nested")));
 })();

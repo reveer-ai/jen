@@ -207,6 +207,13 @@ export async function runTask({ api, runtime, task, name, signal, quietMs = QUIE
   // The last event ID seen on each agent's stream, so a stream that ends and
   // is opened again resumes rather than repeating.
   const seen = new Map<string, string>();
+  // Each agent's state at the last look at the tree, and how the runtime
+  // refused its stream when the last try was refused. A sub-agent deleted or
+  // stopped mid-run is refused legitimately, with 404 or 409. Any other
+  // refusal, or one for an agent still running at the end, means the run
+  // wasn't watched, which is the harness's failure.
+  const states = new Map<string, string>();
+  const refused = new Map<string, { status: number; reason: string }>();
   const ids: string[] = [];
   let root: string | undefined;
   let last = Date.now();
@@ -217,6 +224,11 @@ export async function runTask({ api, runtime, task, name, signal, quietMs = QUIE
     watching.set(id, abort);
     try {
       const res = await api.events(id, seen.get(id), abort.signal);
+      if (!res.ok) {
+        refused.set(id, { status: res.status, reason: `GET /agents/${id}/events answered ${res.status}: ${await res.text()}` });
+        throw new Error("refused");
+      }
+      refused.delete(id);
       const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       for (;;) {
@@ -245,7 +257,12 @@ export async function runTask({ api, runtime, task, name, signal, quietMs = QUIE
   // The root's tree, with a stream open on each running agent in it.
   const tree = async () => {
     const all = (await api.request("GET", "/agents", undefined, signal)) as { id: string; parent: string | null; state: string }[];
-    for (const agent of all) parents.set(agent.id, agent.parent);
+    // An agent deleted since isn't listed, and has no state.
+    states.clear();
+    for (const agent of all) {
+      parents.set(agent.id, agent.parent);
+      states.set(agent.id, agent.state);
+    }
     const mine = new Set([root!]);
     for (let grew = true; grew; ) {
       grew = false;
@@ -305,6 +322,8 @@ export async function runTask({ api, runtime, task, name, signal, quietMs = QUIE
     }
     await tree();
     for (const abort of watching.values()) abort.abort();
+    const unwatched = ids.map((id) => ({ id, refusal: refused.get(id) })).find(({ id, refusal }) => refusal && (![404, 409].includes(refusal.status) || states.get(id) === "running"));
+    if (unwatched !== undefined) throw new HarnessError(unwatched.refusal!.reason);
     if (task.check) {
       const input: CheckInput = { replies: repliesOf(events, root), seed, exec: workspace };
       checked = await task.check(input);
@@ -336,10 +355,13 @@ export async function runTask({ api, runtime, task, name, signal, quietMs = QUIE
 }
 
 // Runs argv in a container as its user. A docker that can't run, or a
-// container that's gone, is a HarnessError; a command that fails is not.
+// container that's gone, is a HarnessError; a command that fails is not, and
+// one that runs past EXEC_MS answers 124, as timeout(1) does.
+const EXEC_MS = 120_000;
 function exec(container: string, argv: string[], input?: string): Promise<{ status: number; stdout: string }> {
   return new Promise((resolve, reject) => {
-    const child = execFile("docker", ["exec", "-i", container, ...argv], { encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+    const child = execFile("docker", ["exec", "-i", container, ...argv], { encoding: "utf8", timeout: EXEC_MS, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error?.killed) return resolve({ status: 124, stdout });
       if (error && typeof error.code !== "number") return reject(new HarnessError(`docker exec failed: ${error.message}`));
       // docker exec itself fails with 125 to 127 when the container is gone.
       if (error && /No such container|is not running/.test(stderr)) return reject(new HarnessError(`docker exec failed: ${stderr.trim()}`));

@@ -39,10 +39,10 @@ See proposal.md for why. What exists today:
 
 An evaluation has one side, or two to compare. A side's build is the working tree or a git ref.
 
-- **Identity is the git tree.** A ref's build is `git rev-parse <ref>^{tree}`. The working tree's is the tree `git add -A` would write, computed with a temporary index, so uncommitted and untracked files count and `.gitignore` holds. The same contents get the same identity whatever commit they sit on, so a working-tree build that's later committed matches its commit. The summary also records the commit and whether the tree was dirty.
+- **Identity is the git tree.** A ref's build is `git rev-parse <ref>^{tree}`. The working tree's is the tree `git add -A` would write, computed with a temporary index, so uncommitted and untracked files count and `.gitignore` holds. The same contents get the same identity whatever commit they sit on, so a working-tree build that's later committed matches its commit. The summary also records the commit and whether the tree was dirty. *As built:* the tree also holds `evals/` and `edda/`, which the change commits with itself, so no recorded working-tree identity has yet matched a commit, though the code it built matches. Whether identity should cover only what the images are built from is an open question in plan.md.
 - **A ref builds from its own checkout.** `git worktree add --detach` puts it in a temporary folder, the three targets build from that folder's `Dockerfile`, and the worktree is removed. The working tree builds from the checkout itself.
 - **Tags belong to the evaluation:** `jen-agent:eval-<id>-a`, and so on, where `<id>` is the evaluation's. Two evaluations at once never share a tag, so one's cleanup can't pull an image from under the other. Docker's layer cache makes a rebuild of the same tree cheap. The tags are removed at the end.
-- **Each side has its own runtime**, named `jen-eval-<id>-a` or `-b`, started as the behavior check starts one today, with `JEN_MAX_AGENTS` raised to fit `--parallel`. Both sides use the same key and base URL; only the model may differ.
+- **Each side has its own runtime**, named `jen-eval-<id>-a` or `-b`, started as the behavior check starts one today, with `JEN_MAX_AGENTS` raised to fit `--parallel`: five agents for each run in flight. Both sides use the same key and base URL; only the model may differ.
 
 ### Both sides run at once, interleaved, on the same tasks
 
@@ -50,11 +50,13 @@ The harness, the tasks and their checks come from the working tree for both side
 
 ### A run ends as passed, failed or errored
 
-A run's root, settling and fault rules are the behavior check's, unchanged, except that a task may set its own time limit, since harder tasks run longer. Each fault gets a kind (`settle`, `replies`, `list_agents`, `tool_error`, `repeat_message`, `filler_reply`, `model_error`, `publish_ui`, `check`) so faults count by kind. A run with no faults passed, and one with faults failed. A run the harness couldn't carry out, such as a refused API call or a Docker command that failed, errored: it counts toward neither rate, and the report lists it, so an infrastructure fault never reads as an agent's.
+A run's root, settling and fault rules are the behavior check's, unchanged, except that a task may set its own time limit, since harder tasks run longer. Each fault gets a kind (`settle`, `replies`, `list_agents`, `tool_error`, `repeat_message`, `filler_reply`, `model_error`, `publish_ui`, `check`) so faults count by kind. A run with no faults passed, and one with faults failed. A run the harness couldn't carry out, such as a refused API call or a Docker command that failed, errored: it counts toward neither rate, and the report lists it, so an infrastructure fault never reads as an agent's. *As built:* a refused event stream counts too, unless the runtime answered 404 or 409 for an agent deleted or stopped since; a workspace command the check runs that passes 2 minutes answers 124, as `timeout` does.
+
+*As built:* each run gets a fresh seed, which a task may build into its messages, so no run can reuse another's answer and a task's hash doesn't change with it. A task may also prepare the root's workspace before the first message with a `setup` step; a setup that fails errors the run.
 
 A prompt from `--prompt` is a task named `prompt-<8 hex of its text>`, with the given grant, one step, and no check of its own. It expects at least one reply rather than an exact number.
 
-A task's identity is its name and a hash of its definition: its fields and its `check`'s source. The summary records both, so history shows when a task changed.
+A task's identity is its name and a hash of its definition: its fields, its messages as they read with a fixed seed, and its `setup`'s and `check`'s source. The summary records both, so history shows when a task changed.
 
 ### Each run's metrics: time, model calls and tokens, counted by the runtime
 
@@ -62,7 +64,7 @@ A run records its duration, from its first message to its last event, not counti
 
 The runtime counts usage as it proxies. `modelCall` keeps a copy of the answer's body as it pipes it. When the body ends, it parses the body's `usage` and adds the call to the caller's count: calls, input, cached input, output and reasoning tokens, and `cost` when the provider reports one. A body that doesn't parse, or has no `usage`, still counts as a call. The counts are kept in memory for every agent since the runtime started, deleted agents included, each with the root it belongs to. A parent may delete a sub-agent before its run ends, and its calls still count. The owner reads them at `GET /usage`, as `{"agents": [{"id", "root", "calls", "inputTokens", "cachedTokens", "outputTokens", "reasoningTokens", "cost"?}]}`. An agent calling it gets `403`.
 
-A run sums the entries for its root once it settles. Against a build without `/usage`, such as `main` before this change merges, the route answers `404`, and that side's runs have no tokens. The report shows tokens only where both sides have them.
+A run sums the entries for its root once it settles. Against a build without `/usage`, such as `main` before this change merges, the route answers `404`, and that side's runs have no tokens. The report shows each side's tokens where its runs have them, and compares them only where both sides do.
 
 *Rejected: adding usage to `GET /agents`.* That's what `list_agents` shows models, so it would change what agents see, and a measurement must not change what it measures. *Rejected: having the agent record usage from its adapter.* An agent's own account is the wrong source once spend is a bound the runtime enforces, which is where this count leads (see plan.md's open questions).
 
@@ -81,13 +83,13 @@ With two sides, each task gets a verdict on its pass rate from a two-sided Fishe
 - `summary.json`: the command line, start and end, each side's build (tree, commit, dirty, ref) and model, each task's name and hash, the per-side results and the comparison's verdicts, as the report prints them.
 - `runs.jsonl`: one line per run, appended as each run ends, with its side, task, outcome, faults, metrics and full transcript, with agent IDs replaced by the short names the transcript uses.
 
-The summary is written at the end, and also on an interrupt, marked partial. Every evaluation on a branch is committed with the change, kept or not: a discarded attempt is evidence too, and choosing which to keep would bias the record.
+The summary is written at the end, and also on an interrupt, marked partial. *As built:* the folder is created once the sides' runtimes are up, so a build or a runtime that fails leaves none. Every evaluation on a branch is committed with the change, kept or not: a discarded attempt is evidence too, and choosing which to keep would bias the record.
 
 Transcripts are stored as plain compact JSON. Git compresses every object it stores, and the current recording, 36 KB for eight runs, compresses to under 5 KB, so a comparison of a few hundred runs costs the repo's history a few hundred KB. *Rejected: committing gzip files*, which git can't compress further and nobody can read in a diff or on GitHub. *Rejected: committing only failed runs*, since a passing run is what a failing one is compared with.
 
 ### `docs/interactions.html` replays any saved run
 
-The page keeps its committed recording, now written by `npm run eval -- record`. That takes, for each task, its first passing run, and otherwise its first failing run, so a task agents don't yet pass still appears. The page shows a failing run's faults. It also gets a control to open any evaluation's `runs.jsonl` from disk, then choose a run by side, task and outcome. A file the user picks works on `file://` in any browser with no server, which the current data file doesn't in the app's browser pane.
+The page keeps its committed recording, now written by `npm run eval -- record`. That takes, for each task, its first passing run, and otherwise its first failing run, so a task agents don't yet pass still appears. *As built:* side a's runs come first, since it's the build being evaluated. The page shows a failing run's faults. It also gets a control to open any evaluation's `runs.jsonl` from disk, then choose a run by side, task and outcome. A file the user picks works on `file://` in any browser with no server, which the current data file doesn't in the app's browser pane.
 
 ### The harder tasks are measured before they're kept
 
@@ -98,6 +100,8 @@ Three candidates join the eight, each with a deterministic check:
 - `relay`: a lead sub-agent has a sub-agent of its own, which needs a fact only the owner has. The question has to reach the owner, and the answer has to come back down. The check expects two owner replies, the question and a result holding the fact.
 
 The implementation measures each on `openai/gpt-6-luna`. A task that passes 20 of 20 gets harder or is replaced, and one that never passes is checked for a fault in the task before it's kept. Each must show something agents don't yet do every time.
+
+*As built:* `project`'s spec also asks for comma separators, leading zeros and a `largest` argument to `format`, after it first passed 19 of 20. `recover`'s script fails twice, first for a config whose format only `--help` gives, then for a data file `fetch.py` makes, after its first version failed mostly on its own check. Their measurements are in decisions.md, 2026-11-23.
 
 ### The convention, the handoff and the hand-check recipe
 

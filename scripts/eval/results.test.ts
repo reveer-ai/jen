@@ -151,13 +151,15 @@ describe("the report", () => {
 });
 
 describe("the recording", () => {
-  test("holds each task's first passed run, or else its first failed one, with its faults", () => {
+  test("holds each task's first passed run, or else its first failed one, side a's first, with its faults", () => {
     const summary: Summary = { ...twoSides(), tasks: [{ name: "relay", hash: "h3" }, { name: "direct", hash: "h2" }, { name: "never", hash: "h4" }] };
     const runs = [
       run("a", "relay", "errored", { error: "x" }),
       run("a", "relay", "failed", { faults: [{ kind: "replies", detail: "the owner got 1 replies, not 2" }] }),
       run("b", "relay", "failed"),
       run("b", "direct", "failed"),
+      // main's passing run comes first, and side a's is still the one kept.
+      run("b", "direct", "passed"),
       run("a", "direct", "passed"),
     ].map(shorten);
     const data = recording(summary, runs);

@@ -191,8 +191,7 @@ async function evaluate(argv: string[], options: Options, { apiKey, baseURL }: {
     const builds: Build[] = [];
     for (const s of sides) builds.push(await identify(ROOT, s.ref));
     described = sides.map((s, i) => ({ side: s.side, build: builds[i]!, model: s.model }));
-    dir = createFolder(EVALS, started, id);
-    process.stderr.write(`eval ${id}: ${options.tasks.length} tasks × ${options.runs} runs × ${sides.length} sides, into ${dir}\n`);
+    process.stderr.write(`eval ${id}: ${options.tasks.length} tasks × ${options.runs} runs × ${sides.length} sides\n`);
     const apis = new Map<string, { name: string; api: Awaited<ReturnType<typeof startSide>>["api"] }>();
     for (const [i, s] of sides.entries()) {
       process.stderr.write(`eval ${id}: building side ${s.side} (${s.ref ?? "working tree"})…\n`);
@@ -201,6 +200,10 @@ async function evaluate(argv: string[], options: Options, { apiKey, baseURL }: {
       abort.signal.throwIfAborted();
       apis.set(s.side, await startSide({ id, side: s.side, model: s.model, apiKey, baseURL, inFlight: options.parallel }));
     }
+    // The folder exists only once there are runs to keep: a build or a
+    // runtime that fails leaves nothing behind.
+    dir = createFolder(EVALS, started, id);
+    process.stderr.write(`eval ${id}: results go to ${dir}\n`);
     const order = queue(options.tasks, sides.map((s) => s.side), options.runs);
     const roots = new Map<string, number>();
     let ended = 0;
@@ -221,6 +224,7 @@ async function evaluate(argv: string[], options: Options, { apiKey, baseURL }: {
     if (!abort.signal.aborted) {
       process.stderr.write(`eval: ${error instanceof Error ? error.message : String(error)}\n`);
       status = 1;
+      finish(true);
     }
   } finally {
     if (abort.signal.aborted) finish(true);

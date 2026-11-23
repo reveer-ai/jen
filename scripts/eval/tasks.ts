@@ -187,7 +187,7 @@ export const TASKS: Task[] = [
       try {
         failures = JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "");
       } catch {
-        failures = [`the hidden tests couldn't run (exit ${run.status})`];
+        failures = [run.status === 124 ? "the hidden tests didn't finish within 2 minutes" : `the hidden tests couldn't run (exit ${run.status})`];
       }
       if (failures.length > 0) faults.push(`${failures.length} hidden tests failed: ${failures.slice(0, 5).join("; ")}`);
       const own = await exec(["python3", "-m", "unittest", "test_durations"]);
@@ -254,8 +254,8 @@ export const TASKS: Task[] = [
       else if (out.stdout !== `region=eu limit=25 total=${total}\n`) faults.push(`out/report.txt holds ${JSON.stringify(out.stdout)}`);
       // A total written with digit groups, such as 28,751, is the total.
       if (!replies.some((text) => text.replace(/(?<=\d)[,\u00a0\u202f ](?=\d{3}\b)/g, "").includes(String(total)))) faults.push(`the reply lacks the total, ${total}`);
-      // Once with no config, once with no data, and once to succeed; --help
-      // isn't counted.
+      // Once with no config, once with no data and once to succeed, and one
+      // more allowed; --help isn't counted.
       const runs = (await exec(["cat", "/home/agent/.report-runs"])).stdout.split("\n").filter(Boolean).length;
       if (runs > 4) faults.push(`report.py ran ${runs} times`);
       return faults;
@@ -276,7 +276,7 @@ export const TASKS: Task[] = [
       const note = replies.at(-1) ?? "";
       const faults: string[] = [];
       if (!note.includes("Priya")) faults.push("the note lacks the teammate's name");
-      if (!/7 December|December 7/.test(note)) faults.push("the note lacks the start date");
+      if (!/\b7(?:st|nd|rd|th)?(?: of)? Dec(?:ember)?\b|\bDec(?:ember)?\.? 7(?:st|nd|rd|th)?\b/i.test(note)) faults.push("the note lacks the start date");
       return faults;
     },
   },

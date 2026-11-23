@@ -126,6 +126,9 @@ describe("the harder tasks' checks", () => {
     expect(faults).toEqual([
       expect.stringMatching(/^5 hidden tests failed: parse\('1h1h'\) gave 7200, not 'ValueError'; format\(True\) gave '1s', not 'ValueError'; format\(90061, largest='h'\) gave '1d1h1m1s', not '25h1m1s'; /),
     ]);
+    // A module that hangs: the workspace's exec answers 124 once it's cut off.
+    const hung = async (argv: string[], input?: string) => (argv.includes("-") ? { status: 124, stdout: "" } : exec(argv, input));
+    expect((await check!({ replies: [], seed: "s", exec: hung }))[0]).toBe("1 hidden tests failed: the hidden tests didn't finish within 2 minutes");
     rmSync(join(home, "durations.py"));
     expect(await check!({ replies: [], seed: "s", exec })).toEqual(["1 hidden tests failed: the hidden tests couldn't run (exit 1)", "its own tests don't pass (exit 1)"]);
   });
@@ -162,5 +165,11 @@ describe("the harder tasks' checks", () => {
     expect(answer).toContain("Priya");
     expect(await check!({ replies: ["What's the teammate's name and start date?", "Welcome, Priya! You start on Monday 7 December. We're glad you're here."], seed: "s", exec })).toEqual([]);
     expect(await check!({ replies: ["Welcome, Alex! You start soon. We're glad you're here."], seed: "s", exec })).toEqual(["the note lacks the teammate's name", "the note lacks the start date"]);
+    for (const date of ["Monday, 7th December", "the 7th of December", "Dec 7", "December 7th", "7 Dec"]) {
+      expect(await check!({ replies: ["Q?", `Welcome, Priya! You start on ${date}.`], seed: "s", exec }), date).toEqual([]);
+    }
+    for (const date of ["17 December", "December 17", "7 Decembers ago"]) {
+      expect(await check!({ replies: ["Q?", `Welcome, Priya! You start on ${date}.`], seed: "s", exec }), date).toEqual(["the note lacks the start date"]);
+    }
   });
 });

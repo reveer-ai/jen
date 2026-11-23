@@ -5,7 +5,7 @@ import { startSide } from "./side.ts";
 
 // So a test can see that nothing was built or started.
 vi.mock("./build.ts", async (original) => ({ ...(await original<typeof import("./build.ts")>()), identify: vi.fn(), buildImages: vi.fn() }));
-vi.mock("./side.ts", async (original) => ({ ...(await original<typeof import("./side.ts")>()), startSide: vi.fn() }));
+vi.mock("./side.ts", async (original) => ({ ...(await original<typeof import("./side.ts")>()), startSide: vi.fn(), removeSide: vi.fn() }));
 import { TASKS } from "./tasks.ts";
 
 const env = { JEN_LIVE_MODEL: "openai/gpt-6-luna", JEN_LIVE_API_KEY: "sk-test" };
@@ -75,6 +75,23 @@ describe("main", () => {
     expect(identify).not.toHaveBeenCalled();
     expect(buildImages).not.toHaveBeenCalled();
     expect(startSide).not.toHaveBeenCalled();
+  });
+});
+
+describe("an evaluation whose build fails", () => {
+  afterEach(() => vi.restoreAllMocks());
+  test("exits 1 and leaves no folder under evals/", async () => {
+    const { readdirSync, existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const evals = join(import.meta.dirname, "../../evals");
+    const before = existsSync(evals) ? readdirSync(evals) : [];
+    vi.mocked(identify).mockResolvedValue({ ref: "nope", tree: "t", commit: "c", dirty: false });
+    vi.mocked(buildImages).mockRejectedValue(new Error("docker build --target agent failed: no Dockerfile"));
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    expect(await main(["--tasks", "direct", "--runs", "1", "--build", "nope"], env)).toBe(1);
+    expect(startSide).not.toHaveBeenCalled();
+    expect(existsSync(evals) ? readdirSync(evals) : []).toEqual(before);
   });
 });
 

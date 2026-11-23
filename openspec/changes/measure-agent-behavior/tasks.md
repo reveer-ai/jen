@@ -49,6 +49,7 @@
 ## 9. Evaluating this change
 
 - [x] 9.1 Evaluate the working tree against `main` on the eight tasks: `npm run eval -- --against main --tasks <the eight> --runs 20`. Verify that its folder is committed under `evals/`, that no task is worse with the tokens shown on this side only, and that nothing of it is left in Docker.
+  - `evals/2026-11-23T1929-6faaf6`, 2026-11-23: no pass rate worse, every difference unclear. `direct` was flagged slower (×1.64); rerun alone at 40 runs a side (`evals/2026-11-23T1941-0db335`), it was 39/40 against 40/40 and ×0.98, both unclear.
 - [x] 9.2 Run `npm run check`, `npm test` and `npm run test:live`. Verify they pass, other than the known flakes `environment.md` lists.
 
 ## Workflow follow-up

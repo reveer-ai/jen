@@ -165,10 +165,13 @@ export function summarize(input: Omit<Summary, "results" | "comparisons" | "chan
 }
 
 // What docs/interactions.html replays: each task's first passed run, or else
-// its first failed one, in the order of the tasks.
+// its first failed one, in the order of the tasks. Side a's come first, since
+// it's the build being evaluated.
 export function recording(summary: Summary, runs: RunRecord[]) {
+  const order = summary.sides.map((s) => s.side);
+  const ranked = [...runs].sort((x, y) => order.indexOf(x.side) - order.indexOf(y.side));
   const picked = summary.tasks.flatMap(({ name }) => {
-    const run = runs.find((r) => r.task === name && r.outcome === "passed") ?? runs.find((r) => r.task === name && r.outcome === "failed");
+    const run = ranked.find((r) => r.task === name && r.outcome === "passed") ?? ranked.find((r) => r.task === name && r.outcome === "failed");
     return run === undefined ? [] : [run];
   });
   const model = (side: string) => summary.sides.find((s) => s.side === side)?.model;

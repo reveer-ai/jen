@@ -166,6 +166,66 @@ describe("running a task against a runtime", () => {
     expect(run).toMatchObject({ task: "direct", outcome: "errored", error: 'POST /agents answered 403: {"error":"the runtime already holds 10 agents"}', faults: [] });
   });
 
+  test("a root's event stream the runtime refuses errors the run, rather than failing it for no replies", async () => {
+    const api = await stub((req, res) => {
+      if (req.method === "POST" && req.url === "/agents") return res.writeHead(201).end('{"id":"r1"}');
+      if (req.method === "POST" && req.url === "/agents/r1/messages") return res.writeHead(202).end();
+      if (req.method === "GET" && req.url === "/agents") return res.writeHead(200).end('[{"id":"r1","parent":null,"state":"running"}]');
+      if (req.url === "/agents/r1/events") return res.writeHead(502).end('{"error":"agent r1 could not be reached"}');
+      if (req.method === "DELETE" && req.url === "/agents/r1") return res.writeHead(204).end();
+      res.writeHead(404).end('{"error":"no route"}');
+    });
+    const run = await runTask({ api, runtime: "jen-eval-x-a", task: direct, name: "run-1", signal: new AbortController().signal, quietMs: 100 });
+    expect(run).toMatchObject({ outcome: "errored", error: 'GET /agents/r1/events answered 502: {"error":"agent r1 could not be reached"}', faults: [] });
+  });
+
+  test("a sub-agent deleted mid-run, whose stream is then refused, doesn't error the run", async () => {
+    let listed = 0;
+    const api = await stub((req, res) => {
+      if (req.method === "POST" && req.url === "/agents") return res.writeHead(201).end('{"id":"r1"}');
+      if (req.method === "POST" && req.url === "/agents/r1/messages") return res.writeHead(202).end();
+      // c1 is running at the first look, and gone after.
+      if (req.method === "GET" && req.url === "/agents") {
+        const child = listed++ === 0 ? ',{"id":"c1","parent":"r1","state":"running"}' : "";
+        return res.writeHead(200).end(`[{"id":"r1","parent":null,"state":"running"}${child}]`);
+      }
+      if (req.url === "/agents/c1/events") return res.writeHead(404).end('{"error":"no agent c1"}');
+      if (req.url === "/agents/r1/events") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`id: 1\nevent: item\ndata: ${JSON.stringify({ type: "message", role: "user", from: "owner", text: "What's the capital of Australia?" })}\n\n`);
+        res.write(`id: 2\nevent: item\ndata: ${JSON.stringify({ type: "message", role: "assistant", text: "Canberra." })}\n\n`);
+        return;
+      }
+      if (req.method === "DELETE" && req.url === "/agents/r1") return res.writeHead(204).end();
+      res.writeHead(404).end('{"error":"no route"}');
+    });
+    const run = await runTask({ api, runtime: "jen-eval-x-a", task: direct, name: "run-1", signal: new AbortController().signal, quietMs: 100 });
+    expect(run).toMatchObject({ outcome: "passed", agents: [{ id: "r1" }, { id: "c1", parent: "r1" }] });
+  });
+
+  test("a sub-agent whose stream is refused with anything but 404 or 409 errors the run, even once it has stopped", async () => {
+    let listed = 0;
+    const api = await stub((req, res) => {
+      if (req.method === "POST" && req.url === "/agents") return res.writeHead(201).end('{"id":"r1"}');
+      if (req.method === "POST" && req.url === "/agents/r1/messages") return res.writeHead(202).end();
+      // c1 is running at the first look, and stopped after.
+      if (req.method === "GET" && req.url === "/agents") {
+        const state = listed++ === 0 ? "running" : "stopped";
+        return res.writeHead(200).end(`[{"id":"r1","parent":null,"state":"running"},{"id":"c1","parent":"r1","state":"${state}"}]`);
+      }
+      if (req.url === "/agents/c1/events") return res.writeHead(502).end('{"error":"agent c1 could not be reached"}');
+      if (req.url === "/agents/r1/events") {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`id: 1\nevent: item\ndata: ${JSON.stringify({ type: "message", role: "assistant", text: "Canberra." })}\n\n`);
+        return;
+      }
+      if (req.method === "DELETE" && req.url === "/agents/r1") return res.writeHead(204).end();
+      res.writeHead(404).end('{"error":"no route"}');
+    });
+    const run = await runTask({ api, runtime: "jen-eval-x-a", task: direct, name: "run-1", signal: new AbortController().signal, quietMs: 100 });
+    expect(run).toMatchObject({ outcome: "errored", error: 'GET /agents/c1/events answered 502: {"error":"agent c1 could not be reached"}' });
+  });
+
   test("a run against a runtime with no usage route has no tokens, and isn't errored for it", async () => {
     let messaged = false;
     const api = await stub((req, res) => {
