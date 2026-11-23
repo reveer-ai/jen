@@ -16,7 +16,12 @@
 // POST /model/responses is an agent's model call: the runtime checks it
 // against the request its adapter builds (see model.ts), sends it to the
 // provider with the owner's key, which never reaches an agent, and streams
-// the answer back. It's the only route under /model.
+// the answer back. It's the only route under /model. As it streams, it keeps
+// a copy of the answer, and once the answer ends adds the call and the
+// answer's usage to the calling agent's count. Counts live in memory for every
+// agent since the runtime started, deleted ones included, each with its root,
+// and only the owner reads them, at GET /usage. Nothing an agent can read
+// carries them, so measuring agents changes nothing they see.
 //
 // The owner's POST /agents takes {"grant", "name"}, and names the root it
 // spawns; an agent's takes only {"grant"}, since a sub-agent has no name. An
@@ -24,7 +29,7 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
-import { pipeline, Readable } from "node:stream";
+import { pipeline, Readable, Transform } from "node:stream";
 import type { ReadableStream } from "node:stream/web";
 import { checkModelRequest } from "./model.ts";
 import { RuntimeError, type Address, type Caller, type Grant, type Runtime } from "./runtime.ts";
@@ -67,9 +72,48 @@ export const MAX_PATH = 4096;
 // A command's timeout when the body names none, in seconds.
 const DEFAULT_TIMEOUT = 120;
 
+// One agent's model usage, as GET /usage reports it. cost is present only
+// once a provider has reported one.
+export interface Usage {
+  id: string;
+  root: string;
+  calls: number;
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cost?: number;
+}
+
 export function createRuntimeServer({ runtime, ownerToken, model, fetch = globalThis.fetch }: RuntimeServerOptions): http.Server {
   const owner = digest(`Bearer ${ownerToken}`);
   const responses = `${(model.baseURL ?? DEFAULT_BASE_URL).replace(/\/+$/, "")}/responses`;
+  // Each agent's model usage, by agent ID, in the order agents first called.
+  const usage = new Map<string, Usage>();
+
+  // Adds one call to the agent's count, and the tokens of the answer's usage
+  // when body is a JSON answer that has one.
+  function count(id: string, root: string, body: Buffer | undefined) {
+    let entry = usage.get(id);
+    if (entry === undefined) {
+      entry = { id, root, calls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+      usage.set(id, entry);
+    }
+    entry.calls++;
+    let reported: any;
+    try {
+      reported = body === undefined ? undefined : JSON.parse(body.toString("utf8"))?.usage;
+    } catch {
+      return;
+    }
+    if (typeof reported !== "object" || reported === null) return;
+    const tokens = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0);
+    entry.inputTokens += tokens(reported.input_tokens);
+    entry.cachedTokens += tokens(reported.input_tokens_details?.cached_tokens);
+    entry.outputTokens += tokens(reported.output_tokens);
+    entry.reasoningTokens += tokens(reported.output_tokens_details?.reasoning_tokens);
+    if (typeof reported.cost === "number" && Number.isFinite(reported.cost)) entry.cost = (entry.cost ?? 0) + reported.cost;
+  }
 
   // The caller, or undefined when the token belongs to no one.
   async function authenticate(header: string | undefined): Promise<Caller | undefined> {
@@ -165,8 +209,11 @@ export function createRuntimeServer({ runtime, ownerToken, model, fetch = global
     }
     const checked = checkModelRequest(parsed, model.model);
     if ("error" in checked) return json(res, 400, { error: checked.error });
+    // An agent's root never changes, so it's looked up once, on its first call.
+    const root = usage.get(caller.id)?.root ?? (await runtime.rootOf(caller.id));
     // A caller that hung up while its body arrived gets nothing sent.
     if (hangUp.signal.aborted) return;
+    // From here on the call counts, whatever comes of it.
     let answer: Response;
     try {
       answer = await fetch(responses, {
@@ -176,6 +223,7 @@ export function createRuntimeServer({ runtime, ownerToken, model, fetch = global
         signal: hangUp.signal,
       });
     } catch (error) {
+      count(caller.id, root, undefined);
       if (hangUp.signal.aborted) return;
       return json(res, 502, { error: `the model provider could not be reached: ${error instanceof Error ? error.message : String(error)}` });
     }
@@ -185,10 +233,27 @@ export function createRuntimeServer({ runtime, ownerToken, model, fetch = global
       headers[name] = name === "set-cookie" ? answer.headers.getSetCookie() : value;
     }
     res.writeHead(answer.status, headers);
-    if (answer.body === null) return void res.end();
+    if (answer.body === null) {
+      count(caller.id, root, undefined);
+      return void res.end();
+    }
+    // The answer passes through unchanged, and a copy of it, up to the bound
+    // a request has, is read for its usage once it has all passed.
+    const copy: Buffer[] = [];
+    let copied = 0;
+    const tap = new Transform({
+      transform(chunk: Buffer, _encoding, done) {
+        copied += chunk.length;
+        if (copied <= MAX_MODEL_BODY) copy.push(chunk);
+        done(null, chunk);
+      },
+    });
     // A provider that fails mid-answer cuts the agent's response off too, and
-    // an agent that hangs up cancels the provider's.
-    pipeline(Readable.fromWeb(answer.body as ReadableStream<Uint8Array>), res, () => {});
+    // an agent that hangs up cancels the provider's. Either way the call
+    // counts, with no tokens.
+    pipeline(Readable.fromWeb(answer.body as ReadableStream<Uint8Array>), tap, res, (error) => {
+      count(caller.id, root, error || copied > MAX_MODEL_BODY ? undefined : Buffer.concat(copy));
+    });
   }
 
   // Relays a message, an event stream, a UI or a page. A message carries its
@@ -244,6 +309,10 @@ export function createRuntimeServer({ runtime, ownerToken, model, fetch = global
     const [empty, agents, id, action, ...rest] = path.split("/");
     const method = req.method;
     if (path === "/model/responses" && method === "POST") return modelCall(req, res, caller);
+    if (path === "/usage" && method === "GET") {
+      if (caller !== null) throw new RuntimeError(403, "only the owner may read usage");
+      return json(res, 200, { agents: [...usage.values()] });
+    }
     if (path === "/workspace/commands" && method === "POST") return command(req, res, caller);
     if (path === "/workspace/files" && (method === "GET" || method === "PUT")) return file(req, res, caller, query);
     if (empty === "" && agents === "agents" && rest.length === 0) {

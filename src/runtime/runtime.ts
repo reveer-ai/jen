@@ -211,6 +211,15 @@ export class Runtime {
     return undefined;
   }
 
+  // The root of id's tree: id itself for a root, or for an agent the runtime
+  // no longer holds.
+  async rootOf(id: string): Promise<string> {
+    const { nodes } = await this.#read();
+    let root = id;
+    for (let p = nodes.get(id)?.parent ?? null; p !== null; p = nodes.get(p)?.parent ?? null) root = p;
+    return root;
+  }
+
   // grant may leave a capability out, which means false. The owner's spawn
   // names the root, and an agent's names nothing. The name is checked here, in
   // the queue, so two spawns of one name can't both pass.

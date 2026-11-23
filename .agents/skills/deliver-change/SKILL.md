@@ -19,6 +19,7 @@ Run it as `flo-review`'s handoff. If the maintainer asks for changes, make them,
    - **Reading order**: the files that carry the change, and where to start in each.
    - **Review**: a line on what the agent review caught, and anything declined.
    - **Verification**: which checks passed, which didn't run, and what those could still find.
+   - **Evaluation**: the comparison's report from `evals/`, quoted as `npm run eval -- report` prints it, or the reason the change has none.
    - **Friction**: anything done by hand that repeated earlier work, or that took longer than it should have. `tend` reads these to find skills worth writing. Leave it out if there was none.
 5. Commit and push it all, and mark the pull request ready for review. That's the signal it's the maintainer's turn.
 

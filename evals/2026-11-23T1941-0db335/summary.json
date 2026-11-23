@@ -1,0 +1,91 @@
+{
+ "id": "0db335",
+ "command": "npm run eval -- --against main --tasks direct --runs 40",
+ "started": "2026-11-23T19:41:46.568Z",
+ "ended": "2026-11-23T19:44:07.495Z",
+ "partial": false,
+ "sides": [
+  {
+   "side": "a",
+   "build": {
+    "ref": null,
+    "tree": "04aebba0b8a22997f6b5dba23c5025a2db33d770",
+    "commit": "e3a9be25af7dfb401aabbf3208859c2663142b9c",
+    "dirty": true
+   },
+   "model": "openai/gpt-6-luna"
+  },
+  {
+   "side": "b",
+   "build": {
+    "ref": "main",
+    "tree": "2e432059b08f11ae2638ca62d33a4e1ff91a7ede",
+    "commit": "b2f8debed8a3358ba1d30b7a239311214343d56e",
+    "dirty": false
+   },
+   "model": "openai/gpt-6-luna"
+  }
+ ],
+ "tasks": [
+  {
+   "name": "direct",
+   "hash": "d7d3c013f4a0c0e0"
+  }
+ ],
+ "results": [
+  {
+   "task": "direct",
+   "side": "a",
+   "runs": 40,
+   "passes": 39,
+   "errored": 0,
+   "interval": [
+    0.8711863103652591,
+    0.9955731684973186
+   ],
+   "faults": {
+    "filler_reply": 1
+   },
+   "median": {
+    "durationMs": 1657,
+    "calls": 1,
+    "tokens": 953
+   }
+  },
+  {
+   "task": "direct",
+   "side": "b",
+   "runs": 40,
+   "passes": 40,
+   "errored": 0,
+   "interval": [
+    0.9123783988027135,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 1691.5,
+    "calls": null,
+    "tokens": null
+   }
+  }
+ ],
+ "comparisons": [
+  {
+   "task": "direct",
+   "passes": {
+    "p": 1,
+    "verdict": "unclear",
+    "runsPerSide": 309
+   },
+   "duration": {
+    "p": 0.8360949207534015,
+    "direction": "unclear",
+    "ratio": 0.9796039018622524
+   },
+   "tokens": null
+  }
+ ],
+ "chanceFlags": 0.05,
+ "errors": []
+}

@@ -1092,4 +1092,117 @@ describe("POST /model/responses", () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: expect.stringMatching(/^the model provider could not be reached: /) });
   });
+
+  describe("usage", () => {
+    const usage = async () => (await call("/usage")).json();
+    const entry = (id: string, root: string, counts: Partial<Record<"calls" | "inputTokens" | "cachedTokens" | "outputTokens" | "reasoningTokens" | "cost", number>> = {}) => ({
+      id,
+      root,
+      calls: 1,
+      inputTokens: 0,
+      cachedTokens: 0,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      ...counts,
+    });
+    const answered = (usage: unknown) =>
+      JSON.stringify({ id: "resp_1", object: "response", status: "completed", output: [], usage });
+
+    test("a call with usage adds its tokens to the agent's count, and the agent receives the answer's bytes unchanged", async () => {
+      const { root, headers } = await agent();
+      const body = answered({ input_tokens: 120, input_tokens_details: { cached_tokens: 20 }, output_tokens: 30, output_tokens_details: { reasoning_tokens: 10 }, total_tokens: 150 });
+      provider = () => new Response(body, { headers: { "content-type": "application/json" } });
+      const res = await post(headers, valid());
+      expect(await res.text()).toBe(body);
+      await vi.waitFor(async () => expect(await usage()).toEqual({ agents: [entry(root.id, root.id, { inputTokens: 120, cachedTokens: 20, outputTokens: 30, reasoningTokens: 10 })] }));
+      // A second call adds to the first.
+      expect((await post(headers, valid())).status).toBe(200);
+      await vi.waitFor(async () => expect(await usage()).toEqual({ agents: [entry(root.id, root.id, { calls: 2, inputTokens: 240, cachedTokens: 40, outputTokens: 60, reasoningTokens: 20 })] }));
+    });
+
+    test("a long answer streamed in pieces passes unchanged and is counted", async () => {
+      const { root, headers } = await agent();
+      const body = answered({ input_tokens: 7, output_tokens: 3 }).replace('"output":[]', `"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"${"x".repeat(200_000)}"}]}]`);
+      const bytes = new TextEncoder().encode(body);
+      provider = () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              for (let i = 0; i < bytes.length; i += 4096) controller.enqueue(bytes.slice(i, i + 4096));
+              controller.close();
+            },
+          }),
+        );
+      expect(await (await post(headers, valid())).text()).toBe(body);
+      await vi.waitFor(async () => expect(await usage()).toEqual({ agents: [entry(root.id, root.id, { inputTokens: 7, outputTokens: 3 })] }));
+    });
+
+    test("a reported cost is summed, and absent when no provider reports one", async () => {
+      const { root, headers } = await agent();
+      const { body: other } = await spawn({ spawn: false });
+      provider = () => new Response(answered({ input_tokens: 1, output_tokens: 1, cost: 0.25 }));
+      await post(headers, valid());
+      await post(headers, valid());
+      provider = () => new Response(answered({ input_tokens: 1, output_tokens: 1 }));
+      await post(as(tokenOf(other.id)), valid());
+      await vi.waitFor(async () =>
+        expect(await usage()).toEqual({
+          agents: [entry(root.id, root.id, { calls: 2, inputTokens: 2, outputTokens: 2, cost: 0.5 }), entry(other.id, other.id, { inputTokens: 1, outputTokens: 1 })],
+        }),
+      );
+    });
+
+    test("a failed call with no usage, and an answer that isn't JSON, count as calls with no tokens", async () => {
+      const { root, headers } = await agent();
+      provider = () => Response.json({ error: { message: "slow down" } }, { status: 429 });
+      expect((await post(headers, valid())).status).toBe(429);
+      provider = () => new Response("<html>bad gateway</html>", { status: 502 });
+      expect(await (await post(headers, valid())).text()).toBe("<html>bad gateway</html>");
+      await vi.waitFor(async () => expect(await usage()).toEqual({ agents: [entry(root.id, root.id, { calls: 2 })] }));
+    });
+
+    test("a provider that can't be reached counts as a call with no tokens", async () => {
+      const { root, headers } = await agent();
+      const other = await listen(createRuntimeServer({ runtime, ownerToken, model: { ...modelSettings, baseURL: "http://127.0.0.1:1" } }));
+      expect((await fetch(`${other}/model/responses`, { method: "POST", headers, body: JSON.stringify(valid()) })).status).toBe(502);
+      expect(await (await fetch(`${other}/usage`, { headers: owner })).json()).toEqual({ agents: [entry(root.id, root.id)] });
+    });
+
+    test("a refused call reaches no provider and isn't counted", async () => {
+      const { headers } = await agent();
+      expect((await post(headers, { ...valid(), stream: true })).status).toBe(400);
+      expect(await usage()).toEqual({ agents: [] });
+    });
+
+    test("each entry names its root, and a deleted agent's counts are still reported", async () => {
+      const { body: root } = await spawn({ spawn: true });
+      const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+      provider = () => new Response(answered({ input_tokens: 5, output_tokens: 2 }));
+      await post(as(tokenOf(root.id)), valid());
+      await post(as(tokenOf(child.id)), valid());
+      expect((await call(`/agents/${child.id}`, { method: "DELETE" })).status).toBe(204);
+      await vi.waitFor(async () =>
+        expect(await usage()).toEqual({ agents: [entry(root.id, root.id, { inputTokens: 5, outputTokens: 2 }), entry(child.id, root.id, { inputTokens: 5, outputTokens: 2 })] }),
+      );
+      expect((await call(`/agents/${root.id}`, { method: "DELETE" })).status).toBe(204);
+      expect((await usage()).agents).toHaveLength(2);
+    });
+
+    test("an agent asking for usage gets 403", async () => {
+      const { headers } = await agent();
+      await post(headers, valid());
+      const res = await fetch(`${base}/usage`, { headers });
+      expect([res.status, await res.json()]).toEqual([403, { error: "only the owner may read usage" }]);
+    });
+
+    test("listing agents carries no usage", async () => {
+      const { body: root } = await spawn({ spawn: true });
+      const { body: child } = await spawn({ spawn: false }, as(tokenOf(root.id)));
+      provider = () => new Response(answered({ input_tokens: 5, output_tokens: 2 }));
+      await post(as(tokenOf(child.id)), valid());
+      await vi.waitFor(async () => expect((await usage()).agents).toHaveLength(1));
+      const listed = await (await fetch(`${base}/agents`, { headers: as(tokenOf(root.id)) })).json();
+      expect(listed).toEqual([{ id: child.id, parent: root.id, name: null, grant: { spawn: false, workspace: false }, state: "running" }]);
+    });
+  });
 });
