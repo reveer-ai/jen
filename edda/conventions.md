@@ -37,6 +37,7 @@ How work is done on this project. These apply to anyone working on it.
 
 ## Git and verification
 
+- **Nothing the project needs is kept only on one machine.** Evidence, results and context belong in the repo and pushed, or in Linear. Local-only storage is for what serves only that machine's user.
 - **Every push carries the record.** Commit any pending `edda/` changes with the task's own files.
 - **Pull requests are squash-merged.** The `main` ruleset allows nothing else, and refuses any push to `main` that isn't a merged pull request (see `environment.md`).
 - **An outside pull request gets the maintainer's review.** Its CI runs only once the maintainer approves its workflows, after reading what it changes. Agents review it when the maintainer asks.
