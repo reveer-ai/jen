@@ -12,9 +12,9 @@
 // other evaluation, and none of the user's jen, shares them.
 
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 export const TARGETS = ["agent", "runtime", "workspace"] as const;
 export type Target = (typeof TARGETS)[number];
@@ -64,13 +64,14 @@ export async function identify(repo: string, ref: string | null): Promise<Build>
     return { ref, tree: await git(repo, ["rev-parse", `${commit}^{tree}`]), commit, dirty: false };
   }
   const commit = await git(repo, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  const index = resolve(repo, await git(repo, ["rev-parse", "--git-path", "index"]));
   const scratch = mkdtempSync(join(tmpdir(), "jen-eval-index-"));
   try {
-    const temporary = join(scratch, "index");
-    // Starting from the real index only saves rehashing unchanged files.
-    if (existsSync(index)) copyFileSync(index, temporary);
-    const env = { GIT_INDEX_FILE: temporary };
+    const env = { GIT_INDEX_FILE: join(scratch, "index") };
+    // The index starts from the commit, with no stat data, so git hashes every
+    // file. A copy of the real index would save rehashing, but its fresh mtime
+    // defeats git's racy-clean check: an edit made in the same second as the
+    // real index was written looks unchanged.
+    await git(repo, ["read-tree", commit], env);
     await git(repo, ["add", "-A"], env);
     const tree = await git(repo, ["write-tree"], env);
     return { ref: null, tree, commit, dirty: tree !== (await git(repo, ["rev-parse", `${commit}^{tree}`])) };

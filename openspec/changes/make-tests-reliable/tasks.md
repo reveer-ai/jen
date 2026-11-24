@@ -4,23 +4,23 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 ## 1. Oversized bodies
 
-- [ ] 1.1 In `src/agent/server.test.ts`, "a body over 1 MiB gets 413, declared or chunked, and changes nothing": send the declared case with `http.request`, declaring a `Content-Length` of `MAX_MESSAGE + 1` and writing one byte. Ignore request errors, and read the status and `Connection` header from the response, as the runtime's 17 MiB test does. The chunked case writes exactly `MAX_MESSAGE + 1` bytes, all of which the agent reads before it answers, so it stays as it is.
-- [ ] 1.2 In `src/runtime/server.test.ts`, send the declared cases of "a spawn body over the bound gets 413" (16 KiB) and "a body over 64 KiB gets 413 and closes the connection" the same way. Factor the declared request into one helper if the three tests can share it.
+- [x] 1.1 In `src/agent/server.test.ts`, "a body over 1 MiB gets 413, declared or chunked, and changes nothing": send the declared case with `http.request`, declaring a `Content-Length` of `MAX_MESSAGE + 1` and writing one byte. Ignore request errors, and read the status and `Connection` header from the response, as the runtime's 17 MiB test does. The chunked case writes exactly `MAX_MESSAGE + 1` bytes, all of which the agent reads before it answers, so it stays as it is.
+- [x] 1.2 In `src/runtime/server.test.ts`, send the declared cases of "a spawn body over the bound gets 413" (16 KiB) and "a body over 64 KiB gets 413 and closes the connection" the same way. Factor the declared request into one helper if the three tests can share it.
 
 ## 2. A build's identity
 
-- [ ] 2.1 In `identify` in `scripts/eval/build.ts`, stop copying the real index. Fill the temporary index with `git read-tree <commit>` under `GIT_INDEX_FILE`, then `git add -A` and `git write-tree` as now. With no stat data in the index, git hashes every file, so no timestamp can hide an edit. Replace the comment about saving rehashing with one saying why the copy was dropped: its fresh mtime defeated git's racy-clean check.
-- [ ] 2.2 Time `identify` on this repo before and after. Record both in the pull request.
-- [ ] 2.3 Verify by repeating `build.test.ts`'s dirty-tree case 400 times, as the investigation did (6 misses before the fix). Pass with none.
+- [x] 2.1 In `identify` in `scripts/eval/build.ts`, stop copying the real index. Fill the temporary index with `git read-tree <commit>` under `GIT_INDEX_FILE`, then `git add -A` and `git write-tree` as now. With no stat data in the index, git hashes every file, so no timestamp can hide an edit. Replace the comment about saving rehashing with one saying why the copy was dropped: its fresh mtime defeated git's racy-clean check.
+- [x] 2.2 Time `identify` on this repo before and after. Record both in the pull request.
+- [x] 2.3 Verify by repeating `build.test.ts`'s dirty-tree case 400 times, as the investigation did (6 misses before the fix). Pass with none.
 
 ## 3. The watcher-buffer test
 
-- [ ] 3.1 In `src/agent/server.test.ts`, "its buffer stays bounded, others are served, and it gets everything once it reads": save its 128 prestored items in one `store.save` call instead of 64, and give the test a 30-second timeout, with a comment saying its work must exceed the kernel's socket buffers. Keep its sizes.
-- [ ] 3.2 Verify it under the disk load that slowed it to 7.4 s: 15 runs alone, each well inside the new timeout. Record the times in the pull request.
+- [x] 3.1 In `src/agent/server.test.ts`, "its buffer stays bounded, others are served, and it gets everything once it reads": save its 128 prestored items in one `store.save` call instead of 64, and give the test a 30-second timeout, with a comment saying its work must exceed the kernel's socket buffers. Keep its sizes.
+- [x] 3.2 Verify it under the disk load that slowed it to 7.4 s: 15 runs alone, each well inside the new timeout. Record the times in the pull request.
 
 ## 4. The runtime live check's crash
 
-- [ ] 4.1 In `src/runtime/runtime.live.test.ts`, let `docker()` take the exit codes it accepts, defaulting to 0. The exec that sends PID 1 `SIGTERM` accepts 0 and 137, with a comment saying why: the container stops when PID 1 exits, and takes the exec'd process with it unless it exits first.
+- [x] 4.1 In `src/runtime/runtime.live.test.ts`, let `docker()` take the exit codes it accepts, defaulting to 0. The exec that sends PID 1 `SIGTERM` accepts 0 and 137, with a comment saying why: the container stops when PID 1 exits, and takes the exec'd process with it unless it exits first.
 
 ## 5. Causes not found yet
 
