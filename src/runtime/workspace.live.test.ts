@@ -322,6 +322,11 @@ describe("commands", () => {
     await until(async () => (await output("ps -eo args | grep -cx 'sleep 100'; true")) === "0\n", "the timed-out command to end");
   }, 60_000);
 
+  test("a command that stops itself keeps its call until its timeout", async () => {
+    const answer = await run("kill -STOP $$; echo resumed", 1);
+    expect(answer).toMatchObject({ status: 200, body: { exitCode: null, timedOut: true, output: "" } });
+  }, 60_000);
+
   test("1 MiB written straight to the exec's stream through /proc gets 502 at once, and the command is killed", async () => {
     const answer = await run("head -c 1048576 /dev/zero > /proc/$PPID/fd/1; sleep 101");
     expect(answer.status).toBe(502);

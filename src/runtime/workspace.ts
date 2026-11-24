@@ -51,18 +51,19 @@ export const STOPPED_MS = 1_000;
 //    wrapper's own: whatever follows may be the command's.
 // 2. once the command's shell exits, its exit code and the output's size
 // 3. the output, whole within OUTPUT_CAP, or else its start and end.
-// setsid gives the command a process group of its own, which the runtime
-// kills on a timeout or a hang-up. It doesn't fork, since a background
-// command of a shell without job control never leads its group, so the line
-// names the wrapper and the group. Without job control, wait returns only
-// once the command ends, and bash starts it with SIGINT and SIGQUIT ignored,
-// which env undoes. Job control (set -m and wait -f) isn't used: bash 5.2's
-// wait -f sometimes spins forever once its job is killed, about once in 150
-// timeouts under load. Output goes to a file, not the exec's stream, so a
-// background process holds the file and not the call, and long output is
-// kept whole. A file that's printed whole is deleted first.
-export const WRAPPER = `mkdir -p -- "\${2%/*}"
-setsid env --default-signal=INT,QUIT bash -c 'echo "$PPID $$"; exec bash -c "$1" </dev/null >"$2" 2>&1' jen "$1" "$2" &
+// set -m gives the command a process group of its own, which the runtime
+// kills on a timeout or a hang-up, and starts it with no signal ignored.
+// Job control is turned off before the wait, so wait returns only once the
+// command ends, not when it stops. wait -f would do the same under job
+// control, but bash 5.2's sometimes spins forever once its job is killed,
+// about once in 150 timeouts under load. Output goes to a file, not the
+// exec's stream, so a background process holds the file and not the call,
+// and long output is kept whole. A file that's printed whole is deleted
+// first.
+export const WRAPPER = `set -m
+mkdir -p -- "\${2%/*}"
+bash -c 'echo "$PPID $$"; exec bash -c "$1" </dev/null >"$2" 2>&1' jen "$1" "$2" &
+set +m
 wait $!
 code=$?
 size=$(stat -c %s -- "$2" 2>/dev/null) || { size=0; : >"$2"; }
