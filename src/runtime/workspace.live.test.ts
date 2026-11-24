@@ -295,6 +295,10 @@ describe("commands", () => {
     expect(await output("pwd")).toBe("/home/agent\n");
   });
 
+  test("a command starts with no signal ignored", async () => {
+    expect(await output("grep SigIgn /proc/self/status")).toBe("SigIgn:\t0000000000000000\n");
+  });
+
   test("long output is cut to its start and end, and saved whole", async () => {
     const answer = await run("seq 1 30000");
     const whole = Buffer.byteLength(Array.from({ length: 30000 }, (_, i) => `${i + 1}\n`).join(""));
