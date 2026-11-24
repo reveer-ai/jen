@@ -16,7 +16,7 @@ Tests fail now and then for reasons unrelated to the change under test, so CI tu
 
 - **The oversized-body tests stop racing the close.** The agent's declared case, and the runtime's spawn and command tests, declare a length over the bound and send only part of it, then read the 413 from the response, as the runtime's 17 MiB test does. The servers don't change.
 - **`agent-protocol` says what a client can see.** Its 413 requirement gains the sentence `agent-runtime`'s already has: a client still sending when the connection closes may see it reset instead.
-- **`identify` builds its temporary index from the commit, not a copy.** `git read-tree` of the commit fills it with no stat data, so `git add -A` hashes every file and can't trust a stale timestamp.
+- **`identify` builds its temporary index from the real index's entries, not a copy.** The entries go in with no stat data, so `git add -A` hashes every file and can't trust a stale timestamp. (This said `git read-tree` of the commit, which review showed drops what's staged; see task 2.1.)
 - **The watcher-buffer test gets a timeout that fits its work**, with its setup saved in one transaction.
 - **The runtime live check accepts 137 from the exec that crashes the agent**, and only from that one.
 - **Each cause not found yet is found before it's fixed:** each is reproduced under load with what's left behind recorded, then fixed where the cause lies.
