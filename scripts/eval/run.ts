@@ -367,6 +367,8 @@ function exec(container: string, argv: string[], input?: string): Promise<{ stat
       if (error && /No such container|is not running/.test(stderr)) return reject(new HarnessError(`docker exec failed: ${stderr.trim()}`));
       resolve({ status: typeof error?.code === "number" ? error.code : 0, stdout });
     });
+    // A command may exit without reading its input; its exit code says how it went.
+    child.stdin!.on("error", () => {});
     child.stdin!.end(input ?? "");
   });
 }

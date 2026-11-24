@@ -33,11 +33,13 @@ export interface Build {
 // A signal that aborts kills it.
 export function command(file: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string; signal?: AbortSignal } = {}): Promise<string> {
   return new Promise((done, fail) => {
-    const child = spawn(file, args, { cwd: options.cwd, env: options.env, stdio: ["pipe", "pipe", "pipe"], signal: options.signal });
+    // A command given no input gets no stdin pipe, so one that exits without
+    // reading it can't fail the write with EPIPE.
+    const child = spawn(file, args, { cwd: options.cwd, env: options.env, stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"], signal: options.signal });
     let stdout = "";
     let stderr = "";
-    child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
-    child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+    child.stdout!.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
+    child.stderr!.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
     const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => child.kill("SIGKILL"), options.timeoutMs);
     child.on("error", (error) => (clearTimeout(timer), fail(new Error(`${file} ${args[0]} failed: ${error.message}`))));
     child.on("close", (code, signal) => {
@@ -45,7 +47,11 @@ export function command(file: string, args: string[], options: { cwd?: string; e
       if (code === 0) return done(stdout);
       fail(new Error(`${file} ${args.slice(0, 2).join(" ")} failed${signal ? ` (${signal})` : ""}: ${(stderr || stdout).trim().split("\n").slice(-20).join("\n")}`));
     });
-    child.stdin.end(options.input ?? "");
+    if (child.stdin) {
+      // A command may exit without reading its input; its exit code says how it went.
+      child.stdin.on("error", () => {});
+      child.stdin.end(options.input);
+    }
   });
 }
 
