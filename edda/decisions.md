@@ -4,7 +4,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-23
 
-Made in [JEN-24](https://linear.app/reveer/issue/JEN-24), aligning on its proposal and design with the maintainer. Its proposal and design are in the `measure-agent-behavior` change, under `openspec/changes/`, archived there once merged:
+Made in [JEN-24](https://linear.app/reveer/issue/JEN-24), aligning on its proposal and design with the maintainer. The proposal and design are in `openspec/changes/archive/2026-11-23-measure-agent-behavior/`:
 
 - **How agents behave on a real model is measured by an evaluation, not a test.** `npm run eval` reports each task's pass rate and never fails on agents' behavior, and no test that `npm test` or `npm run test:live` runs holds agents to a task. The behavior live check is deleted. *Why:* a test should always pass, so its failure is a bug, and the behavior check failed without any change on `openai/gpt-6-luna`. Three runs a pass can't tell a fault rate of 1 in 3 from 0 in 3, and "no worse than `main`" could only be shown by a comparison built by hand. *Rejected:* keeping a test with a pass bar under 100%, which still fails about as often as noise crosses it and says nothing about two builds. Supersedes 2026-11-11's tolerated delegation failures and its "no worse than `main`" bar, and 2026-11-18's accepted Luna flake.
 - **A comparison measures both sides fresh in one evaluation, their runs interleaved, and never reuses an earlier result.** Each side's build is identified by its git tree and has image tags and a runtime of its own. *Why:* a model name can move to a new snapshot, a provider's serving changes, and load varies by the hour, so only runs made side by side compare builds.
