@@ -12,9 +12,9 @@
 // other evaluation, and none of the user's jen, shares them.
 
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 export const TARGETS = ["agent", "runtime", "workspace"] as const;
 export type Target = (typeof TARGETS)[number];
@@ -31,14 +31,14 @@ export interface Build {
 // Runs a command to its end, resolving with its output, or rejecting with its
 // error output when it fails.
 // A signal that aborts kills it.
-export function command(file: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string; signal?: AbortSignal } = {}): Promise<string> {
+export function command(file: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string; encoding?: BufferEncoding; signal?: AbortSignal } = {}): Promise<string> {
   return new Promise((done, fail) => {
     // A command given no input gets no stdin pipe, so one that exits without
     // reading it can't fail the write with EPIPE.
     const child = spawn(file, args, { cwd: options.cwd, env: options.env, stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"], signal: options.signal });
     let stdout = "";
     let stderr = "";
-    child.stdout!.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
+    child.stdout!.setEncoding(options.encoding ?? "utf8").on("data", (chunk) => (stdout += chunk));
     child.stderr!.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
     const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => child.kill("SIGKILL"), options.timeoutMs);
     child.on("error", (error) => (clearTimeout(timer), fail(new Error(`${file} ${args[0]} failed: ${error.message}`))));
@@ -50,7 +50,7 @@ export function command(file: string, args: string[], options: { cwd?: string; e
     if (child.stdin) {
       // A command may exit without reading its input; its exit code says how it went.
       child.stdin.on("error", () => {});
-      child.stdin.end(options.input);
+      child.stdin.end(options.input, options.encoding ?? "utf8");
     }
   });
 }
@@ -64,13 +64,18 @@ export async function identify(repo: string, ref: string | null): Promise<Build>
     return { ref, tree: await git(repo, ["rev-parse", `${commit}^{tree}`]), commit, dirty: false };
   }
   const commit = await git(repo, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  const index = resolve(repo, await git(repo, ["rev-parse", "--git-path", "index"]));
   const scratch = mkdtempSync(join(tmpdir(), "jen-eval-index-"));
   try {
-    const temporary = join(scratch, "index");
-    // Starting from the real index only saves rehashing unchanged files.
-    if (existsSync(index)) copyFileSync(index, temporary);
-    const env = { GIT_INDEX_FILE: temporary };
+    const env = { GIT_INDEX_FILE: join(scratch, "index") };
+    // The index starts with the real one's entries and none of its stat data,
+    // so it keeps what's staged, a force-added ignored file included, and git
+    // hashes every file. A copy of the real index would save rehashing, but
+    // its fresh mtime defeats git's racy-clean check: an edit made in the same
+    // second as the real index was written looks unchanged. Paths pass
+    // through as latin1, which keeps every byte, so a name that isn't UTF-8
+    // comes back as it was.
+    const entries = await command("git", ["ls-files", "--stage", "-z"], { cwd: repo, encoding: "latin1" });
+    await command("git", ["update-index", "-z", "--index-info"], { cwd: repo, env: { ...process.env, ...env }, input: entries, encoding: "latin1" });
     await git(repo, ["add", "-A"], env);
     const tree = await git(repo, ["write-tree"], env);
     return { ref: null, tree, commit, dirty: tree !== (await git(repo, ["rev-parse", `${commit}^{tree}`])) };

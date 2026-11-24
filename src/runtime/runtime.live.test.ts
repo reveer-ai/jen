@@ -95,7 +95,9 @@ test.skipIf(!apiKey || !model)("the runtime keeps a tree of agents on Docker", {
     const childStarted = docker(["inspect", "-f", "{{.State.StartedAt}}", container(childId)]).trim();
     const watcher = await fetch(`${base}/agents/${rootId}/events`, { headers: owner, signal: AbortSignal.timeout(30_000) });
     const watched = watcher.body!.pipeTo(new WritableStream()).then(() => "ended", (error) => (error.name === "TimeoutError" ? "hung" : "ended"));
-    docker(["exec", container(rootId), "node", "-e", "process.kill(1, 'SIGTERM')"]);
+    // The container stops when PID 1 exits, and takes this exec with it, as
+    // 137, unless the exec exits first.
+    docker(["exec", container(rootId), "node", "-e", "process.kill(1, 'SIGTERM')"], { accept: [0, 137] });
     expect(await watched).toBe("ended");
     await until(() => docker(["inspect", "-f", "{{.RestartCount}} {{.State.Status}}", container(rootId)]).trim() === "1 running", "the root to restart");
     expect(running(childId)).toBe(true);
@@ -286,9 +288,9 @@ async function until(check: () => boolean | Promise<boolean>, what: string) {
   throw new Error(`timed out waiting for ${what}`);
 }
 
-function docker(args: string[], { env, timeout = 30_000 }: { env?: NodeJS.ProcessEnv; timeout?: number } = {}): string {
+function docker(args: string[], { env, timeout = 30_000, accept = [0] }: { env?: NodeJS.ProcessEnv; timeout?: number; accept?: number[] } = {}): string {
   const result = spawnSync("docker", args, { encoding: "utf8", env, timeout });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`docker ${args[0]} exited ${result.status}: ${result.stderr}`);
+  if (!accept.includes(result.status!)) throw new Error(`docker ${args[0]} exited ${result.status}: ${result.stderr}`);
   return result.stdout;
 }

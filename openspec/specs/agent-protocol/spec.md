@@ -17,7 +17,7 @@ The agent SHALL serve a request only when its `Authorization` header is `Bearer`
 - **THEN** it gets 401 and no events
 
 ### Requirement: An invalid message is rejected
-A `POST /messages` whose body isn't JSON, whose `text` isn't a string, or whose `urgent` is present and not a boolean, SHALL get status 400 with a JSON body `{"error": "<message>"}`, and SHALL save nothing. Empty `text` SHALL be accepted: it's an empty reply. A body larger than 1 MiB SHALL get status 413, and the agent SHALL stop reading it once it passes that size.
+A `POST /messages` whose body isn't JSON, whose `text` isn't a string, or whose `urgent` is present and not a boolean, SHALL get status 400 with a JSON body `{"error": "<message>"}`, and SHALL save nothing. Empty `text` SHALL be accepted: it's an empty reply. A body larger than 1 MiB SHALL get status 413, and the agent SHALL stop reading it once it passes that size. A client still sending when the connection closes may see the connection reset instead of the 413.
 
 #### Scenario: Text isn't a string
 - **WHEN** a client posts `{"text": 5}`

@@ -48,6 +48,19 @@ const stubFetch = (async (url: string | URL | Request, init?: RequestInit) => {
   return provider(call);
 }) as typeof globalThis.fetch;
 
+// Posts to path a body declaring a length over its bound, and sends one byte
+// of it. A server answers that unread and closes, and closing on unread data
+// resets the connection, so a client still sending may lose the answer.
+function declareOver(path: string, method: string, headers: Record<string, string>, length: number) {
+  return new Promise<{ status?: number; connection?: string }>((resolve) => {
+    const { port } = new URL(base);
+    const req = http.request({ host: "127.0.0.1", port, method, path, headers: { ...headers, "Content-Length": String(length) } });
+    req.on("error", () => {});
+    req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
+    req.write("{");
+  });
+}
+
 async function listen(server: http.Server): Promise<string> {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -270,9 +283,7 @@ test("a spawn body that isn't JSON or has a bad grant gets 400", async () => {
 });
 
 test("a spawn body over the bound gets 413, declared or chunked, and creates nothing", async () => {
-  const declared = await call("/agents", { method: "POST", body: " ".repeat(MAX_BODY + 1) });
-  expect(declared.status).toBe(413);
-  expect(declared.headers.get("connection")).toBe("close");
+  expect(await declareOver("/agents", "POST", owner, MAX_BODY + 1)).toEqual({ status: 413, connection: "close" });
 
   // A chunked body is answered once it crosses the bound, before it ends.
   const { port } = new URL(base);
@@ -680,10 +691,7 @@ describe("POST /workspace/commands", () => {
 
   test("a body over 64 KiB gets 413 and closes the connection, declared or chunked, and nothing runs", async () => {
     const { agent, post } = await workspace();
-    const command = "x".repeat(MAX_COMMAND_BODY);
-    const declared = await post(JSON.stringify({ command }));
-    expect(declared.status).toBe(413);
-    expect(declared.headers.get("connection")).toBe("close");
+    expect(await declareOver("/workspace/commands", "POST", as(tokenOf(agent.id)), MAX_COMMAND_BODY + 1)).toEqual({ status: 413, connection: "close" });
     // Within the bound, and over the spawn route's.
     expect((await post(JSON.stringify({ command: "x".repeat(MAX_BODY * 2) }))).status).toBe(200);
     const { port } = new URL(base);
@@ -801,14 +809,7 @@ describe("GET and PUT /workspace/files", () => {
 
   test("a body declaring 17 MiB gets 413 unread and closes the connection, and nothing runs", async () => {
     const { agent } = await workspace();
-    const { port } = new URL(base);
-    const answer = await new Promise<{ status?: number; connection?: string }>((resolve) => {
-      const req = http.request({ host: "127.0.0.1", port, method: "PUT", path: "/workspace/files?path=big", headers: { ...as(tokenOf(agent.id)), "Content-Length": String(17 * 2 ** 20) } });
-      req.on("error", () => {});
-      req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
-      req.write("x");
-    });
-    expect(answer).toEqual({ status: 413, connection: "close" });
+    expect(await declareOver("/workspace/files?path=big", "PUT", as(tokenOf(agent.id)), 17 * 2 ** 20)).toEqual({ status: 413, connection: "close" });
     expect(docker.execs).toEqual([]);
   });
 
@@ -913,14 +914,8 @@ describe("POST /model/responses", () => {
 
   test("a body declaring over 32 MiB gets 413 unread, and a chunked one too, and nothing reaches the provider", async () => {
     const { headers } = await agent();
+    expect(await declareOver("/model/responses", "POST", headers, MAX_MODEL_BODY + 1)).toEqual({ status: 413, connection: "close" });
     const { port } = new URL(base);
-    const declared = await new Promise<{ status?: number; connection?: string }>((resolve) => {
-      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/model/responses", headers: { ...headers, "Content-Length": String(MAX_MODEL_BODY + 1) } });
-      req.on("error", () => {});
-      req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
-      req.write("{");
-    });
-    expect(declared).toEqual({ status: 413, connection: "close" });
     const chunked = await new Promise<number | undefined>((resolve) => {
       const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/model/responses", headers });
       let status: number | undefined;

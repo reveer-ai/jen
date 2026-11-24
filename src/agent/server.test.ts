@@ -247,12 +247,19 @@ describe("an invalid message is rejected", () => {
 
   test("a body over 1 MiB gets 413, declared or chunked, and changes nothing", async () => {
     await serve(stalled);
-    const declared = await fetch(`${base}/messages`, { method: "POST", headers: sender, body: JSON.stringify({ text: "x".repeat(MAX_MESSAGE) }) });
-    expect(declared.status).toBe(413);
-    expect(declared.headers.get("connection")).toBe("close");
+    const { port } = server!.address() as AddressInfo;
+    // A declared body over the bound is answered unread. The test sends one
+    // byte of it, since closing on unread data resets the connection and a
+    // client still sending may lose the 413.
+    const declared = await new Promise<{ status?: number; connection?: string }>((resolve) => {
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/messages", headers: { ...sender, "Content-Length": String(MAX_MESSAGE + 1) } });
+      req.on("error", () => {});
+      req.on("response", (res) => (resolve({ status: res.statusCode, connection: res.headers.connection }), res.resume()));
+      req.write("{");
+    });
+    expect(declared).toEqual({ status: 413, connection: "close" });
 
     // A chunked body is answered once it crosses the bound, before it ends.
-    const { port } = server!.address() as AddressInfo;
     const status = await new Promise<number | undefined>((resolve) => {
       const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/messages", headers: sender });
       let answered: number | undefined;
@@ -501,9 +508,11 @@ test("a root that gave up and is messaged again sends no notice to a stream open
 });
 
 describe("a watcher that stops reading is sent no more than it can take", () => {
-  test("its buffer stays bounded, others are served, and it gets everything once it reads", async () => {
+  // What it's sent must exceed the kernel's socket buffers, so the test stores
+  // about 10 MB, which is slow on a busy disk.
+  test("its buffer stays bounded, others are served, and it gets everything once it reads", { timeout: 30_000 }, async () => {
     const big = (n: number) => `${n} ${"x".repeat(64 * 1024)}`;
-    for (let n = 0; n < 64; n++) store.save([user(big(n)), assistant(big(n))]);
+    store.save(Array.from({ length: 64 }, (_, n) => [user(big(n)), assistant(big(n))]).flat());
     await serve(new ScriptedModel(Array.from({ length: 16 }, (_, n) => [assistant(big(128 + 2 * n + 1))])));
     const streamsOpened: http.ServerResponse[] = [];
     server!.on("request", (req: http.IncomingMessage, res: http.ServerResponse) => req.url === "/events" && streamsOpened.push(res));

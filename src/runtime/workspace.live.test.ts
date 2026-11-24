@@ -295,6 +295,10 @@ describe("commands", () => {
     expect(await output("pwd")).toBe("/home/agent\n");
   });
 
+  test("a command starts with no signal ignored", async () => {
+    expect(await output("grep SigIgn /proc/self/status")).toBe("SigIgn:\t0000000000000000\n");
+  });
+
   test("long output is cut to its start and end, and saved whole", async () => {
     const answer = await run("seq 1 30000");
     const whole = Buffer.byteLength(Array.from({ length: 30000 }, (_, i) => `${i + 1}\n`).join(""));
@@ -316,6 +320,12 @@ describe("commands", () => {
     expect(answer).toMatchObject({ status: 200, body: { exitCode: null, timedOut: true } });
     expect(answer.seconds).toBeLessThan(6);
     await until(async () => (await output("ps -eo args | grep -cx 'sleep 100'; true")) === "0\n", "the timed-out command to end");
+  }, 60_000);
+
+  test("a command that stops itself keeps its call until its timeout", async () => {
+    // TSTP, not STOP: a group the kernel takes as orphaned would discard it.
+    const answer = await run("kill -TSTP $$; echo resumed", 1);
+    expect(answer).toMatchObject({ status: 200, body: { exitCode: null, timedOut: true, output: "" } });
   }, 60_000);
 
   test("1 MiB written straight to the exec's stream through /proc gets 502 at once, and the command is killed", async () => {
