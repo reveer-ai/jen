@@ -7,6 +7,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 Made in [JEN-30](https://linear.app/reveer/issue/JEN-30), aligning on its proposal with the maintainer. Its OpenSpec change is `make-tests-reliable`:
 
 - **The agent doesn't drain an oversized body before closing, so a client still sending may see the connection reset instead of the 413, as with the runtime's bounds.** *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.
+- **The three flakes whose causes weren't found are left as known flakes in [environment.md](environment.md), not fixed.** *Why:* set by the maintainer. None reproduced in the runs JEN-30 set for it, so a fix would be a guess. If one fails again, its cause is found then.
 
 ## 2026-11-23
 

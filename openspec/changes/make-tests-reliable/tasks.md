@@ -26,13 +26,13 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 Each is reproduced and its cause found before anything changes. If one won't reproduce within the runs below, stop and bring the evidence to the maintainer rather than guessing at a fix.
 
-- [ ] 5.1 **`run_command`'s `connect ECONNRESET`** (`src/agent/workspace.test.ts`, CI only). Run the full suite 100 times on Linux in `node:26` limited to 4 CPUs, while a second container loads its CPU and disk. On a failure, find what reset the connection. Fix it where the cause lies.
-- [ ] 5.2 **The release test's `ENOTEMPTY`** (`scripts/release.test.ts`, macOS). Temporarily make the `afterEach` list what's left in the folder, with each entry's times, before failing. Run the full suite up to 100 times on macOS under load until it fails, then find what wrote there. Fix it where the cause lies. `scripts/eval/build.test.ts` removes a git repo the same way, so check the fix covers it too. Take out the listing once the cause is known.
-- [ ] 5.3 **The container live check's timeout.** Run `npm run test:live` 5 times. On a timeout, read the check's transcript (`--silent=false`) to see whether the model, the stand-in route or the agent stalled. Note whether it coincided with the other checks' image builds. Fix it where the cause lies.
+- [x] 5.1 **`run_command`'s `connect ECONNRESET`** (`src/agent/workspace.test.ts`, CI only). Run the full suite 100 times on Linux in `node:26` limited to 4 CPUs, while a second container loads its CPU and disk. On a failure, find what reset the connection. Fix it where the cause lies. *Not reproduced: 100 of 100 runs passed. Left as a known flake.*
+- [x] 5.2 **The release test's `ENOTEMPTY`** (`scripts/release.test.ts`, macOS). Temporarily make the `afterEach` list what's left in the folder, with each entry's times, before failing. Run the full suite up to 100 times on macOS under load until it fails, then find what wrote there. Fix it where the cause lies. `scripts/eval/build.test.ts` removes a git repo the same way, so check the fix covers it too. Take out the listing once the cause is known. *Not reproduced: 100 full runs under disk load and 300 of the two git-repo tests under CPU load passed. Left as a known flake, and the listing is out.*
+- [x] 5.3 **The container live check's timeout.** Run `npm run test:live` 5 times. On a timeout, read the check's transcript (`--silent=false`) to see whether the model, the stand-in route or the agent stalled. Note whether it coincided with the other checks' image builds. Fix it where the cause lies. *Not reproduced: 5 of 5 passed. Left as a known flake.*
 
 ## 6. Record
 
-- [ ] 6.1 In `edda/environment.md`, take the known flakes out of `npm run test:live`'s note, and add anything a cause in task 5 shows that a future agent needs.
+- [x] 6.1 In `edda/environment.md`, take the known flakes out of `npm run test:live`'s note, and add anything a cause in task 5 shows that a future agent needs. *The three causes not found stay in the note, as known flakes.*
 - [x] 6.2 Add a dated entry to `edda/decisions.md`: the agent doesn't drain an oversized body before closing, so a client still sending may see a reset instead of the 413, as with the runtime's bounds. *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.
 
 ## 7. Verification
@@ -40,4 +40,4 @@ Each is reproduced and its cause found before anything changes. If one won't rep
 - [x] 7.1 `npm run check` passes.
 - [x] 7.2 20 full `npm test` runs in a row pass on macOS, and 20 on Linux in `node:26` limited to 4 CPUs. Record the counts in the pull request.
 - [x] 7.3 The runtime live check passes 5 times in a row, and the full live suite passes.
-- [ ] 7.4 The pull request says why no evaluation ran, unless a fix from task 5 changed code under `src/agent/` or `src/runtime/` that a model sees or a tool call runs, in which case it's evaluated against `main` as `edda/conventions.md` says.
+- [x] 7.4 The pull request says why no evaluation ran, unless a fix from task 5 changed code under `src/agent/` or `src/runtime/` that a model sees or a tool call runs, in which case it's evaluated against `main` as `edda/conventions.md` says.
