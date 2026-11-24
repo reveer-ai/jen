@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -35,6 +35,28 @@ test("a dirty tree and the commit of the same contents get the same tree, the fi
   git("commit", "-q", "-am", "second");
   expect(await identify(repo, null)).toEqual({ ref: null, tree: dirty.tree, commit: git("rev-parse", "HEAD"), dirty: false });
   expect((await identify(repo, "HEAD")).tree).toBe(dirty.tree);
+});
+
+test("an edit git's stat data can't see still marks the tree dirty", async () => {
+  // A same-size edit, with its mtime put back and ctime not trusted, has the
+  // stat data the real index holds, so git takes the file as unchanged.
+  git("config", "core.trustctime", "false");
+  const old = new Date("2020-01-01T00:00:00Z");
+  utimesSync(join(repo, "a.txt"), old, old);
+  git("update-index", "--refresh");
+  writeFileSync(join(repo, "a.txt"), "two\n");
+  utimesSync(join(repo, "a.txt"), old, old);
+  expect(git("diff", "--name-only")).toBe("");
+  expect(await identify(repo, null)).toMatchObject({ dirty: true });
+});
+
+test("a force-added ignored file counts, and the tree matches its commit", async () => {
+  writeFileSync(join(repo, "ignored.txt"), "kept\n");
+  git("add", "-f", "ignored.txt");
+  const staged = await identify(repo, null);
+  expect(staged.dirty).toBe(true);
+  git("commit", "-q", "-m", "second");
+  expect(await identify(repo, null)).toEqual({ ref: null, tree: staged.tree, commit: git("rev-parse", "HEAD"), dirty: false });
 });
 
 test("an untracked file changes the tree, and an ignored one doesn't", async () => {

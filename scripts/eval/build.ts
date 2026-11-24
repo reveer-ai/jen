@@ -55,7 +55,7 @@ export function command(file: string, args: string[], options: { cwd?: string; e
   });
 }
 
-const git = async (repo: string, args: string[], env?: NodeJS.ProcessEnv) => (await command("git", args, { cwd: repo, env: env && { ...process.env, ...env } })).trim();
+const git = async (repo: string, args: string[], env?: NodeJS.ProcessEnv, input?: string) => (await command("git", args, { cwd: repo, env: env && { ...process.env, ...env }, input })).trim();
 
 // The build of ref, or of the working tree when ref is null.
 export async function identify(repo: string, ref: string | null): Promise<Build> {
@@ -67,11 +67,12 @@ export async function identify(repo: string, ref: string | null): Promise<Build>
   const scratch = mkdtempSync(join(tmpdir(), "jen-eval-index-"));
   try {
     const env = { GIT_INDEX_FILE: join(scratch, "index") };
-    // The index starts from the commit, with no stat data, so git hashes every
-    // file. A copy of the real index would save rehashing, but its fresh mtime
-    // defeats git's racy-clean check: an edit made in the same second as the
-    // real index was written looks unchanged.
-    await git(repo, ["read-tree", commit], env);
+    // The index starts with the real one's entries and none of its stat data,
+    // so it keeps what's staged, a force-added ignored file included, and git
+    // hashes every file. A copy of the real index would save rehashing, but
+    // its fresh mtime defeats git's racy-clean check: an edit made in the same
+    // second as the real index was written looks unchanged.
+    await git(repo, ["update-index", "-z", "--index-info"], env, await git(repo, ["ls-files", "--stage", "-z"]));
     await git(repo, ["add", "-A"], env);
     const tree = await git(repo, ["write-tree"], env);
     return { ref: null, tree, commit, dirty: tree !== (await git(repo, ["rev-parse", `${commit}^{tree}`])) };

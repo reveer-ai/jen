@@ -9,7 +9,7 @@ A bug fix, so there's no design. The mechanism is here, and the measurements beh
 
 ## 2. A build's identity
 
-- [x] 2.1 In `identify` in `scripts/eval/build.ts`, stop copying the real index. Fill the temporary index with `git read-tree <commit>` under `GIT_INDEX_FILE`, then `git add -A` and `git write-tree` as now. With no stat data in the index, git hashes every file, so no timestamp can hide an edit. Replace the comment about saving rehashing with one saying why the copy was dropped: its fresh mtime defeated git's racy-clean check.
+- [x] 2.1 In `identify` in `scripts/eval/build.ts`, stop copying the real index. Fill the temporary index with `git read-tree <commit>` under `GIT_INDEX_FILE`, then `git add -A` and `git write-tree` as now. With no stat data in the index, git hashes every file, so no timestamp can hide an edit. Replace the comment about saving rehashing with one saying why the copy was dropped: its fresh mtime defeated git's racy-clean check. *Done instead with the real index's entries and no stat data (`git ls-files --stage` into `git update-index --index-info`), since `read-tree` of the commit dropped what was staged, such as a force-added ignored file. `build.test.ts` gains a case for each: a same-size edit whose stat data matches, and a force-added ignored file.*
 - [x] 2.2 Time `identify` on this repo before and after. Record both in the pull request.
 - [x] 2.3 Verify by repeating `build.test.ts`'s dirty-tree case 400 times, as the investigation did (6 misses before the fix). Pass with none.
 
