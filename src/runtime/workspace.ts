@@ -51,19 +51,18 @@ export const STOPPED_MS = 1_000;
 //    wrapper's own: whatever follows may be the command's.
 // 2. once the command's shell exits, its exit code and the output's size
 // 3. the output, whole within OUTPUT_CAP, or else its start and end.
-// set -m gives the command a process group of its own, which the runtime
-// kills on a timeout or a hang-up, and starts it with no signal ignored.
-// Job control is turned off before the wait, so wait returns only once the
-// command ends, not when it stops. wait -f would do the same under job
-// control, but bash 5.2's sometimes spins forever once its job is killed,
-// about once in 150 timeouts under load. Output goes to a file, not the
-// exec's stream, so a background process holds the file and not the call,
-// and long output is kept whole. A file that's printed whole is deleted
-// first.
-export const WRAPPER = `set -m
-mkdir -p -- "\${2%/*}"
-bash -c 'echo "$PPID $$"; exec bash -c "$1" </dev/null >"$2" 2>&1' jen "$1" "$2" &
-set +m
+// perl gives the command a process group of its own, in the wrapper's
+// session, which the runtime kills on a timeout or a hang-up, and undoes
+// bash's ignoring of SIGINT and SIGQUIT in a background command. The
+// wrapper has no job control, so wait returns only once the command ends,
+// not when it stops. Job control would make the group itself, but with it
+// bash 5.2's wait -f sometimes spins forever once its job is killed, about
+// once in 150 timeouts under load, and a plain wait returns when the command
+// stops. Output goes to a file, not the exec's stream, so a background
+// process holds the file and not the call, and long output is kept whole. A
+// file that's printed whole is deleted first.
+export const WRAPPER = `mkdir -p -- "\${2%/*}"
+perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; setpgrp or die "setpgrp: $!\\n"; exec @ARGV or die "exec: $!\\n"' bash -c 'echo "$PPID $$"; exec bash -c "$1" </dev/null >"$2" 2>&1' jen "$1" "$2" &
 wait $!
 code=$?
 size=$(stat -c %s -- "$2" 2>/dev/null) || { size=0; : >"$2"; }

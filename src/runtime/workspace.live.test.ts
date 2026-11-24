@@ -323,7 +323,8 @@ describe("commands", () => {
   }, 60_000);
 
   test("a command that stops itself keeps its call until its timeout", async () => {
-    const answer = await run("kill -STOP $$; echo resumed", 1);
+    // TSTP, not STOP: a group the kernel takes as orphaned would discard it.
+    const answer = await run("kill -TSTP $$; echo resumed", 1);
     expect(answer).toMatchObject({ status: 200, body: { exitCode: null, timedOut: true, output: "" } });
   }, 60_000);
 
