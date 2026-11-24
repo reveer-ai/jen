@@ -31,14 +31,14 @@ export interface Build {
 // Runs a command to its end, resolving with its output, or rejecting with its
 // error output when it fails.
 // A signal that aborts kills it.
-export function command(file: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string; signal?: AbortSignal } = {}): Promise<string> {
+export function command(file: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; input?: string; encoding?: BufferEncoding; signal?: AbortSignal } = {}): Promise<string> {
   return new Promise((done, fail) => {
     // A command given no input gets no stdin pipe, so one that exits without
     // reading it can't fail the write with EPIPE.
     const child = spawn(file, args, { cwd: options.cwd, env: options.env, stdio: [options.input === undefined ? "ignore" : "pipe", "pipe", "pipe"], signal: options.signal });
     let stdout = "";
     let stderr = "";
-    child.stdout!.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
+    child.stdout!.setEncoding(options.encoding ?? "utf8").on("data", (chunk) => (stdout += chunk));
     child.stderr!.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
     const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => child.kill("SIGKILL"), options.timeoutMs);
     child.on("error", (error) => (clearTimeout(timer), fail(new Error(`${file} ${args[0]} failed: ${error.message}`))));
@@ -50,12 +50,12 @@ export function command(file: string, args: string[], options: { cwd?: string; e
     if (child.stdin) {
       // A command may exit without reading its input; its exit code says how it went.
       child.stdin.on("error", () => {});
-      child.stdin.end(options.input);
+      child.stdin.end(options.input, options.encoding ?? "utf8");
     }
   });
 }
 
-const git = async (repo: string, args: string[], env?: NodeJS.ProcessEnv, input?: string) => (await command("git", args, { cwd: repo, env: env && { ...process.env, ...env }, input })).trim();
+const git = async (repo: string, args: string[], env?: NodeJS.ProcessEnv) => (await command("git", args, { cwd: repo, env: env && { ...process.env, ...env } })).trim();
 
 // The build of ref, or of the working tree when ref is null.
 export async function identify(repo: string, ref: string | null): Promise<Build> {
@@ -71,8 +71,11 @@ export async function identify(repo: string, ref: string | null): Promise<Build>
     // so it keeps what's staged, a force-added ignored file included, and git
     // hashes every file. A copy of the real index would save rehashing, but
     // its fresh mtime defeats git's racy-clean check: an edit made in the same
-    // second as the real index was written looks unchanged.
-    await git(repo, ["update-index", "-z", "--index-info"], env, await git(repo, ["ls-files", "--stage", "-z"]));
+    // second as the real index was written looks unchanged. Paths pass
+    // through as latin1, which keeps every byte, so a name that isn't UTF-8
+    // comes back as it was.
+    const entries = await command("git", ["ls-files", "--stage", "-z"], { cwd: repo, encoding: "latin1" });
+    await command("git", ["update-index", "-z", "--index-info"], { cwd: repo, env: { ...process.env, ...env }, input: entries, encoding: "latin1" });
     await git(repo, ["add", "-A"], env);
     const tree = await git(repo, ["write-tree"], env);
     return { ref: null, tree, commit, dirty: tree !== (await git(repo, ["rev-parse", `${commit}^{tree}`])) };

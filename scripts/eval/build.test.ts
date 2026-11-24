@@ -59,6 +59,20 @@ test("a force-added ignored file counts, and the tree matches its commit", async
   expect(await identify(repo, null)).toEqual({ ref: null, tree: staged.tree, commit: git("rev-parse", "HEAD"), dirty: false });
 });
 
+test("a tracked, ignored file whose name isn't UTF-8 keeps its name", async ({ skip }) => {
+  try {
+    writeFileSync(Buffer.concat([Buffer.from(join(repo, "ignored-")), Buffer.from([0xff])]), "x\n");
+  } catch {
+    skip("this filesystem refuses names that aren't UTF-8");
+  }
+  writeFileSync(join(repo, ".gitignore"), "ignored*\n");
+  git("add", "-A");
+  git("add", "-f", "--", "ignored-*");
+  git("commit", "-q", "-m", "second");
+  expect(git("status", "--porcelain")).toBe("");
+  expect(await identify(repo, null)).toMatchObject({ tree: git("rev-parse", "HEAD^{tree}"), dirty: false });
+});
+
 test("an untracked file changes the tree, and an ignored one doesn't", async () => {
   const clean = (await identify(repo, null)).tree;
   writeFileSync(join(repo, "ignored.txt"), "secret\n");
