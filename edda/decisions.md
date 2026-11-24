@@ -2,6 +2,12 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-24
+
+Made in [JEN-30](https://linear.app/reveer/issue/JEN-30), aligning on its proposal with the maintainer. Its OpenSpec change is `make-tests-reliable`:
+
+- **The agent doesn't drain an oversized body before closing, so a client still sending may see the connection reset instead of the 413, as with the runtime's bounds.** *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.
+
 ## 2026-11-23
 
 Made in [JEN-24](https://linear.app/reveer/issue/JEN-24), aligning on its proposal and design with the maintainer. The proposal and design are in `openspec/changes/archive/2026-11-23-measure-agent-behavior/`:

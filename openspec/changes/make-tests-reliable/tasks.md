@@ -33,11 +33,11 @@ Each is reproduced and its cause found before anything changes. If one won't rep
 ## 6. Record
 
 - [ ] 6.1 In `edda/environment.md`, take the known flakes out of `npm run test:live`'s note, and add anything a cause in task 5 shows that a future agent needs.
-- [ ] 6.2 Add a dated entry to `edda/decisions.md`: the agent doesn't drain an oversized body before closing, so a client still sending may see a reset instead of the 413, as with the runtime's bounds. *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.
+- [x] 6.2 Add a dated entry to `edda/decisions.md`: the agent doesn't drain an oversized body before closing, so a client still sending may see a reset instead of the 413, as with the runtime's bounds. *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.
 
 ## 7. Verification
 
-- [ ] 7.1 `npm run check` passes.
-- [ ] 7.2 20 full `npm test` runs in a row pass on macOS, and 20 on Linux in `node:26` limited to 4 CPUs. Record the counts in the pull request.
-- [ ] 7.3 The runtime live check passes 5 times in a row, and the full live suite passes.
+- [x] 7.1 `npm run check` passes.
+- [x] 7.2 20 full `npm test` runs in a row pass on macOS, and 20 on Linux in `node:26` limited to 4 CPUs. Record the counts in the pull request.
+- [x] 7.3 The runtime live check passes 5 times in a row, and the full live suite passes.
 - [ ] 7.4 The pull request says why no evaluation ran, unless a fix from task 5 changed code under `src/agent/` or `src/runtime/` that a model sees or a tool call runs, in which case it's evaluated against `main` as `edda/conventions.md` says.
