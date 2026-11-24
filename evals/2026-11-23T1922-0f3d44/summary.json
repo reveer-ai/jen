@@ -1,0 +1,68 @@
+{
+ "id": "0f3d44",
+ "command": "npm run eval -- --tasks fanout,nested --runs 2 --parallel 4",
+ "started": "2026-11-23T19:22:12.951Z",
+ "ended": "2026-11-23T19:22:30.073Z",
+ "partial": true,
+ "sides": [
+  {
+   "side": "a",
+   "build": {
+    "ref": null,
+    "tree": "c0955df1a018c4caf360cfc96ed4e0f8648d0e63",
+    "commit": "e3a9be25af7dfb401aabbf3208859c2663142b9c",
+    "dirty": true
+   },
+   "model": "openai/gpt-6-luna"
+  }
+ ],
+ "tasks": [
+  {
+   "name": "fanout",
+   "hash": "94882fde74336da2"
+  },
+  {
+   "name": "nested",
+   "hash": "e0dcdbc17cff14b8"
+  }
+ ],
+ "results": [
+  {
+   "task": "fanout",
+   "side": "a",
+   "runs": 0,
+   "passes": 0,
+   "errored": 0,
+   "interval": [
+    0,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": null,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "nested",
+   "side": "a",
+   "runs": 0,
+   "passes": 0,
+   "errored": 0,
+   "interval": [
+    0,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": null,
+    "calls": null,
+    "tokens": null
+   }
+  }
+ ],
+ "comparisons": [],
+ "chanceFlags": null,
+ "errors": []
+}

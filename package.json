@@ -14,7 +14,8 @@
     "check": "tsc",
     "build": "node scripts/build.ts",
     "test": "vitest run",
-    "test:live": "vitest run --config vitest.live.config.ts"
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "eval": "node scripts/eval/main.ts"
   },
   "dependencies": {
     "openai": "^7.45.0"

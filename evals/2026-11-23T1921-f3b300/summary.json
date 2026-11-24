@@ -1,0 +1,70 @@
+{
+ "id": "f3b300",
+ "command": "npm run eval -- --tasks direct,recover --runs 1 --parallel 2",
+ "started": "2026-11-23T19:21:04.630Z",
+ "ended": "2026-11-23T19:21:45.783Z",
+ "partial": false,
+ "sides": [
+  {
+   "side": "a",
+   "build": {
+    "ref": null,
+    "tree": "af63455b6c5be39c85203556a1fbdbb5b9f358ca",
+    "commit": "e3a9be25af7dfb401aabbf3208859c2663142b9c",
+    "dirty": true
+   },
+   "model": "openai/gpt-6-luna"
+  }
+ ],
+ "tasks": [
+  {
+   "name": "direct",
+   "hash": "d7d3c013f4a0c0e0"
+  },
+  {
+   "name": "recover",
+   "hash": "330d1fa8ddca302b"
+  }
+ ],
+ "results": [
+  {
+   "task": "direct",
+   "side": "a",
+   "runs": 1,
+   "passes": 1,
+   "errored": 0,
+   "interval": [
+    0.20654931437723745,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 5180,
+    "calls": 1,
+    "tokens": 957
+   }
+  },
+  {
+   "task": "recover",
+   "side": "a",
+   "runs": 1,
+   "passes": 0,
+   "errored": 0,
+   "interval": [
+    0,
+    0.7934506856227626
+   ],
+   "faults": {
+    "tool_error": 1
+   },
+   "median": {
+    "durationMs": 6363,
+    "calls": 5,
+    "tokens": 6936
+   }
+  }
+ ],
+ "comparisons": [],
+ "chanceFlags": null,
+ "errors": []
+}

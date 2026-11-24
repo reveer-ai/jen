@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="describes" content="src/agent/loop.ts src/agent/delegation.ts src/agent/model/port.ts src/runtime/behavior.live.test.ts">
-<meta name="checked" content="2026-11-19">
+<meta name="describes" content="src/agent/loop.ts src/agent/delegation.ts src/agent/model/port.ts scripts/eval/tasks.ts scripts/eval/run.ts scripts/eval/results.ts">
+<meta name="checked" content="2026-11-23">
 <title>jen Agent Interactions</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -27,6 +27,7 @@ button, select { font: inherit; color: var(--fg); background: var(--surface); bo
 button:hover, select:hover { border-color: var(--accent); }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tabs[hidden] { display: none; }
 .task { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
 .task b { font-weight: 600; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -63,6 +64,15 @@ svg { display: block; width: 100%; height: auto; margin: 0 auto; }
 .kind.reply { color: var(--ok); }
 .kind.err { color: var(--warn); }
 .empty { color: var(--muted); }
+.source { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 0.92rem; }
+.source label.open { color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+.source label.open:hover, .source label.open:focus-within { border-color: var(--accent); }
+.source input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.source select { max-width: 100%; }
+.faults { margin: 6px 0 0; padding-left: 1.2em; color: var(--warn); font-size: 0.92rem; }
+.outcome { font: 500 12px var(--mono); margin-left: 6px; }
+.outcome.passed { color: var(--ok); }
+.outcome.failed, .outcome.errored { color: var(--warn); }
 ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem; display: grid; gap: 4px; }
 </style>
 </head>
@@ -70,8 +80,19 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
 <main>
   <header>
     <h1>jen Agent Interactions</h1>
-    <p class="lede" id="lede">Real runs of the behavior check, replayed. Each run starts with the owner's message to a root agent, and every line below is an item one agent saved, in the order they were saved.</p>
+    <p class="lede" id="lede">Real runs of an evaluation, replayed. Each run starts with the owner's message to a root agent, and every line below is an item one agent saved, in the order they were saved.</p>
   </header>
+
+  <div class="source" aria-label="Runs shown">
+    <span id="from"></span>
+    <label class="open">Open a runs.jsonl…<input type="file" id="file" accept=".jsonl,application/x-ndjson,application/json,text/plain"></label>
+    <span id="filters" hidden>
+      <select id="side" aria-label="Side"></select>
+      <select id="taskFilter" aria-label="Task"></select>
+      <select id="outcome" aria-label="Outcome"></select>
+      <select id="run" aria-label="Run"></select>
+    </span>
+  </div>
 
   <div class="tabs" id="tabs" role="tablist" aria-label="Run"></div>
   <div class="task" id="task"></div>
@@ -107,12 +128,6 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
 (() => {
   const data = window.JEN_RECORDING;
   const $ = (id) => document.getElementById(id);
-  if (!data || !data.runs || data.runs.length === 0) {
-    $("task").innerHTML = '<span class="empty">No recording yet. Run <code>JEN_LIVE_RECORD=1 npm run test:live</code> to write <code>docs/interactions.data.js</code>.</span>';
-    return;
-  }
-  $("lede").textContent += ` Recorded ${data.recorded} on ${data.model}, one passing run per task.`;
-
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   const clip = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
   const name = (id) => (id === "owner" ? "Owner" : id);
@@ -194,15 +209,30 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     return { pos, width: W, height: 40 + depth * rowH + 44 };
   }
 
-  let prepared = data.runs.map(prepare), current = 0, step = 0, timer = null;
+  // The runs shown: the committed recording's, one per task, as tabs, or a
+  // runs.jsonl the user opened, chosen by side, task and outcome.
+  let prepared = [], current = 0, step = 0, timer = null, opened = null;
+  const label = (r) => (opened ? `${r.side} ${r.task} #${r.index} ${r.outcome}` : r.task);
 
   function renderTabs() {
-    $("tabs").innerHTML = prepared.map((p, i) => `<button role="tab" aria-pressed="${i === current}" data-i="${i}">${esc(p.run.task)}</button>`).join("");
+    $("tabs").hidden = opened !== null;
+    if (opened) {
+      $("run").innerHTML = prepared.length === 0 ? "<option>No run matches</option>" : prepared.map((p, i) => `<option value="${i}"${i === current ? " selected" : ""}>${esc(label(p.run))}</option>`).join("");
+      return;
+    }
+    $("tabs").innerHTML = prepared.map((p, i) => `<button role="tab" aria-pressed="${i === current}" data-i="${i}">${esc(p.run.task)}${p.run.outcome && p.run.outcome !== "passed" ? ` <span class="outcome ${esc(p.run.outcome)}">${esc(p.run.outcome)}</span>` : ""}</button>`).join("");
+  }
+
+  // What's wrong with a run that didn't pass.
+  function verdict(run) {
+    if (run.outcome === "errored") return `<ul class="faults"><li>Errored, which says nothing about the agents: ${esc(run.error || "")}</li></ul>`;
+    if (!run.faults || run.faults.length === 0) return "";
+    return `<ul class="faults">${run.faults.map((f) => `<li><code>${esc(f.kind)}</code>: ${esc(f.detail)}</li>`).join("")}</ul>`;
   }
 
   function renderLog() {
     const p = prepared[current];
-    $("log").innerHTML = p.steps.map((s, i) => {
+    $("log").innerHTML = (p ? p.steps : []).map((s, i) => {
       let what = "";
       if (s.kind === "in") what = s.from === "runtime" ? `<span class="kind err">from runtime</span>` : s.flow && s.flow.up ? `<span class="kind reply">reply from ${esc(name(s.from))}</span>` : `<span class="kind">from ${esc(name(s.from))}</span>`;
       if (s.kind === "reply") what = `<span class="kind reply">replies to ${esc(name(p.parent[s.agent]))}</span>`;
@@ -216,8 +246,15 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
   }
 
   function render() {
-    const p = prepared[current], s = p.steps[step];
-    $("task").innerHTML = `<b>${esc(p.run.task)}</b> · ${p.run.agents.length} agent${p.run.agents.length > 1 ? "s" : ""}, ${p.steps.length} saved items`;
+    const p = prepared[current];
+    if (!p || p.steps.length === 0) {
+      $("task").innerHTML = p ? `<b>${esc(label(p.run))}</b> · no saved items${verdict(p.run)}` : '<span class="empty">No run matches.</span>';
+      $("svg").innerHTML = ""; $("now").textContent = ""; $("clock").textContent = ""; $("scrub").max = 0;
+      return;
+    }
+    const s = p.steps[step];
+    const outcome = p.run.outcome ? `<span class="outcome ${esc(p.run.outcome)}">${esc(p.run.outcome)}</span>` : "";
+    $("task").innerHTML = `<b>${esc(label(p.run))}</b>${opened ? "" : outcome} · ${p.run.agents.length} agent${p.run.agents.length > 1 ? "s" : ""}, ${p.steps.length} saved items${verdict(p.run)}`;
     $("scrub").max = p.steps.length - 1; $("scrub").value = step;
     $("clock").textContent = `${step + 1}/${p.steps.length} · ${(s.t / 1000).toFixed(0)}s`;
 
@@ -257,9 +294,10 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     if (cur) { const log = $("log"); const top = cur.offsetTop - log.offsetTop; if (top < log.scrollTop || top > log.scrollTop + log.clientHeight - 40) log.scrollTop = top - log.clientHeight / 3; }
   }
 
-  const go = (i) => { step = Math.max(0, Math.min(prepared[current].steps.length - 1, i)); render(); };
+  const go = (i) => { step = Math.max(0, Math.min((prepared[current]?.steps.length ?? 1) - 1, i)); render(); };
   const stop = () => { clearInterval(timer); timer = null; $("play").textContent = "▶ Play"; $("play").setAttribute("aria-label", "Play"); };
   const play = () => {
+    if (!prepared[current]) return;
     if (step >= prepared[current].steps.length - 1) go(0);
     $("play").textContent = "❚❚ Pause"; $("play").setAttribute("aria-label", "Pause");
     timer = setInterval(() => { if (step >= prepared[current].steps.length - 1) stop(); else go(step + 1); }, Number($("speed").value));
@@ -282,6 +320,43 @@ ul.key { margin: 0; padding-left: 1.2em; color: var(--muted); font-size: 0.92rem
     if (e.key === " ") { e.preventDefault(); timer ? stop() : play(); }
   });
 
+  // A runs.jsonl the user picks, read in the page, so it works from a file
+  // with no server.
+  const options = (values, all) => [`<option value="">${all}</option>`, ...values.map((v) => `<option>${esc(v)}</option>`)].join("");
+  function filter() {
+    const [side, task, outcome] = ["side", "taskFilter", "outcome"].map((id) => $(id).value);
+    prepared = opened.runs.filter((r) => (!side || r.side === side) && (!task || r.task === task) && (!outcome || r.outcome === outcome)).map(prepare);
+    select(0);
+  }
+  $("file").addEventListener("change", async () => {
+    const file = $("file").files[0];
+    if (!file) return;
+    let runs;
+    try {
+      runs = (await file.text()).split("\n").filter((line) => line.trim()).map((line) => JSON.parse(line));
+    } catch (error) {
+      $("from").textContent = `${file.name} isn't a runs.jsonl: ${error.message}`;
+      return;
+    }
+    opened = { name: file.name, runs };
+    const uniq = (key) => [...new Set(runs.map((r) => r[key]))];
+    $("side").innerHTML = options(uniq("side"), "Both sides");
+    $("taskFilter").innerHTML = options(uniq("task"), "Every task");
+    $("outcome").innerHTML = options(["passed", "failed", "errored"].filter((o) => runs.some((r) => r.outcome === o)), "Any outcome");
+    $("filters").hidden = false;
+    $("from").textContent = `${runs.length} runs from ${file.name}.`;
+    filter();
+  });
+  for (const id of ["side", "taskFilter", "outcome"]) $(id).addEventListener("change", filter);
+  $("run").addEventListener("change", (e) => select(Number(e.target.value)));
+
+  if (!data || !data.runs || data.runs.length === 0) {
+    $("from").textContent = "No recording is committed yet; npm run eval -- record <evaluation> writes one.";
+    render();
+    return;
+  }
+  $("from").textContent = `The committed recording: ${data.evaluation ? `evals/${data.evaluation}` : "an earlier check"}, ${data.recorded}, on ${data.model}, each task's first passing run, or its first failing one, from the evaluated build where it has one.`;
+  prepared = data.runs.map(prepare);
   select(Math.max(0, prepared.findIndex((p) => p.run.task === "nested")));
 })();
 </script>

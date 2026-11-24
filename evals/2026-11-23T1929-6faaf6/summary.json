@@ -1,0 +1,469 @@
+{
+ "id": "6faaf6",
+ "command": "npm run eval -- --against main --tasks delegation,direct,fanout,question,followup,nested,command,files --runs 20",
+ "started": "2026-11-23T19:29:28.324Z",
+ "ended": "2026-11-23T19:41:21.646Z",
+ "partial": false,
+ "sides": [
+  {
+   "side": "a",
+   "build": {
+    "ref": null,
+    "tree": "e4d54181c4868a8eb0c7807450a465dd3803c380",
+    "commit": "e3a9be25af7dfb401aabbf3208859c2663142b9c",
+    "dirty": true
+   },
+   "model": "openai/gpt-6-luna"
+  },
+  {
+   "side": "b",
+   "build": {
+    "ref": "main",
+    "tree": "2e432059b08f11ae2638ca62d33a4e1ff91a7ede",
+    "commit": "b2f8debed8a3358ba1d30b7a239311214343d56e",
+    "dirty": false
+   },
+   "model": "openai/gpt-6-luna"
+  }
+ ],
+ "tasks": [
+  {
+   "name": "delegation",
+   "hash": "65e33c7436e0c2ad"
+  },
+  {
+   "name": "direct",
+   "hash": "d7d3c013f4a0c0e0"
+  },
+  {
+   "name": "fanout",
+   "hash": "94882fde74336da2"
+  },
+  {
+   "name": "question",
+   "hash": "38751fa68608ad71"
+  },
+  {
+   "name": "followup",
+   "hash": "1d35f149b718d57c"
+  },
+  {
+   "name": "nested",
+   "hash": "e0dcdbc17cff14b8"
+  },
+  {
+   "name": "command",
+   "hash": "9d382afe7bd4a5df"
+  },
+  {
+   "name": "files",
+   "hash": "00ebeb4cb2243fd6"
+  }
+ ],
+ "results": [
+  {
+   "task": "delegation",
+   "side": "a",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 9774,
+    "calls": 5,
+    "tokens": 4564.5
+   }
+  },
+  {
+   "task": "delegation",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 8507.5,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "direct",
+   "side": "a",
+   "runs": 20,
+   "passes": 18,
+   "errored": 0,
+   "interval": [
+    0.6989663547715128,
+    0.9721335187862319
+   ],
+   "faults": {
+    "replies": 1,
+    "filler_reply": 2
+   },
+   "median": {
+    "durationMs": 2734.5,
+    "calls": 1,
+    "tokens": 955.5
+   }
+  },
+  {
+   "task": "direct",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 1671,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "fanout",
+   "side": "a",
+   "runs": 20,
+   "passes": 19,
+   "errored": 0,
+   "interval": [
+    0.763868806553258,
+    0.9911185511992047
+   ],
+   "faults": {
+    "tool_error": 1
+   },
+   "median": {
+    "durationMs": 19305.5,
+    "calls": 10.5,
+    "tokens": 10291.5
+   }
+  },
+  {
+   "task": "fanout",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 16980,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "question",
+   "side": "a",
+   "runs": 20,
+   "passes": 18,
+   "errored": 0,
+   "interval": [
+    0.6989663547715128,
+    0.9721335187862319
+   ],
+   "faults": {
+    "replies": 1,
+    "tool_error": 1
+   },
+   "median": {
+    "durationMs": 13882,
+    "calls": 6,
+    "tokens": 5747.5
+   }
+  },
+  {
+   "task": "question",
+   "side": "b",
+   "runs": 20,
+   "passes": 17,
+   "errored": 0,
+   "interval": [
+    0.6395811352592431,
+    0.9476312541037835
+   ],
+   "faults": {
+    "tool_error": 3
+   },
+   "median": {
+    "durationMs": 14808,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "followup",
+   "side": "a",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 49194.5,
+    "calls": 9.5,
+    "tokens": 9521.5
+   }
+  },
+  {
+   "task": "followup",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 47411.5,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "nested",
+   "side": "a",
+   "runs": 20,
+   "passes": 18,
+   "errored": 0,
+   "interval": [
+    0.6989663547715128,
+    0.9721335187862319
+   ],
+   "faults": {
+    "replies": 1,
+    "tool_error": 1
+   },
+   "median": {
+    "durationMs": 20234,
+    "calls": 13,
+    "tokens": 13599.5
+   }
+  },
+  {
+   "task": "nested",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 21195,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "command",
+   "side": "a",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 6499,
+    "calls": 3,
+    "tokens": 9014.5
+   }
+  },
+  {
+   "task": "command",
+   "side": "b",
+   "runs": 20,
+   "passes": 20,
+   "errored": 0,
+   "interval": [
+    0.8388748419471806,
+    1
+   ],
+   "faults": {},
+   "median": {
+    "durationMs": 6752.5,
+    "calls": null,
+    "tokens": null
+   }
+  },
+  {
+   "task": "files",
+   "side": "a",
+   "runs": 20,
+   "passes": 15,
+   "errored": 0,
+   "interval": [
+    0.531299122381256,
+    0.8881382985923343
+   ],
+   "faults": {
+    "tool_error": 3,
+    "check": 2
+   },
+   "median": {
+    "durationMs": 10948,
+    "calls": 3.5,
+    "tokens": 6181
+   }
+  },
+  {
+   "task": "files",
+   "side": "b",
+   "runs": 20,
+   "passes": 17,
+   "errored": 0,
+   "interval": [
+    0.6395811352592431,
+    0.9476312541037835
+   ],
+   "faults": {
+    "tool_error": 2,
+    "check": 2
+   },
+   "median": {
+    "durationMs": 9914.5,
+    "calls": null,
+    "tokens": null
+   }
+  }
+ ],
+ "comparisons": [
+  {
+   "task": "delegation",
+   "passes": {
+    "p": 0.9999999999999858,
+    "verdict": "unclear"
+   },
+   "duration": {
+    "p": 0.49452349649670346,
+    "direction": "unclear",
+    "ratio": 1.148868645312959
+   },
+   "tokens": null
+  },
+  {
+   "task": "direct",
+   "passes": {
+    "p": 0.48717948717950266,
+    "verdict": "unclear",
+    "runsPerSide": 74
+   },
+   "duration": {
+    "p": 0.005558238222701155,
+    "direction": "higher",
+    "ratio": 1.6364452423698383
+   },
+   "tokens": null
+  },
+  {
+   "task": "fanout",
+   "passes": {
+    "p": 0.999999999999991,
+    "verdict": "unclear",
+    "runsPerSide": 152
+   },
+   "duration": {
+    "p": 0.15716005595098306,
+    "direction": "unclear",
+    "ratio": 1.1369552414605417
+   },
+   "tokens": null
+  },
+  {
+   "task": "question",
+   "passes": {
+    "p": 1,
+    "verdict": "unclear",
+    "runsPerSide": 686
+   },
+   "duration": {
+    "p": 0.38341328190435897,
+    "direction": "unclear",
+    "ratio": 0.9374662344678553
+   },
+   "tokens": null
+  },
+  {
+   "task": "followup",
+   "passes": {
+    "p": 0.9999999999999858,
+    "verdict": "unclear"
+   },
+   "duration": {
+    "p": 0.4135263115144142,
+    "direction": "unclear",
+    "ratio": 1.0376069097159972
+   },
+   "tokens": null
+  },
+  {
+   "task": "nested",
+   "passes": {
+    "p": 0.48717948717950266,
+    "verdict": "unclear",
+    "runsPerSide": 74
+   },
+   "duration": {
+    "p": 0.461168776016191,
+    "direction": "unclear",
+    "ratio": 0.9546591177164425
+   },
+   "tokens": null
+  },
+  {
+   "task": "command",
+   "passes": {
+    "p": 0.9999999999999858,
+    "verdict": "unclear"
+   },
+   "duration": {
+    "p": 0.8619870592980812,
+    "direction": "unclear",
+    "ratio": 0.9624583487597186
+   },
+   "tokens": null
+  },
+  {
+   "task": "files",
+   "passes": {
+    "p": 0.6947646947646935,
+    "verdict": "unclear",
+    "runsPerSide": 250
+   },
+   "duration": {
+    "p": 0.7660352648001326,
+    "direction": "unclear",
+    "ratio": 1.1042412627969136
+   },
+   "tokens": null
+  }
+ ],
+ "chanceFlags": 0.4,
+ "errors": []
+}
