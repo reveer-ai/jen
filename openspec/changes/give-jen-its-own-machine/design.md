@@ -15,7 +15,7 @@ Measured on 2026-11-24 on the same Mac, booting task 1.1's machine (Alpine 3.24.
 - **The engine answers 7.7 seconds after the launcher starts on a first boot**, which formats the data disk, and 3.2 seconds after on a later one. Linux reaches the initramfs in 0.09 seconds.
 - **The guest ignores Virtualization.framework's stop request.** The VM's device tree offers a power button through gpio-keys, but Alpine's virt kernel has no driver for it (`CONFIG_INPUT_KEYBOARD` is unset). Asked through vsock instead, Linux shuts down in 4.3 seconds, unmounting the data disk first.
 - **The VM has a real-time clock** (PL031), which Linux reads at boot, so the clock is wrong only after the Mac sleeps.
-- **The platform package packs to 108 MB**, 157 MB unpacked: the system disk is 78 MB, the kernel 36 MB uncompressed, Docker's client 42 MB, the initramfs 1.3 MB and the launcher 0.15 MB.
+- **The platform package packs to 108 MB**, 157 MB unpacked: the system disk is 78 MB, the kernel 36 MB uncompressed, Docker's client 42 MB, the initramfs 1.3 MB and the launcher 0.15 MB. With Docker's own engine in place of Alpine's (2026-11-25), it packs to 111.5 MB, 161 MB unpacked, with an 80 MB system disk.
 - **Files `npm install -g` unpacks carry no `com.apple.quarantine`**, only `com.apple.provenance`, so Gatekeeper never assesses the launcher, whose ad hoc signature `spctl` would reject. The launcher, signed with the entitlement and packed, booted the machine from a temporary prefix. That install was from a local tarball; npm downloads from the registry with Node, which sets no quarantine either, and the command's live check runs from an installed tarball too.
 
 ## Goals / Non-Goals
@@ -71,13 +71,13 @@ The machine ships in `@jen-ai/darwin-arm64`, an npm package that `jen-ai` lists 
   bin/docker        Docker's static macOS client, pinned and checked against its checksum
 ```
 
-Nothing runs at install, and the first command needs nothing downloaded beyond the images. The package packs to 108 MB (see Context).
+Nothing runs at install, and the first command needs nothing downloaded beyond the images. The package packs to 112 MB (see Context).
 
 *Alternative: download the machine on the first command, from the GitHub release.* No large npm package, but a second host and a download path of jen's own, with its own progress and checks. With the images out of the machine, it's small enough for npm.
 
 ### `jen` keeps running `docker`, and on macOS brings its own
 
-On macOS, `jen` runs the package's `bin/docker` with `DOCKER_HOST=unix://<machine>/engine.sock`. It ignores the user's `DOCKER_HOST`, contexts and any Docker Desktop. On Linux it runs the user's `docker` as today. Every command `jen` sends is the same on both, so `src/cli/` changes only in where its `Runner` finds `docker` and what it does when the engine doesn't answer.
+On macOS, `jen` runs the package's `bin/docker` with `DOCKER_HOST=unix://<machine>/engine.sock`. It ignores the user's `DOCKER_HOST`, contexts, configuration, other `DOCKER_` variables and any Docker Desktop. On Linux it runs the user's `docker` as today. Every command `jen` sends is the same on both, so `src/cli/` changes only in where its `Runner` finds `docker` and what it does when the engine doesn't answer.
 
 *Alternative: talk to the Engine API directly*, as first proposed. One less binary (Docker's client is about 40 MB unpacked), but it rewrites every `docker run` and `docker exec` `jen` sends into create, attach and start calls, and breaks Linux users who rely on a Docker context. The bundled client changes none of that.
 
@@ -99,7 +99,7 @@ Its files live in `~/.jen/machines/<runtime name>/`: the data disk, `engine.sock
 
 ### Starting, stopping and upgrading
 
-- **Start.** Before the first `docker` call, `jen` checks the engine through `engine.sock`. If it doesn't answer, `jen` takes a lock in the machine's folder, starts `jen-machine`, says it's starting jen's machine, and waits up to 60 seconds for the engine. A second `jen` that finds the lock waits for the same engine. A `launcher.pid` that no running `jen-machine` holds, as after a reboot or a crash, is stale and ignored.
+- **Start.** Before the first `docker` call, `jen` checks the engine through `engine.sock`. If it doesn't answer, `jen` takes a lock in the machine's folder, starts `jen-machine`, says it's starting jen's machine, and waits up to 60 seconds for the engine. A second `jen` that finds the lock waits for the same engine. A `launcher.pid` that no running `jen-machine` holds, as after a reboot or a crash, is stale and ignored, as is a start lock whose `jen` is gone, written before the Mac last started, or older than two minutes.
 - **Stop.** `jen stop all` stops every agent and the runtime as today, then sends `SIGTERM` to `jen-machine` and waits for it to exit. `jen stop @<name>` leaves the machine running.
 - **Upgrade.** When `version` names a different system disk from the package's, the next command that needs the engine:
   1. stops every agent through the runtime, as the existing rule for a new image does
