@@ -1,0 +1,17 @@
+jen's machine for Apple silicon Macs
+Copyright 2026 reveer
+
+bin/jen-machine, the launcher, is jen's, under the Apache License 2.0 in
+LICENSE.
+
+bin/docker is Docker's command-line client for macOS, from
+https://download.docker.com/mac/static/stable/aarch64/, under the Apache
+License 2.0.
+
+machine/ is a Linux system built from Alpine Linux packages, each under its
+own license: among them the Linux kernel and BusyBox under the GNU General
+Public License version 2, and Docker Engine, containerd and runc under the
+Apache License 2.0. The system lists every package with its version and
+license in /lib/apk/db/installed. Their sources are Alpine's, at
+https://gitlab.alpinelinux.org/alpine/aports, and how jen builds the system
+from them is in https://github.com/reveer-ai/jen, under src/machine/.

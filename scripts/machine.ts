@@ -2,6 +2,7 @@
 // checkout's jen runs on macOS:
 //
 //   npm run build:machine
+//   node scripts/machine.ts client <dest>
 //
 // It holds the Dockerfile's machine target, built with any engine (vmlinuz,
 // initramfs, system.img and their version), the launcher, jen-machine, built
@@ -87,9 +88,12 @@ export async function buildMachine(out = join(ROOT, "dist", "machine")): Promise
   await fetchDockerClient(join(out, "docker"));
 }
 
+// node scripts/machine.ts client <dest> writes only the docker command, as a
+// release does on a machine that can't build the launcher.
 if (import.meta.main) {
   try {
-    await buildMachine();
+    if (process.argv[2] === "client" && process.argv[3]) await fetchDockerClient(process.argv[3]);
+    else await buildMachine();
   } catch (error) {
     process.stderr.write(`build:machine: ${(error as Error).message}\n`);
     process.exit(1);

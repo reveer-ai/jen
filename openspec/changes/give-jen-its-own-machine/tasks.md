@@ -50,8 +50,8 @@
 
 ## 5. The release
 
-- [ ] 5.1 Pack `@jen-ai/darwin-arm64` (`os: darwin`, `cpu: arm64`) from the machine, the signed launcher and Docker's pinned macOS client, checked against its checksum, and give `jen-ai`'s generated `package.json` it as an optional dependency at the same version. Verify with unit tests of both manifests and the checksum's refusal, and by installing both packed tarballs into a temporary prefix on this Mac and running `jen help`.
-- [ ] 5.2 Extend `release.yml`:
+- [x] 5.1 Pack `@jen-ai/darwin-arm64` (`os: darwin`, `cpu: arm64`) from the machine, the signed launcher and Docker's pinned macOS client, checked against its checksum, and give `jen-ai`'s generated `package.json` it as an optional dependency at the same version. Verify with unit tests of both manifests and the checksum's refusal, and by installing both packed tarballs into a temporary prefix on this Mac and running `jen help`.
+- [x] 5.2 Extend `release.yml`:
   - build the machine on an arm64 Linux runner, and the launcher on a macOS runner
   - pack the platform package
   - have the check before publishing install both packages
