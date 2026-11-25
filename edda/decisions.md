@@ -14,7 +14,7 @@ Made implementing JEN-31:
 
 ## 2026-11-24
 
-Set by the maintainer, aligning on [JEN-31](https://linear.app/reveer/issue/JEN-31)'s proposal. The proposal and design are in `openspec/changes/give-jen-its-own-machine/`:
+Set by the maintainer, aligning on [JEN-31](https://linear.app/reveer/issue/JEN-31)'s proposal. The proposal and design are in `openspec/changes/archive/2026-11-25-give-jen-its-own-machine/`:
 
 - **On a Mac, jen brings its own machine: a Linux VM with Docker Engine in it, whose only job is to give jen an engine.** The runtime, agents and workspaces run in it unchanged. *Why:* set by the maintainer, so that installing jen is `npm install -g jen-ai` and nothing else. The Docker Desktop setup is the friction, and the runtime's boundary is built and checked on a Docker engine. *Rejected:* no Docker at all, with a VM per agent through Apple's Containerization framework, which replaces the runtime's engine and redoes the boundary per OS. Supersedes, on macOS, 2026-11-20's "jen keeps Docker as a requirement".
 - **The machine is started natively through Apple's Virtualization.framework, not through Lima.** *Why:* set by the maintainer. jen's machine is an appliance nobody works inside. Lima is built for a VM people work in, needing cloud-init and SSH in the machine and waiting for both at every start, when jen would use only its lifecycle, two forwards and clock sync.

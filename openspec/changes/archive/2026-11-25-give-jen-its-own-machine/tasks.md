@@ -23,7 +23,7 @@
 
 ## 3. The launcher
 
-- [ ] 3.1 Write `jen-machine` in `src/machine/launcher/` as the design describes:
+- [x] 3.1 Write `jen-machine` in `src/machine/launcher/` as the design describes:
   - the VM with every core and half the memory up to 8 GiB
   - `engine.sock` readable only by the user
   - `launcher.pid` and `version`
