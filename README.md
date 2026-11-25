@@ -5,10 +5,10 @@ jen runs AI agents on your machine. Each agent runs in its own container, delega
 ## What you need
 
 - **Node 26** or later, from [nodejs.org](https://nodejs.org).
-- **Docker**, with Docker Engine 28.0 or later: [Docker Desktop](https://docs.docker.com/desktop/) on macOS, or [Docker Engine](https://docs.docker.com/engine/install/) on Linux. jen starts Docker Desktop itself when it isn't running.
+- **On Linux, Docker Engine** 28.0 or later: [Docker Engine](https://docs.docker.com/engine/install/), or [Docker Desktop](https://docs.docker.com/desktop/), which jen starts itself when it isn't running. On a Mac, jen brings its own engine, so you need no Docker.
 - **A key for a model provider that serves OpenAI's Responses API**, such as OpenAI or OpenRouter. Agents use hosted models and run none of their own.
 
-jen runs on macOS and Linux.
+jen runs on Linux, and on Macs with Apple silicon. Its model calls ignore a proxy your environment sets, and don't trust the certificates a company adds to inspect TLS, so on a network that requires either, they fail.
 
 ## Install
 
@@ -30,9 +30,9 @@ jen @home Remember the word heron.
 jen @home open
 ```
 
-`jen new home` creates an agent named `home`. The first time, jen pulls its images and asks for the model, its base URL, such as `https://api.openai.com/v1` or `https://openrouter.ai/api/v1`, and your key, which `jen config` changes later. `jen @home <query>` sends `home` a query, shows its progress and prints its reply. `jen @home open` opens its UI in your browser.
+`jen new home` creates an agent named `home`. The first time, jen pulls its images and asks for the model, its base URL, such as `https://api.openai.com/v1` or `https://openrouter.ai/api/v1`, and your key, which `jen config` changes later. On a Mac, agents run in jen's machine, a small Linux VM of its own, which the first command that needs it starts. `jen @home <query>` sends `home` a query, shows its progress and prints its reply. `jen @home open` opens its UI in your browser.
 
-Agents keep running until you stop them, and keep their conversations and files when stopped. `jen stop all` stops every agent. `jen help` lists every command.
+Agents keep running until you stop them, and keep their conversations and files when stopped. `jen stop all` stops every agent, and on a Mac jen's machine. `jen help` lists every command.
 
 ## Uninstall
 
@@ -40,7 +40,7 @@ Agents keep running until you stop them, and keep their conversations and files 
 jen uninstall
 ```
 
-It deletes every agent, its conversation and files, jen's settings and images, and then the command itself. `npm uninstall -g jen-ai` alone would leave all of that in Docker.
+It deletes every agent, its conversation and files, jen's settings and images, and then the command itself. `npm uninstall -g jen-ai` alone would leave all of that behind, in Docker on Linux and in jen's machine on a Mac.
 
 ## Contributing
 

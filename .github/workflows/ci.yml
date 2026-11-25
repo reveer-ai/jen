@@ -36,6 +36,26 @@ jobs:
       - run: docker build --target workspace -t jen-workspace .
       - run: npx vitest run --config vitest.live.config.ts src/runtime/workspace.live.test.ts
 
+  # jen's machine for an Apple silicon Mac, built on arm64 as a release builds
+  # it. No hosted runner can boot it, so its live check runs by hand on a Mac.
+  machine:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --target machine --output dist/machine .
+      - run: ls -l dist/machine
+
+  # The machine's launcher, built and signed as a release signs it, and its
+  # tests of what needs no VM. Hosted Macs can build Swift but can't start one.
+  launcher:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift build -c release --package-path src/machine/launcher
+      - run: codesign --force --sign - --entitlements src/machine/launcher/jen-machine.entitlements src/machine/launcher/.build/release/jen-machine
+      - run: codesign --display --entitlements - src/machine/launcher/.build/release/jen-machine | grep -q com.apple.security.virtualization
+      - run: swift test --package-path src/machine/launcher
+
   # The UI's sandbox in a real Chromium and WebKit: a hostile published UI
   # against the agent's page. It needs no model and no Docker.
   sandbox:

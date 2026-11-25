@@ -1,0 +1,48 @@
+#!/bin/busybox sh
+# The machine's first process. It mounts the system disk read-only with a
+# tmpfs over it as the root, formats a blank data disk as ext4, mounts it at
+# /var/lib/docker, and hands over to the system's init.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+/bin/busybox --install -s /bin
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev
+
+fail() {
+  echo "jen's machine: $*" > /dev/console
+  sleep 1
+  poweroff -f
+}
+
+while read -r module; do
+  insmod "/lib/modules/$module" || fail "couldn't load $module"
+done < /lib/modules/order
+
+# The launcher attaches the system disk first and the data disk second.
+waited=0
+while [ ! -b /dev/vda ] || [ ! -b /dev/vdb ]; do
+  [ "$waited" -lt 50 ] || fail "no disks"
+  sleep 0.1
+  waited=$((waited + 1))
+done
+
+mount -t squashfs -o ro /dev/vda /system || fail "couldn't mount the system disk"
+mount -t tmpfs -o mode=0755 rw /rw
+mkdir -p /rw/upper /rw/work
+mount -t overlay root -o lowerdir=/system,upperdir=/rw/upper,workdir=/rw/work /root || fail "couldn't mount the root"
+
+# Only a disk with no filesystem at all is formatted, never one that's merely
+# unreadable.
+if [ -z "$(blkid /dev/vdb)" ]; then
+  mount --bind /dev /root/dev
+  chroot /root mkfs.ext4 -q -L jen-data /dev/vdb || fail "couldn't format the data disk"
+  umount /root/dev
+fi
+mkdir -p /root/var/lib/docker
+mount -t ext4 /dev/vdb /root/var/lib/docker || fail "couldn't mount the data disk"
+
+mount --move /dev /root/dev
+mount --move /proc /root/proc
+mount --move /sys /root/sys
+exec switch_root /root /sbin/init

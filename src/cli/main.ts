@@ -1,7 +1,8 @@
 // The jen command, run on the user's machine, outside any container. It parses
 // its arguments and dispatches to the module for each command. It's a client
-// of the runtime's API as the owner, and reaches the engine only through the
-// user's docker command. It imports only types from src/runtime/ and
+// of the runtime's API as the owner, and reaches the engine only through a
+// docker command: the user's on Linux, and on macOS its own, against jen's
+// machine. It imports only types from src/runtime/ and
 // src/agent/, so none of their code runs here. Every module it needs is
 // imported here, at startup, so jen uninstall can remove the command's own
 // files while it finishes.
@@ -11,8 +12,9 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { ApiError, Unanswered } from "./api.ts";
 import { createDocker, DockerError, EngineError, runProcess, type Docker, type Runner } from "./docker.ts";
+import { Machine } from "./machine.ts";
 import { listRoots, newRoot, openRoot, query, stopRoot } from "./roots.ts";
-import { config, stopAll, type Context } from "./runtime.ts";
+import { config, stopAll, upgradeMachine, type Context } from "./runtime.ts";
 import { MissingImage, namesFrom, Refusal, type Terminal } from "./settings.ts";
 import { uninstall } from "./uninstall.ts";
 
@@ -23,12 +25,12 @@ export const USAGE = `jen runs your agents.
   jen @<name> open        open that root's UI in the browser
   jen list                list the roots and whether each is running
   jen stop @<name>        stop that root and everything under it
-  jen stop all            stop every agent and the runtime
+  jen stop all            stop every agent and the runtime, and on a Mac jen's machine
   jen config              set the model, the base URL and the model key
   jen uninstall           delete everything of jen's, then the command itself
   jen help                show this
 
-to remove jen, run jen uninstall: npm uninstall alone leaves every agent and setting in Docker.
+to remove jen, run jen uninstall: npm uninstall alone leaves every agent and setting behind.
 
 in zsh, a ? or * in an unquoted query is a pattern, and zsh stops before jen runs
 when no file matches it. To pass them as typed, add this to ~/.zshrc:
@@ -82,6 +84,8 @@ export interface Deps {
   mainPath: string;
   npm: Runner;
   open?: (url: string) => Promise<boolean>;
+  // jen's machine, on macOS, which docker reaches.
+  machine?: Machine;
 }
 
 // Runs the command and answers its exit code.
@@ -99,16 +103,23 @@ export async function run(command: Command, deps: Deps): Promise<number> {
     fetch: deps.fetch,
     sleep: deps.sleep,
     now: deps.now,
+    machine: deps.machine,
   };
   const engine = { say: ctx.say, sleep: deps.sleep, now: deps.now };
+  const { machine } = deps;
   try {
-    // Stopping starts no Docker: with the engine down, nothing of jen's runs.
+    await machine?.check();
+    // Stopping starts no engine: with it down, nothing of jen's runs.
     if (command.kind === "stop" || command.kind === "stop-all") {
       if (!(await deps.docker.ensureEngine({ ...engine, start: false }))) {
-        ctx.print("docker isn't running, so nothing of jen's is.");
+        ctx.print(machine ? "jen's machine isn't running, so nothing of jen's is." : "docker isn't running, so nothing of jen's is.");
         return 0;
       }
-    } else await deps.docker.ensureEngine({ ...engine, start: true });
+    } else if (!(command.kind === "uninstall" && machine)) {
+      // Uninstalling on macOS deletes the machine without starting it.
+      await deps.docker.ensureEngine({ ...engine, start: true });
+      if (machine) await upgradeMachine(ctx, machine);
+    }
     switch (command.kind) {
       case "new":
         await newRoot(ctx, command.name);
@@ -120,13 +131,13 @@ export async function run(command: Command, deps: Deps): Promise<number> {
         await stopRoot(ctx, command.name);
         return 0;
       case "stop-all":
-        await stopAll(ctx);
+        await stopAll(ctx, machine);
         return 0;
       case "config":
         await config(ctx);
         return 0;
       case "uninstall":
-        return await uninstall(ctx, { mainPath: deps.mainPath, npm: deps.npm });
+        return await uninstall(ctx, { mainPath: deps.mainPath, npm: deps.npm, machine });
       case "open":
         await openRoot(ctx, command.name, deps.open);
         return 0;
@@ -200,8 +211,10 @@ export async function start(): Promise<void> {
   const command = parse(process.argv.slice(2));
   // Only a followed query handles Ctrl-C, by leaving the root working.
   if (command.kind === "query") process.on("SIGINT", () => interrupt.abort());
+  const machine = process.platform === "darwin" ? new Machine(namesFrom(process.env).name) : undefined;
   const code = await run(command, {
-    docker: createDocker(),
+    docker: createDocker(runProcess, machine),
+    machine,
     env: process.env,
     terminal: terminal(lead),
     stdout: (text) => (lead(), process.stdout.write(text)),

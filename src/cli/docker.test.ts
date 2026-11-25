@@ -1,14 +1,16 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createDocker, DockerError, EngineError, runProcess, START_MS, type EngineOptions, type Output, type Runner } from "./docker.ts";
+import { Machine } from "./machine.ts";
 
-// A runner that answers each call with answer, and records it.
-function stub(answer: (args: string[], program: string) => Partial<Output> = () => ({}), platform: NodeJS.Platform = "darwin") {
-  const calls: { program: string; args: string[]; env?: Record<string, string>; input?: string }[] = [];
+// A runner that answers each call with answer, and records it. With
+// machine, it's macOS's engine, which runs on the same runner.
+function stub(answer: (args: string[], program: string) => Partial<Output> = () => ({}), machine?: (run: Runner) => Machine) {
+  const calls: { program: string; args: string[]; env?: Record<string, string | undefined>; input?: string }[] = [];
   const runner: Runner = async (program, args, options = {}) => {
     calls.push({ program, args, ...options });
     return { code: 0, stdout: "", stderr: "", ...answer(args, program) };
   };
-  return { calls, docker: createDocker(runner, platform) };
+  return { calls, docker: createDocker(runner, machine?.(runner)) };
 }
 
 // The engine's options, on a clock that sleep moves on, recording what's said.
@@ -33,14 +35,11 @@ test("an engine of 28.0 or later answers, starting nothing", async () => {
   }
 });
 
-test.each([
-  ["darwin", /no docker command\. Install Docker Desktop: https:\/\/docs\.docker\.com\/desktop\/setup\/install\/mac-install\/\. jen needs Docker Engine 28\.0 or later\./],
-  ["linux", /no docker command\. Install Docker Engine: https:\/\/docs\.docker\.com\/engine\/install\/\. jen needs Docker Engine 28\.0 or later\./],
-] as const)("on %s, a missing docker command is named with what to install", async (platform, message) => {
-  const { docker, calls } = stub(() => ({ code: -1, stderr: "spawn docker ENOENT" }), platform);
+test("on Linux, a missing docker command is named with what to install", async () => {
+  const { docker, calls } = stub(() => ({ code: -1, stderr: "spawn docker ENOENT" }));
   const error = await docker.ensureEngine(engine().options).catch((e) => e);
   expect(error).toBeInstanceOf(EngineError);
-  expect(error.message).toMatch(message);
+  expect(error.message).toBe("jen needs Docker, and there's no docker command. Install Docker Engine: https://docs.docker.com/engine/install/. jen needs Docker Engine 28.0 or later.");
   expect(calls).toHaveLength(1);
 });
 
@@ -54,47 +53,35 @@ test("an engine that doesn't answer is started with Docker Desktop's CLI, and wa
   expect(elapsed()).toBe(2_000);
 });
 
-test("on macOS without Docker Desktop's CLI, Docker is opened instead", async () => {
-  let started = false;
-  const { docker, calls } = stub((args, program) => {
-    if (program === "open") return (started = true), {};
-    if (args[0] === "desktop") return { code: 1, stderr: "docker: unknown command: docker desktop" };
-    return started ? { stdout: "28.1.1" } : down;
-  });
-  expect(await docker.ensureEngine(engine().options)).toBe(true);
-  expect(calls.map((c) => [c.program, ...c.args])).toContainEqual(["open", "-a", "Docker"]);
-});
-
 test("an engine that doesn't answer within 120 seconds of starting fails saying how to start Docker by hand", async () => {
   const { docker } = stub((args) => (isVersion(args) ? down : args[0] === "context" ? { stdout: "desktop-linux\n" } : {}));
   const { options, elapsed } = engine();
   const error = await docker.ensureEngine(options).catch((e) => e);
   expect(error).toBeInstanceOf(EngineError);
-  expect(error.message).toBe("docker isn't running, and jen couldn't start it within 120 seconds. Start Docker Desktop and try again.");
+  expect(error.message).toBe("docker isn't running, and jen couldn't start it within 120 seconds. Start Docker Desktop, or Docker Engine with: sudo systemctl start docker. Then try again.");
   expect(elapsed()).toBe(START_MS);
 });
 
 test("on Linux with Docker Engine stopped, it fails at once saying how to start the engine", async () => {
-  const { docker, calls } = stub((args) => (isVersion(args) ? down : args[0] === "desktop" ? { code: 1, stderr: "docker: 'desktop' is not a docker command." } : { stdout: "default\n" }), "linux");
+  const { docker, calls } = stub((args) => (isVersion(args) ? down : args[0] === "desktop" ? { code: 1, stderr: "docker: 'desktop' is not a docker command." } : { stdout: "default\n" }));
   const error = await docker.ensureEngine(engine().options).catch((e) => e);
   expect(error.message).toBe("docker isn't running, and jen couldn't start it. Start Docker Desktop, or Docker Engine with: sudo systemctl start docker. Then try again.");
   expect(calls.some((c) => c.program === "open")).toBe(false);
 });
 
 test("an engine of a context that isn't Docker's own is named by its context", async () => {
-  const { docker } = stub((args, program) => (isVersion(args) ? down : args[0] === "context" ? { stdout: "colima\n" } : program === "open" || args[0] === "desktop" ? { code: 1 } : {}));
+  const { docker } = stub((args) => (isVersion(args) ? down : args[0] === "context" ? { stdout: "podman\n" } : args[0] === "desktop" ? { code: 1 } : {}));
   const error = await docker.ensureEngine(engine().options).catch((e) => e);
-  expect(error.message).toBe("docker isn't running, and jen couldn't start it. docker's context is colima, so start its engine and try again.");
+  expect(error.message).toBe("docker isn't running, and jen couldn't start it. docker's context is podman, so start its engine and try again.");
 });
 
 test.each([
-  ["darwin", "27.5.1", "this engine is 27.5.1. Update Docker Desktop to its latest version."],
-  ["linux", "27.5.1", "this engine is 27.5.1. Update Docker Engine: https://docs.docker.com/engine/install/."],
-  ["linux", "4.9.4-podman", "this engine is 4.9.4-podman. Update Docker Engine"],
-  ["linux", "28", 'this engine is "28", which isn\'t Docker\'s.'],
-  ["darwin", "unknown", 'this engine is "unknown", which isn\'t Docker\'s.'],
-] as const)("on %s, engine %s is refused", async (platform, found, message) => {
-  const { docker } = stub(() => ({ stdout: `${found}\n` }), platform);
+  ["27.5.1", "this engine is 27.5.1. Update Docker Engine: https://docs.docker.com/engine/install/."],
+  ["4.9.4-podman", "this engine is 4.9.4-podman. Update Docker Engine"],
+  ["28", 'this engine is "28", which isn\'t Docker\'s.'],
+  ["unknown", 'this engine is "unknown", which isn\'t Docker\'s.'],
+] as const)("on Linux, engine %s is refused", async (found, message) => {
+  const { docker } = stub(() => ({ stdout: `${found}\n` }));
   const error = await docker.ensureEngine(engine().options).catch((e) => e);
   expect(error).toBeInstanceOf(EngineError);
   expect(error.message).toContain(`jen needs Docker Engine 28.0 or later, and ${message}`);
@@ -174,4 +161,40 @@ test("a volume is created with its labels, a bare label without a value", async 
   const { docker, calls } = stub();
   await docker.createVolume("jen-settings", { "jen.runtime": "jen", "jen.settings": "" });
   expect(calls[0]!.args).toEqual(["volume", "create", "--label", "jen.runtime=jen", "--label", "jen.settings", "jen-settings"]);
+});
+
+// macOS's engine, jen's machine, with its files at /pkg.
+const machine = (run: Runner) => new Machine("jen", { run, home: "/Users/u", files: () => ({ system: "/pkg/machine", launcher: "/pkg/bin/jen-machine", docker: "/pkg/bin/docker" }) });
+
+test("on macOS, every call runs the package's docker against the machine, whatever the user's environment says", async () => {
+  const { docker, calls } = stub(() => ({ stdout: "[]" }), machine);
+  await docker.run(["-d", "-e", "JEN_API_KEY", "jen-runtime"], { env: { DOCKER_HOST: "tcp://elsewhere:2375" }, secrets: { JEN_API_KEY: "sk-live-7f3a" } });
+  await docker.volumes(["jen.runtime=jen"]);
+  const target = { DOCKER_HOST: "unix:///Users/u/.jen/machines/jen/engine.sock", DOCKER_CONFIG: "/Users/u/.jen/machines/jen/docker", DOCKER_CONTEXT: "default" };
+  expect(calls).toEqual([
+    { program: "/pkg/bin/docker", args: ["run", "-d", "-e", "JEN_API_KEY", "jen-runtime"], env: { ...target, JEN_API_KEY: "sk-live-7f3a" }, input: undefined },
+    { program: "/pkg/bin/docker", args: ["volume", "ls", "-q", "--filter", "label=jen.runtime=jen"], env: target, input: undefined },
+  ]);
+});
+
+test("on macOS, the user's other DOCKER_ variables are removed from the docker jen runs", async () => {
+  vi.stubEnv("DOCKER_TLS_VERIFY", "1");
+  vi.stubEnv("DOCKER_API_VERSION", "1.24");
+  try {
+    const { docker, calls } = stub(() => ({ stdout: "[]" }), machine);
+    await docker.volumes(["jen.runtime=jen"]);
+    const env = calls[0]!.env!;
+    for (const name of ["DOCKER_TLS_VERIFY", "DOCKER_API_VERSION"]) expect(Object.hasOwn(env, name) && env[name] === undefined).toBe(true);
+    const shown = await runProcess("sh", ["-c", 'echo "${DOCKER_TLS_VERIFY-unset} $DOCKER_CONTEXT"'], { env });
+    expect(shown.stdout).toBe("unset default\n");
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+test("on macOS, the engine is the machine's, and Docker Desktop is never started or checked", async () => {
+  const { docker, calls } = stub((args) => (isVersion(args) ? { stdout: "29.9.3\n" } : { code: 1 }), machine);
+  expect(await docker.ensureEngine(engine().options)).toBe(true);
+  expect(calls.map((c) => [c.program, ...c.args])).toEqual([["/pkg/bin/docker", ...version]]);
+  expect(calls[0]!.env?.DOCKER_HOST).toBe("unix:///Users/u/.jen/machines/jen/engine.sock");
 });

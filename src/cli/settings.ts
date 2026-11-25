@@ -63,10 +63,11 @@ export const settingsVolume = (name: string) => `${name}-settings`;
 export const runtimeContainer = (name: string) => `${name}-runtime`;
 
 // An image jen needs that isn't there and doesn't pull, named with the
-// command that builds it.
+// command that builds it, into the engine at host when it isn't the user's
+// own, as jen's machine on macOS isn't.
 export class MissingImage extends Error {
-  constructor(image: string, target: string) {
-    super(`the image ${image} is missing. Build it from jen's checkout with: docker build --target ${target} -t ${image} .`);
+  constructor(image: string, target: string, host?: string) {
+    super(`the image ${image} is missing. Build it from jen's checkout with: ${host ? `DOCKER_HOST=${host} ` : ""}docker build --target ${target} -t ${image} .`);
     this.name = "MissingImage";
   }
 }

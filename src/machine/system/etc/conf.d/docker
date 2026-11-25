@@ -1,0 +1,9 @@
+# The engine listens only on its Unix socket, which the engine relay carries
+# to the Mac. Its log is in memory, on the root's tmpfs, so it's kept small.
+# Linux must finish shutting down within the launcher's 30 seconds.
+DOCKER_OPTS="-H unix:///var/run/docker.sock"
+DOCKER_RETRY="TERM/20/KILL/5"
+LOGPROXY_CHMOD=0644
+LOGPROXY_ROTATION_SIZE=1048576
+LOGPROXY_ROTATION_TIME=0
+LOGPROXY_ROTATED_FILES=1

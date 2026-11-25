@@ -1,0 +1,10 @@
+#!/bin/sh
+# Carries one connection from the Mac to a port published on 127.0.0.1 in the
+# machine. The connection's first line names the port, from 1 to 65535.
+
+IFS= read -r port || exit 1
+case $port in
+  '' | 0* | *[!0-9]* | ??????*) exit 1 ;;
+esac
+[ "$port" -le 65535 ] || exit 1
+exec socat STDIO "TCP4:127.0.0.1:$port"

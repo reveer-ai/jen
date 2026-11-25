@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+# One of the machine's relays over vsock, the Mac's only way in, named by the
+# part of the service's name after the dot: jen-relay.engine, .port, .clock or
+# .stop.
+
+relay=${RC_SVCNAME#*.}
+case $relay in
+  engine) vsock=2375 target=UNIX-CONNECT:/var/run/docker.sock ;;
+  port) vsock=2376 target=EXEC:/usr/libexec/jen/port ;;
+  clock) vsock=2377 target=EXEC:/usr/libexec/jen/clock ;;
+  stop) vsock=2378 target=EXEC:/sbin/poweroff ;;
+esac
+
+description="jen's $relay relay on vsock $vsock"
+command=/usr/bin/socat
+command_args="VSOCK-LISTEN:$vsock,fork,reuseaddr $target"
+command_background=yes
+pidfile=/run/$RC_SVCNAME.pid
+
+depend() {
+  after modules
+}

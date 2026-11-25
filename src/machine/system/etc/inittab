@@ -1,0 +1,5 @@
+# The machine's init: OpenRC's runlevels, and no login anywhere.
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+::shutdown:/sbin/openrc shutdown

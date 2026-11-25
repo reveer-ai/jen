@@ -83,13 +83,13 @@ test("a merge of only the record, docs, skills, OpenSpec or tests releases nothi
   git("tag", "v0.1.0");
   merge("JEN-10: Record it (#10)", ["edda/plan.md", "openspec/changes/x/proposal.md"]);
   merge("JEN-11: Tend (#11)", ["docs/architecture.html", ".agents/skills/tend/SKILL.md", "AGENTS.md"]);
-  merge("JEN-12: Test more (#12)", ["src/cli/main.test.ts", "src/agent/loop.live.test.ts"]);
+  merge("JEN-12: Test more (#12)", ["src/cli/main.test.ts", "src/agent/loop.live.test.ts", "src/machine/launcher/Tests/JenMachineTests/MirrorTests.swift"]);
   expect(await plan(deps)).toEqual({ release: false, last: "0.1.0" });
   expect(asked).toEqual([]);
   expect(describePlan(await plan(deps))).toBe("nothing that ships changed since v0.1.0, so nothing is released.");
 });
 
-test.each([["package.json"], ["package-lock.json"], ["Dockerfile"], ["README.md"], ["LICENSE"], ["NOTICE"], ["src/agent/ui/page.html"]])("a change to %s ships", async (file) => {
+test.each([["package.json"], ["package-lock.json"], ["Dockerfile"], ["README.md"], ["LICENSE"], ["NOTICE"], ["src/agent/ui/page.html"], ["src/machine/launcher/Sources/jen-machine/main.swift"], ["src/machine/NOTICE"]])("a change to %s ships", async (file) => {
   merge("JEN-1: Start (#1)", ["src/cli/main.ts"]);
   git("tag", "v0.1.0");
   merge("JEN-13: Change it (#13)", [file]);
