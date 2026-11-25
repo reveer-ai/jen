@@ -8,8 +8,9 @@
 // data kept, and removes the machine, even when it fails. It also pulls from
 // ghcr.io with a stand-in for the keychain's credential helper first on PATH,
 // which jen's docker mustn't ask. It needs no model, pulls alpine from Docker
-// Hub, and asks ghcr.io for a tag of jen-runtime that doesn't exist. Skipped anywhere but macOS on arm64; there,
-// a machine that isn't built fails the check. Whether the clock is right
+// Hub, and asks ghcr.io for a tag of jen-runtime that doesn't exist. Skipped
+// anywhere but macOS on arm64; there, a machine that isn't built fails the
+// check. Whether the clock is right
 // after the Mac sleeps is a hand check, since a check can't sleep the Mac:
 // docker run --rm alpine date against the Mac's date after pmset sleepnow.
 

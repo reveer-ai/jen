@@ -10,7 +10,7 @@ A bug fix, so there's no design. The mechanism is here, and the reproduction is 
 
 ## 2. Tests
 
-- [x] 2.1 In `src/cli/machine.test.ts`: a machine that starts gets the config; a running machine whose folder has none gets it without a launch; a config that differs is replaced; and `ensure` without `start` on a machine that isn't running creates no folder.
+- [x] 2.1 In `src/cli/machine.test.ts`: a machine that starts gets the config; a running machine whose folder has none gets it without a launch; a config that differs is replaced; and `ensure` without `start` on a machine that isn't running writes none. (`ensure` without `start` creating no folder was already tested.)
 - [x] 2.2 In `src/cli/machine.live.test.ts`, put a stand-in `docker-credential-osxkeychain` first on `PATH` that records being asked and answers with a login, then pull an image from ghcr.io through the machine's `docker`. Fail if the stand-in was asked. Without the fix, the `docker` command asks it.
 - [x] 2.3 By hand on the maintainer's Mac, with the stale ghcr.io login still in the keychain: `jen new home` from the checkout, against a machine `jen-ai@0.2.0` started, pulls its images and starts `home`. *Done in two steps, since a checkout builds its images rather than pulling them: the checkout's `jen new home`, with the three images set to `0.2.0`'s, restarted the machine `jen-ai@0.2.0` had started and wrote the config. Then the installed `jen-ai@0.2.0`, whose own code writes none, pulled all three images from ghcr.io on 2026-11-25, where before it was denied. It stopped at the settings it had none of yet.*
 

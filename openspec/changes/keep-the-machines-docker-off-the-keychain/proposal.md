@@ -10,7 +10,7 @@ On an Apple silicon Mac whose keychain holds a stale ghcr.io login, as Docker De
 
 - **On a Mac, jen writes its own `docker`'s `config.json`**, `{"auths": {"ghcr.io": {}}}`: ghcr.io, with no credentials. A config that names any registry keeps `docker` from falling back to a credential helper, so every pull in the machine is anonymous, from ghcr.io and Docker Hub alike. Tried on 2026-11-25 with the stale login in place: both pull.
 - **It's written every time the machine answers**, so a machine started by 0.2.0 gets it at the next command, without a restart.
-- **`jen-machine` gains a requirement** that jen's own `docker` uses nothing of the user's Docker settings: no configuration, context, `DOCKER_` variable or stored login, the keychain's included. The requirements were silent on it.
+- **`jen-machine` gains a requirement** that jen's own `docker` uses neither the user's Docker configuration file nor any login they've stored, the keychain's included. The requirements were silent on it; `jen-command` already keeps the user's engine and context out. The machine's live check pulls from ghcr.io with a stand-in credential helper that mustn't be asked.
 - **The record's leftovers from JEN-31 are fixed**: `edda/environment.md` stops saying the first release's notes were edited for Mac users, which wasn't needed with no users yet, and says CI's `machine` and `launcher` jobs aren't required checks.
 
 Linux doesn't change: there jen uses the user's own Docker, their logins included, on purpose.
@@ -28,10 +28,10 @@ None.
 
 ### Modified Capabilities
 
-- `jen-machine`: a new requirement that jen's own `docker` uses none of the user's Docker settings.
+- `jen-machine`: a new requirement that jen's own `docker` uses none of the user's logins, checked by the machine's live check.
 
 ## Impact
 
 - **Code:** `Machine` in `src/cli/machine.ts`.
-- **Tests:** `src/cli/machine.test.ts`, and a check by hand on the maintainer's Mac against the stale login.
+- **Tests:** `src/cli/machine.test.ts`, `src/cli/docker.test.ts`, the machine's live check in `src/cli/machine.live.test.ts`, and a check by hand on the maintainer's Mac against the stale login.
 - **Record:** `edda/decisions.md` and `edda/environment.md`.

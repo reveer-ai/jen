@@ -3,10 +3,9 @@
 // own process, so the machine runs exactly as long as the launcher does. Each
 // runtime name has its own machine, with its files in ~/.jen/machines/<name>/,
 // which the launcher describes, beside docker/, the config of jen's own docker
-// command. The machine, the launcher and the docker
-// command jen runs against it come from the platform package in an installed
-// jen, and from dist/machine/, which npm run build:machine writes, in a
-// checkout.
+// command. The machine, the launcher and that docker command come from the
+// platform package in an installed jen, and from dist/machine/, which npm run
+// build:machine writes, in a checkout.
 
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
@@ -217,9 +216,9 @@ export class Machine {
     return true;
   }
 
-  // Writes DOCKER_CONFIG_JSON unless it's there already, through a temporary file
-  // renamed over it, so a docker another jen runs meanwhile never reads part
-  // of one, which it would take for no config.
+  // Writes DOCKER_CONFIG_JSON unless it's there already, through a temporary
+  // file renamed over it, so a docker another jen runs meanwhile never reads
+  // part of one, which it would take for no config.
   #configure(): void {
     const folder = join(this.folder, "docker");
     const config = join(folder, "config.json");
