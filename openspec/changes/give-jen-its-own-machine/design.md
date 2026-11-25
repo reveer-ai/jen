@@ -7,13 +7,8 @@ On macOS, `jen` runs the user's `docker` command against Docker Desktop (`src/cl
 Measured on 2026-11-24 on the maintainer's Mac (Apple silicon, macOS 27.0.1, 24 GiB):
 
 - **The three images, saved together and gzipped, come to 142 MB.** They share `node:26-slim`'s layers. Uncompressed they're 375 MB, 425 MB and 582 MB.
-- **GitHub's hosted Apple silicon runners can't start a VM.** Community reports and actions that depend on it agree that the runners lack nested virtualization. GitHub doesn't document it.
-- **vfkit** (`crc-org/vfkit`, Apache-2.0, Podman's VM launcher on macOS) has three options this design relies on:
-  - `--device virtio-vsock,port=N,socketURL=<path>`, which exposes a vsock port in the VM as a Unix socket on the Mac. Its `connect` mode is for connections the Mac opens.
-  - `--timesync vsockPort=N`, which sets the VM's clock through `qemu-guest-agent` after the Mac wakes.
-  - a REST API to stop the VM.
-
-  These come from its documentation, not a run. Task 1 runs them.
+- **A binary signed ad hoc, with no Apple Developer ID, can start a VM** once it carries the `com.apple.security.virtualization` entitlement. Without the entitlement, Virtualization.framework refused the configuration, naming the missing entitlement. With it, a 30-line Swift program booted Alpine's `linux-virt` kernel for arm64, decompressed from its EFI image, until it panicked at 0.038 seconds for lack of a root disk, as expected. The binary was built locally, so it wasn't flagged as downloaded from the web, as files npm unpacks aren't either, and macOS ran no notarization check.
+- **GitHub's hosted Apple silicon runners can't start a VM.** Community reports and actions that depend on it agree that the runners lack nested virtualization. GitHub doesn't document it. They can build and sign Swift, which needs no VM.
 
 ## Goals / Non-Goals
 
@@ -37,14 +32,20 @@ Measured on 2026-11-24 on the maintainer's Mac (Apple silicon, macOS 27.0.1, 24 
 The machine is Alpine Linux for arm64, chosen because it's the smallest base with Docker Engine packaged, and containers bring their own libc. It's three files, built by a `machine` target in the `Dockerfile` that exports them with `docker build --target machine --output <dir>`:
 
 ```text
-vmlinuz      Alpine's virt kernel, uncompressed, since Virtualization.framework boots only an uncompressed arm64 kernel
+vmlinuz      Alpine's virt kernel, decompressed, since Virtualization.framework boots only an uncompressed arm64 kernel
 initramfs    mounts the system disk read-only with a tmpfs over it, and the data disk at /var/lib/docker
-system.img   squashfs: Docker Engine, containerd, runc, socat, qemu-guest-agent, OpenRC
+system.img   squashfs: Docker Engine, containerd, runc, socat, OpenRC, and the guest's relays
 ```
 
-vfkit boots the kernel directly, with no firmware or bootloader, which is the shortest boot. The system disk is squashfs, so it ships compressed, mounts without unpacking and can't be changed. An upgrade replaces it whole. The data disk, `data.img`, is a sparse 64 GiB file that `jen` creates on first start. The initramfs formats it as ext4 when it's blank. It holds `/var/lib/docker`, so images, volumes (agents' state, workspaces, the settings) and containers outlive versions, just as they outlive Docker Desktop updates today.
+The launcher boots the kernel directly, with no firmware or bootloader, which is the shortest boot. The system disk is squashfs, so it ships compressed, mounts without unpacking and can't be changed. An upgrade replaces it whole. The data disk, `data.img`, is a sparse 64 GiB file that the launcher creates on first start. The initramfs formats it as ext4 when it's blank. It holds `/var/lib/docker`, so images, volumes (agents' state, workspaces, the settings) and containers outlive versions, just as they outlive Docker Desktop updates today.
 
-The engine listens only on `/var/run/docker.sock` inside the machine. Nothing in the machine listens on its network.
+The engine listens only on `/var/run/docker.sock` inside the machine. Nothing in the machine listens on its network. Three vsock ports, the VM's socket channel to the Mac, each run a socat relay:
+
+| Port | In the machine, each connection goes to |
+|---|---|
+| 2375 | the engine's `/var/run/docker.sock` |
+| 2376 | `127.0.0.1:<port>`, where `<port>` is the connection's first line, refused unless it's a number from 1 to 65535 |
+| 2377 | a script that sets the clock to the Unix time in the connection's first line |
 
 *Alternative: bake the three images into the system disk*, as first proposed. The engine would have to load them on the first boot of each version, which is a second way images arrive, beside the pull an installed `jen` already does on Linux, and it would roughly triple the machine's size. Instead the machine's engine pulls from GHCR exactly as it does on Linux, and the existing rules for pulling, showing progress and removing old versions' images apply unchanged.
 
@@ -52,13 +53,13 @@ The engine listens only on `/var/run/docker.sock` inside the machine. Nothing in
 
 ### Where the machine comes from: a platform package
 
-The machine ships in `@jen-ai/darwin-arm64`, an npm package that `jen-ai` lists in `optionalDependencies` at its own version, with `os: darwin` and `cpu: arm64`. npm installs it only on an Apple silicon Mac. It holds the three machine files, vfkit's binary and Docker's static `docker` command for macOS:
+The machine ships in `@jen-ai/darwin-arm64`, an npm package that `jen-ai` lists in `optionalDependencies` at its own version, with `os: darwin` and `cpu: arm64`. npm installs it only on an Apple silicon Mac. It holds the three machine files, jen's launcher and Docker's static `docker` command for macOS:
 
 ```text
 @jen-ai/darwin-arm64/
   machine/vmlinuz, machine/initramfs, machine/system.img
-  bin/vfkit      vfkit's released binary, pinned and checked against its checksum
-  bin/docker     Docker's static macOS client, pinned and checked against its checksum
+  bin/jen-machine   jen's launcher, signed ad hoc with the virtualization entitlement
+  bin/docker        Docker's static macOS client, pinned and checked against its checksum
 ```
 
 Nothing runs at install, and the first command needs nothing downloaded beyond the images. The package's size is measured in task 1. Without the images it's expected to be well under 100 MB.
@@ -71,33 +72,33 @@ On macOS, `jen` runs the package's `bin/docker` with `DOCKER_HOST=unix://<machin
 
 *Alternative: talk to the Engine API directly*, as first proposed. One less binary (Docker's client is about 40 MB unpacked), but it rewrites every `docker run` and `docker exec` `jen` sends into create, attach and start calls, and breaks Linux users who rely on a Docker context. The bundled client changes none of that.
 
-### The launcher: vfkit, run by a small supervisor of jen's own
+### The launcher: `jen-machine`, one process that is the machine
 
-`jen` starts the machine by starting a supervisor: `cli/machine-supervisor.js`, run with Node, detached from the terminal and outliving the command. The supervisor:
+`jen-machine` is a Swift program, in `src/machine/launcher/`, built against Virtualization.framework. The VM runs inside its process: while it runs, the machine runs, and when it exits, for any reason, the machine is gone. `jen` starts it detached from the terminal, so it outlives the command. It:
 
-- starts vfkit as its child, with the kernel, the initramfs, the system disk read-only, the data disk, NAT networking, a random-number device, the console logged to `console.log`, `--timesync` and its REST API on `control.sock`, plus two vsock ports exposed as Unix sockets on the Mac:
-  - `engine.sock`, relayed in the machine by socat to `/var/run/docker.sock`
-  - `ports.sock`, relayed in the machine to a TCP port on its loopback named by the connection's first line
-- **mirrors published ports.** It follows the engine's events through `engine.sock`, and for every running container with a port published on `127.0.0.1`, it listens on the same port on the Mac's `127.0.0.1` and carries each connection through `ports.sock`. That keeps the `jen-command` requirement that the runtime is published only on `127.0.0.1` true on the Mac. It also covers any runtime, whatever its name, including the live checks' and evaluations' when they're pointed at the machine.
-- **stops the machine cleanly** on `SIGTERM`: vfkit's REST API asks the guest to shut down, and after 30 seconds it stops the VM outright.
+- **runs the VM** with the kernel, the initramfs, the system disk read-only, the data disk, NAT networking, an entropy device, a vsock device, the console written to `console.log`, every core the Mac has, and the memory below
+- **relays the engine.** It listens on `engine.sock` in the machine's folder, a Unix socket only the user can open, and carries each connection to vsock port 2375.
+- **mirrors published ports.** It follows the engine's events through port 2375. For every running container with a port published on `127.0.0.1`, it listens on the same port on the Mac's `127.0.0.1` and carries each connection through port 2376. That keeps the `jen-command` requirement that the runtime is published only on `127.0.0.1` true on the Mac. It also covers any runtime, whatever its name, including the live checks' and evaluations' when they're pointed at the machine.
+- **sets the clock** through port 2377: once the engine first answers, and whenever macOS says the Mac woke.
+- **stops cleanly** on `SIGTERM`. It asks the guest to shut down, and stops the VM outright after 30 seconds.
 
-Its files live in `~/.jen/machines/<runtime name>/`: the data disk, the sockets, `supervisor.pid`, `version` (the system disk it booted) and `console.log`. Short paths matter here, since macOS caps a Unix socket's path at 104 bytes. A runtime name of its own, such as a live check's `jen-live-<hex>`, gets a machine of its own, so a check's `jen uninstall` never deletes the user's machine.
+Its files live in `~/.jen/machines/<runtime name>/`: the data disk, `engine.sock`, `launcher.pid`, `version` (the system disk it booted) and `console.log`. Short paths matter here, since macOS caps a Unix socket's path at 104 bytes. A runtime name of its own, such as a live check's `jen-live-<hex>`, gets a machine of its own, so a check's `jen uninstall` never deletes the user's machine.
 
-*Alternative: publish the runtime on the machine's NAT address instead of relaying ports.* That needs no relay, but the UI's URL would be an address that changes, reachable by anything on the Mac's VM network, and the `127.0.0.1` requirement would no longer mean anything on a Mac.
+*Alternative: vfkit*, Red Hat's launcher, which Podman uses on macOS, run by a Node supervisor of jen's that mirrors ports. It brings Podman's testing across macOS versions, but two processes on the Mac, a supervisor and vfkit, either of which can die and leave the other running, and a 10–20 MB third-party binary whose options this design would depend on unverified. It was chosen at first for its signature, until the measurement above showed jen can sign its own. Rejected by the maintainer on 2026-11-24.
 
-*Alternative: a launcher of jen's own in Swift.* Without its own signing, it's unclear whether macOS grants the virtualization entitlement: Apple's forums have a report of it failing without a developer account. vfkit's released binary is signed already, which task 1 confirms. jen's own Swift remains the fallback if vfkit falls short.
+*Alternative: publish the runtime on the machine's NAT address instead of mirroring ports.* That needs no mirroring, but the UI's URL would be an address that changes, reachable by anything on the Mac's VM network, and the `127.0.0.1` requirement would no longer mean anything on a Mac.
 
 ### Starting, stopping and upgrading
 
-- **Start.** Before the first `docker` call, `jen` checks the engine through `engine.sock`. If it doesn't answer, `jen` takes a lock in the machine's folder, starts the supervisor, says it's starting jen's machine, and waits up to 60 seconds for the engine. A second `jen` that finds the lock waits for the same engine.
-- **Stop.** `jen stop all` stops every agent and the runtime as today, then signals the supervisor and waits for it to exit. `jen stop @<name>` leaves the machine running.
+- **Start.** Before the first `docker` call, `jen` checks the engine through `engine.sock`. If it doesn't answer, `jen` takes a lock in the machine's folder, starts `jen-machine`, says it's starting jen's machine, and waits up to 60 seconds for the engine. A second `jen` that finds the lock waits for the same engine. A `launcher.pid` that no running `jen-machine` holds, as after a reboot or a crash, is stale and ignored.
+- **Stop.** `jen stop all` stops every agent and the runtime as today, then sends `SIGTERM` to `jen-machine` and waits for it to exit. `jen stop @<name>` leaves the machine running.
 - **Upgrade.** When `version` names a different system disk from the package's, the next command that needs the engine:
   1. stops every agent through the runtime, as the existing rule for a new image does
   2. stops the machine
   3. starts it on the new system disk
 
   The runtime then starts on the new version's images, which the engine pulls.
-- **Mac sleep and reboot.** Sleep pauses the machine, and vfkit sets its clock on wake. A reboot leaves a stale `supervisor.pid`, which `jen` ignores when no process holds it.
+- **Mac sleep and reboot.** Sleep pauses the VM, and the launcher sets its clock on wake. A reboot ends the launcher, so the next command starts the machine again.
 
 ### Resources
 
@@ -109,28 +110,36 @@ On macOS, `jen uninstall` stops the machine and deletes `~/.jen/machines/<name>/
 
 ### Checkouts and checks
 
-- **A checkout on macOS** builds the machine with `docker build --target machine --output dist/machine .`, using any engine, and `jen` uses `dist/machine/` in place of the platform package. Its images go into the machine's engine with `DOCKER_HOST=unix://$HOME/.jen/machines/jen/engine.sock docker build ...`, using any `docker` command.
+- **A checkout on macOS** builds the machine with `docker build --target machine --output dist/machine .`, using any engine, and the launcher with `swiftc`, through `npm run build:machine`. `jen` then uses `dist/machine/` in place of the platform package. Its images go into the machine's engine with `DOCKER_HOST=unix://$HOME/.jen/machines/jen/engine.sock docker build ...`, using any `docker` command.
+- **The launcher's unit tests** cover what needs no VM, such as the port relay's first line and the mirroring's response to the engine's events, with `swift test`, in a CI job on a macOS runner.
 - **The machine's live check** (`src/cli/machine.live.test.ts`) runs only on an Apple silicon Mac. It starts a machine under a name of its own and checks that:
   - the engine answers within the 60 seconds
   - a container published on `127.0.0.1` answers on the Mac
   - the machine stops and starts again with its data kept
-  - the clock is right after a `pmset` sleep, by hand, since a check can't sleep the Mac reliably
+  - the clock is right after a sleep, by hand, since a check can't sleep the Mac reliably
 - **The boundary check** runs against the machine by pointing `DOCKER_HOST` at its `engine.sock`. CI keeps running it on Linux.
 - **The command's live check** runs the installed package on macOS through the machine.
 
-Since CI can't start a VM on macOS, these run by hand on the maintainer's Mac for this change and for any later change to the machine, the supervisor or the release's machine build.
+Since CI can't start a VM on macOS, these run by hand on the maintainer's Mac for this change and for any later change to the machine, the launcher or the release's machine build.
 
 ### Release
 
-`release.yml` builds the `machine` target on an arm64 Linux runner, downloads vfkit's and Docker's pinned binaries and checks their checksums, and packs `@jen-ai/darwin-arm64` at the release's version. It publishes the platform package before `jen-ai`, so a published `jen-ai` never names a platform package that doesn't exist. The existing check before publishing, which installs the package and runs `jen help`, installs both. CI builds the `machine` target on every push, so a broken machine build fails before it reaches `main`.
+`release.yml`:
+
+1. builds the `machine` target on an arm64 Linux runner
+2. builds `jen-machine` on a macOS runner and signs it ad hoc with the entitlement
+3. downloads Docker's pinned client and checks its checksum
+4. packs `@jen-ai/darwin-arm64` at the release's version
+
+It publishes the platform package before `jen-ai`, so a published `jen-ai` never names a platform package that doesn't exist. The existing check before publishing, which installs the package and runs `jen help`, installs both. CI builds the `machine` target and the launcher on every push, so a broken build fails before it reaches `main`.
 
 ## Risks / Trade-offs
 
-- **vfkit may not behave as documented.** Its vsock connect mode, its time sync on wake or its signature could fall short. → Task 1 boots a machine with every option this design uses before anything is built on it. jen's own Swift launcher is the fallback, at the cost of signing.
-- **Everything about the machine is checked by hand.** → The machine's live check makes the hand check one command. A change that touches the machine names that check in its pull request.
-- **jen ships an OS.** A vulnerability in Alpine's kernel, Docker Engine or runc is jen's to release. → Alpine and Docker versions are pinned in the `Dockerfile`, and `tend` checks them each cycle.
+- **The launcher is Swift jen owns, tested on a VM only by hand.** How the guest answers a shutdown request, and whether the clock holds across sleep, are behaviors of Virtualization.framework that no CI run sees. → Task 1 boots the machine with the launcher's VM configuration, a relayed engine and a clean shutdown before anything else is built on it. The machine's live check makes every later hand check one command, and a change that touches the machine names that check in its pull request.
+- **Signing ad hoc is measured only from a local build.** → Task 1 also runs the launcher from a package installed with `npm install -g`, the way a user gets it.
+- **jen ships an OS.** A vulnerability in Alpine's kernel, Docker Engine or runc is jen's to release. → Alpine's and Docker's versions are pinned in the `Dockerfile`, and `tend` checks them each cycle.
 - **A second VM beside Docker Desktop.** A user who keeps Docker Desktop pays for both VMs' memory. → Accepted: one engine path to test, and jen kept apart from the user's containers.
-- **The supervisor can die and leave vfkit running**, with nothing mirroring ports. → `jen` treats an engine that answers on `engine.sock` with no supervisor holding `supervisor.pid` as orphaned. It stops that VM through `control.sock` and starts the machine again.
+- **The launcher can crash.** The VM then stops as if its power were cut. → ext4's journal and SQLite already survive that, and the next command starts the machine again.
 
 ## Migration
 
