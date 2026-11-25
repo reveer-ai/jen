@@ -10,8 +10,10 @@ License 2.0.
 
 machine/ is a Linux system built from Alpine Linux packages, each under its
 own license: among them the Linux kernel and BusyBox under the GNU General
-Public License version 2, and Docker Engine, containerd and runc under the
-Apache License 2.0. The system lists every package with its version and
+Public License version 2. The system lists every package with its version and
 license in /lib/apk/db/installed. Their sources are Alpine's, at
-https://gitlab.alpinelinux.org/alpine/aports, and how jen builds the system
-from them is in https://github.com/reveer-ai/jen, under src/machine/.
+https://gitlab.alpinelinux.org/alpine/aports. Its engine is Docker's static
+build for Linux, from https://download.docker.com/linux/static/stable/aarch64/:
+Docker Engine, containerd and runc under the Apache License 2.0, and
+docker-init, which is tini, under the MIT License. How jen builds the system is
+in https://github.com/reveer-ai/jen, under src/machine/.

@@ -37,12 +37,12 @@ Measured on 2026-11-24 on the same Mac, booting task 1.1's machine (Alpine 3.24.
 
 ### The machine: Alpine, booted read-only, with a data disk
 
-The machine is Alpine Linux for arm64, chosen because it's the smallest base with Docker Engine packaged, and containers bring their own libc. It's three files, built by a `machine` target in the `Dockerfile` that exports them with `docker build --target machine --output <dir>`:
+The machine is Alpine Linux for arm64, chosen because it's the smallest base, and containers bring their own libc. Its engine is Docker's own static build for Linux (`dockerd`, `containerd`, its shim, `runc`, `docker-init` and `docker-proxy`), at the version of the bundled client, pinned exactly and checked against its checksum, not Alpine's packages. Alpine's `runc` is built against musl, which keeps signal 34 for itself, and it starts every container with that signal ignored, so the boundary check's `a command starts with no signal ignored` failed on it (measured on 2026-11-25). Alpine also keeps only each package's latest patch, so its engine could be pinned only to a minor version. It's three files, built by a `machine` target in the `Dockerfile` that exports them with `docker build --target machine --output <dir>`:
 
 ```text
 vmlinuz      Alpine's virt kernel, decompressed, since Virtualization.framework boots only an uncompressed arm64 kernel
 initramfs    mounts the system disk read-only with a tmpfs over it, and the data disk at /var/lib/docker
-system.img   squashfs: Docker Engine, containerd, runc, socat, OpenRC, and the guest's relays
+system.img   squashfs: Docker's engine, socat, OpenRC, and the guest's relays
 ```
 
 The launcher boots the kernel directly, with no firmware or bootloader, which is the shortest boot. The system disk is squashfs, so it ships compressed, mounts without unpacking and can't be changed. An upgrade replaces it whole. The data disk, `data.img`, is a sparse 64 GiB file that the launcher creates on first start. The initramfs formats it as ext4 when it's blank. It holds `/var/lib/docker`, so images, volumes (agents' state, workspaces, the settings) and containers outlive versions, just as they outlive Docker Desktop updates today.
@@ -146,7 +146,7 @@ It publishes the platform package before `jen-ai`, so a published `jen-ai` never
 
 - **The launcher is Swift jen owns, tested on a VM only by hand.** How the guest answers a shutdown request, and whether the clock holds across sleep, are behaviors of Virtualization.framework that no CI run sees. → Task 1 boots the machine with the launcher's VM configuration, a relayed engine and a clean shutdown before anything else is built on it. The machine's live check makes every later hand check one command, and a change that touches the machine names that check in its pull request.
 - **Signing ad hoc is measured only from a local build.** → Task 1 also runs the launcher from a package installed with `npm install -g`, the way a user gets it.
-- **jen ships an OS.** A vulnerability in Alpine's kernel, Docker Engine or runc is jen's to release. → Alpine's and Docker's versions are pinned in the `Dockerfile`, and `tend` checks them each cycle.
+- **jen ships an OS.** A vulnerability in Alpine's kernel, Docker Engine or runc is jen's to release. → Alpine's and Docker's versions are pinned in the `Dockerfile`, Docker's exactly, and `tend` checks them each cycle.
 - **A second VM beside Docker Desktop.** A user who keeps Docker Desktop pays for both VMs' memory. → Accepted: one engine path to test, and jen kept apart from the user's containers.
 - **The launcher can crash.** The VM then stops as if its power were cut. → ext4's journal and SQLite already survive that, and the next command starts the machine again.
 

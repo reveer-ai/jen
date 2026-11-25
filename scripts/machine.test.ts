@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -21,4 +21,9 @@ test("a docker download that doesn't match its pinned checksum is refused, writi
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the machine's engine is the docker client's version", () => {
+  const dockerfile = readFileSync(join(import.meta.dirname, "..", "Dockerfile"), "utf8");
+  expect(dockerfile.match(/^ARG DOCKER_ENGINE=(\S+)$/m)?.[1]).toBe(DOCKER_CLIENT.version);
 });

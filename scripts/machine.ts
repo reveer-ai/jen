@@ -22,8 +22,9 @@ const LAUNCHER = join(ROOT, "src", "machine", "launcher");
 // The machine target's files, as the platform package's machine/ holds them.
 export const MACHINE_FILES = ["vmlinuz", "initramfs", "system.img", "version"] as const;
 
-// Docker's static client for macOS on arm64. Docker publishes no checksum for
-// it, so this one is the download's, taken when the version was pinned.
+// Docker's static client for macOS on arm64, at the version of the machine's
+// engine, the Dockerfile's DOCKER_ENGINE. Docker publishes no checksum for it,
+// so this one is the download's, taken when the version was pinned.
 export const DOCKER_CLIENT = {
   version: "29.9.3",
   url: "https://download.docker.com/mac/static/stable/aarch64/docker-29.9.3.tgz",
