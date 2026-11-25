@@ -7,6 +7,7 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 Set by the maintainer, implementing [JEN-31](https://linear.app/reveer/issue/JEN-31):
 
 - **The machine's engine is Docker's static build for Linux, at the bundled client's version and pinned to its checksum, not Alpine's packages.** Alpine provides only the kernel and the OS. *Why:* set by the maintainer, once the boundary check found that Alpine's musl-built `runc` starts every container with signal 34 ignored, and Docker's static `runc` doesn't. It's the engine Docker ships for Linux, and pins exactly where Alpine's could be pinned only to a minor version. *Rejected:* Docker's `runc` alone beside Alpine's engine, the smaller change.
+- **jen doesn't host the sources of the machine's GPL software.** `src/machine/NOTICE` names the Linux kernel and BusyBox and points to Alpine's aports for their sources. *Why:* set by the maintainer at the close of JEN-31's review, asked whether jen should host them itself.
 
 Made implementing JEN-31:
 
