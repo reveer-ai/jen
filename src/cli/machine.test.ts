@@ -1,11 +1,11 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { EngineError, type Runner } from "./docker.ts";
 import { harness, SETTINGS } from "./harness.ts";
-import { Machine, machineFiles, PLATFORM_PACKAGE, START_MS, type MachineHost } from "./machine.ts";
+import { DOCKER_CONFIG_JSON, Machine, machineFiles, PLATFORM_PACKAGE, START_MS, type MachineHost } from "./machine.ts";
 import { parse, run, type Deps } from "./main.ts";
 import { QUESTION } from "./uninstall.ts";
 
@@ -205,6 +205,45 @@ describe("starting", () => {
   test("each runtime name has a machine of its own", () => {
     const m = mac();
     expect(new Machine("jen-live-1a2b", m.host).folder).toBe(join(dir, "home", ".jen", "machines", "jen-live-1a2b"));
+  });
+});
+
+describe("its docker's config", () => {
+  const config = (m: ReturnType<typeof mac>) => join(m.machine.folder, "docker", "config.json");
+
+  test("a machine that starts gets its docker's config, naming ghcr.io with no credentials", async () => {
+    const m = mac();
+    await m.machine.ensure(m.options);
+    expect(m.machine.docker().env.DOCKER_CONFIG).toBe(join(m.machine.folder, "docker"));
+    expect(JSON.parse(readFileSync(config(m), "utf8"))).toEqual({ auths: { "ghcr.io": {} } });
+    expect(readFileSync(config(m), "utf8")).toBe(DOCKER_CONFIG_JSON);
+  });
+
+  test("a running machine without one, as an earlier jen started, gets it without starting again", async () => {
+    const m = mac({ bootPolls: 0 });
+    await m.machine.ensure(m.options);
+    rmSync(join(m.machine.folder, "docker"), { recursive: true });
+    expect(await m.machine.ensure(m.options)).toBe(true);
+    expect(m.launches).toHaveLength(1);
+    expect(readFileSync(config(m), "utf8")).toBe(DOCKER_CONFIG_JSON);
+  });
+
+  test("one that differs is replaced, leaving no temporary file", async () => {
+    const m = mac({ bootPolls: 0 });
+    await m.machine.ensure(m.options);
+    writeFileSync(config(m), "{}\n");
+    await m.machine.ensure(m.options);
+    expect(readFileSync(config(m), "utf8")).toBe(DOCKER_CONFIG_JSON);
+    expect(readdirSync(join(m.machine.folder, "docker"))).toEqual(["config.json"]);
+  });
+
+  test("a machine that doesn't answer gets none", async () => {
+    const m = mac();
+    await m.machine.ensure(m.options);
+    await m.machine.stop(m.options);
+    rmSync(join(m.machine.folder, "docker"), { recursive: true, force: true });
+    expect(await m.machine.ensure({ ...m.options, start: false })).toBe(false);
+    expect(existsSync(config(m))).toBe(false);
   });
 });
 

@@ -5,17 +5,19 @@
 // listens on its network, reaches a container's port published on 127.0.0.1
 // from the Mac and from nowhere else, sees the Mac stop listening once the
 // container is gone, stops the machine and starts it again with a volume's
-// data kept, and removes the machine, even when it fails. It needs no model
-// and pulls alpine from Docker Hub. Skipped anywhere but macOS on arm64; there,
+// data kept, and removes the machine, even when it fails. It also pulls from
+// ghcr.io with a stand-in for the keychain's credential helper first on PATH,
+// which jen's docker mustn't ask. It needs no model, pulls alpine from Docker
+// Hub, and asks ghcr.io for a tag of jen-runtime that doesn't exist. Skipped anywhere but macOS on arm64; there,
 // a machine that isn't built fails the check. Whether the clock is right
 // after the Mac sleeps is a hand check, since a check can't sleep the Mac:
 // docker run --rm alpine date against the Mac's date after pmset sleepnow.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
-import { networkInterfaces } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { Machine, START_MS } from "./machine.ts";
@@ -23,7 +25,7 @@ import { Machine, START_MS } from "./machine.ts";
 const onMac = process.platform === "darwin" && process.arch === "arm64";
 const checkout = join(import.meta.dirname, "../..");
 
-test.skipIf(!onMac)("jen's machine starts, serves a port published on 127.0.0.1, keeps its data across a restart, and is removed", { timeout: 600_000 }, async () => {
+test.skipIf(!onMac)("jen's machine starts, pulls anonymously whatever the keychain holds, serves a port published on 127.0.0.1, keeps its data across a restart, and is removed", { timeout: 600_000 }, async () => {
   const machine = new Machine(`jen-live-${randomBytes(4).toString("hex")}`);
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
   const options = { start: true, say: () => {}, sleep, now: Date.now };
@@ -38,6 +40,22 @@ test.skipIf(!onMac)("jen's machine starts, serves a port published on 127.0.0.1,
     expect(await machine.ensure(options)).toBe(true);
     expect(Date.now() - started).toBeLessThan(START_MS);
     expect(readFileSync(join(machine.folder, "version"), "utf8")).toBe(readFileSync(join(checkout, "dist", "machine", "version"), "utf8"));
+
+    // A login the keychain holds, such as a stale one Docker Desktop left for
+    // ghcr.io, which ghcr.io refuses: the stand-in helper answers with one for
+    // any registry. jen's docker asks it nothing, so the pull is anonymous,
+    // and a tag that doesn't exist is not found rather than denied.
+    const helper = mkdtempSync(join(tmpdir(), "jen-live-helper-"));
+    try {
+      const answer = JSON.stringify({ ServerURL: "https://ghcr.io", Username: "jen-live", Secret: "stale" });
+      writeFileSync(join(helper, "docker-credential-osxkeychain"), `#!/bin/sh\necho "$1" >> "$(dirname "$0")/asked"\ncat > /dev/null\necho '${answer}'\n`, { mode: 0o755 });
+      const { program, env } = machine.docker();
+      const pull = spawnSync(program, ["pull", "ghcr.io/reveer-ai/jen-runtime:live-missing"], { encoding: "utf8", env: { ...process.env, ...env, PATH: `${helper}:${process.env.PATH}` }, timeout: 120_000 });
+      expect(pull.stderr).toMatch(/not found/);
+      expect(existsSync(join(helper, "asked"))).toBe(false);
+    } finally {
+      rmSync(helper, { recursive: true, force: true });
+    }
 
     expect(docker(["run", "--rm", "-i", "--network", "host", "--pid", "host", "alpine", "sh", "-s"], readFileSync(join(checkout, "src", "machine", "check.sh"), "utf8"))).toMatch(/nothing listens on the machine's network/);
 

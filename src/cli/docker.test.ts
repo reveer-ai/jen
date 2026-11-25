@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, vi } from "vitest";
 import { createDocker, DockerError, EngineError, runProcess, START_MS, type EngineOptions, type Output, type Runner } from "./docker.ts";
 import { Machine } from "./machine.ts";
@@ -164,7 +167,7 @@ test("a volume is created with its labels, a bare label without a value", async 
 });
 
 // macOS's engine, jen's machine, with its files at /pkg.
-const machine = (run: Runner) => new Machine("jen", { run, home: "/Users/u", files: () => ({ system: "/pkg/machine", launcher: "/pkg/bin/jen-machine", docker: "/pkg/bin/docker" }) });
+const machine = (run: Runner, home = "/Users/u") => new Machine("jen", { run, home, files: () => ({ system: "/pkg/machine", launcher: "/pkg/bin/jen-machine", docker: "/pkg/bin/docker" }) });
 
 test("on macOS, every call runs the package's docker against the machine, whatever the user's environment says", async () => {
   const { docker, calls } = stub(() => ({ stdout: "[]" }), machine);
@@ -193,8 +196,14 @@ test("on macOS, the user's other DOCKER_ variables are removed from the docker j
 });
 
 test("on macOS, the engine is the machine's, and Docker Desktop is never started or checked", async () => {
-  const { docker, calls } = stub((args) => (isVersion(args) ? { stdout: "29.9.3\n" } : { code: 1 }), machine);
-  expect(await docker.ensureEngine(engine().options)).toBe(true);
-  expect(calls.map((c) => [c.program, ...c.args])).toEqual([["/pkg/bin/docker", ...version]]);
-  expect(calls[0]!.env?.DOCKER_HOST).toBe("unix:///Users/u/.jen/machines/jen/engine.sock");
+  // Once it answers, the machine writes its docker's config in its folder.
+  const home = mkdtempSync(join(tmpdir(), "jen-docker-"));
+  try {
+    const { docker, calls } = stub((args) => (isVersion(args) ? { stdout: "29.9.3\n" } : { code: 1 }), (run) => machine(run, home));
+    expect(await docker.ensureEngine(engine().options)).toBe(true);
+    expect(calls.map((c) => [c.program, ...c.args])).toEqual([["/pkg/bin/docker", ...version]]);
+    expect(calls[0]!.env?.DOCKER_HOST).toBe(`unix://${home}/.jen/machines/jen/engine.sock`);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -4,7 +4,15 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 
 ## 2026-11-25
 
-Set by the maintainer, implementing [JEN-31](https://linear.app/reveer/issue/JEN-31):
+Set by the maintainer, after [JEN-31](https://linear.app/reveer/issue/JEN-31)'s release:
+
+- **The first release with the machine, `0.2.0`, has no upgrade note for Mac users.** *Why:* jen had no users yet, so nobody had roots in Docker Desktop to lose.
+
+Made fixing [JEN-35](https://linear.app/reveer/issue/JEN-35):
+
+- **On a Mac, jen writes its own `docker`'s `config.json`, naming ghcr.io with no credentials, each time the machine answers.** *Why:* a config that names no credentials makes the `docker` command fall back on macOS to the keychain's credential helper, so a stale ghcr.io login Docker Desktop left reached the engine, and ghcr.io refused every pull of jen's images. Naming any registry turns the fallback off for all of them. Writing it whenever the machine answers reaches a machine an earlier jen started. *Rejected:* leaving credential helpers off `PATH`, since one can sit beside `node` and `jen`; an empty config, which `docker` still falls back from; and a `credsStore` that doesn't exist, which fails every pull.
+
+Set by the maintainer, implementing JEN-31:
 
 - **The machine's engine is Docker's static build for Linux, at the bundled client's version and pinned to its checksum, not Alpine's packages.** Alpine provides only the kernel and the OS. *Why:* set by the maintainer, once the boundary check found that Alpine's musl-built `runc` starts every container with signal 34 ignored, and Docker's static `runc` doesn't. It's the engine Docker ships for Linux, and pins exactly where Alpine's could be pinned only to a minor version. *Rejected:* Docker's `runc` alone beside Alpine's engine, the smaller change.
 - **The machine's version is a hash of its kernel, initramfs, system disk and launcher, worked out where the launcher is built, not the release's version.** It supersedes 2026-11-24's hash of the system alone. *Why:* set by the maintainer at the close of JEN-31's review. Without the launcher, an upgrade that changed only the launcher left the old one running until `jen stop all` or a restart. The machine still restarts only when what it runs changed, and a checkout's rebuild counts as a new version with none of its own to bump.
@@ -29,7 +37,7 @@ Made implementing JEN-31:
 
 - **The machine's Linux is asked to shut down through a vsock port of its own, 2378, not Virtualization.framework's stop request.** *Why:* the VM offers its power button through gpio-keys, and Alpine's virt kernel has no driver for it, so the request never reaches Linux (measured on 2026-11-24, in the design's Context).
 - *Superseded on 2026-11-25 by the machine's version including its launcher.* **The machine's version is a hash of its kernel, initramfs and system disk, not the release's version.** *Why:* the machine then restarts only when its system changed, and a checkout's rebuild counts as a new system with no version of its own to bump.
-- **jen points its own `docker` at the machine with `DOCKER_HOST`, gives it a `DOCKER_CONFIG` in the machine's folder, and removes the user's other `DOCKER_` variables.** *Why:* a Mac that had Docker Desktop keeps its `config.json`, whose credential helper and contexts would otherwise reach jen's `docker`, and a variable such as `DOCKER_TLS_VERIFY` or `DOCKER_API_VERSION` left the machine looking unanswered.
+- **jen points its own `docker` at the machine with `DOCKER_HOST`, gives it a `DOCKER_CONFIG` in the machine's folder, and removes the user's other `DOCKER_` variables.** *Why:* a Mac that had Docker Desktop keeps its `config.json`, whose credential helper and contexts would otherwise reach jen's `docker`, and a variable such as `DOCKER_TLS_VERIFY` or `DOCKER_API_VERSION` left the machine looking unanswered. A `DOCKER_CONFIG` alone didn't keep the keychain's logins out: see 2026-11-25's config.
 - **A release builds and checks the packages on a macOS runner, and publishes from there.** *Why:* npm won't install the platform package on Linux, so only a Mac installs both as a user does, and the launcher builds and signs only there. Docker's client is checked against its checksum in the arm64 job that builds the machine, which the images wait for, so a changed download publishes nothing.
 
 Made in [JEN-30](https://linear.app/reveer/issue/JEN-30), whose OpenSpec change is `make-tests-reliable`:

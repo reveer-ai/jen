@@ -2,13 +2,14 @@
 // only Docker engine there. jen-machine, the launcher, runs the VM inside its
 // own process, so the machine runs exactly as long as the launcher does. Each
 // runtime name has its own machine, with its files in ~/.jen/machines/<name>/,
-// which the launcher describes. The machine, the launcher and the docker
+// which the launcher describes, beside docker/, the config of jen's own docker
+// command. The machine, the launcher and the docker
 // command jen runs against it come from the platform package in an installed
 // jen, and from dist/machine/, which npm run build:machine writes, in a
 // checkout.
 
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { createRequire } from "node:module";
 import { connect, createServer, type AddressInfo } from "node:net";
 import { homedir, uptime } from "node:os";
@@ -26,6 +27,14 @@ export const PLATFORM_PACKAGE = "@jen-ai/darwin-arm64";
 export const START_MS = 60_000;
 export const STOP_MS = 40_000;
 const POLL_MS = 200;
+
+// The config.json of the docker command jen runs against the machine: ghcr.io,
+// with no credentials, so every pull is anonymous. A config that names no
+// credentials at all isn't enough: docker then falls back on macOS to the
+// keychain's credential helper, and a login the keychain holds, such as a
+// stale one Docker Desktop left for ghcr.io, would reach the engine and be
+// refused. Naming any registry turns that fallback off for all of them.
+export const DOCKER_CONFIG_JSON = `${JSON.stringify({ auths: { "ghcr.io": {} } })}\n`;
 
 // Where the machine's files come from.
 export interface MachineFiles {
@@ -138,8 +147,9 @@ export class Machine {
 
   // The docker command to run against the machine's engine, and the
   // environment that points it there whatever the user's says: their
-  // DOCKER_HOST, their context and their configuration, credential helpers
-  // included, are all replaced.
+  // DOCKER_HOST, their context and their configuration are all replaced. Its
+  // configuration is the machine's docker folder, where ensure writes
+  // DOCKER_CONFIG_JSON, so no credential helper of the user's is used either.
   docker(): { program: string; env: Record<string, string | undefined> } {
     // Every other DOCKER_ variable is removed, such as DOCKER_TLS_VERIFY or
     // DOCKER_API_VERSION, which would point it elsewhere or break it.
@@ -199,8 +209,28 @@ export class Machine {
 
   // Answers once the machine's engine answers, starting the machine first
   // when start is set. Without start, an engine that doesn't answer answers
-  // false.
-  async ensure({ start, say, sleep, now }: EngineOptions): Promise<boolean> {
+  // false. Once it answers, its docker's config is written, so a machine an
+  // earlier jen started gets it too.
+  async ensure(options: EngineOptions): Promise<boolean> {
+    if (!(await this.#ensure(options))) return false;
+    this.#configure();
+    return true;
+  }
+
+  // Writes DOCKER_CONFIG_JSON unless it's there already, through a temporary file
+  // renamed over it, so a docker another jen runs meanwhile never reads part
+  // of one, which it would take for no config.
+  #configure(): void {
+    const folder = join(this.folder, "docker");
+    const config = join(folder, "config.json");
+    if (read(config) === DOCKER_CONFIG_JSON.trim()) return;
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const written = `${config}.${process.pid}`;
+    writeFileSync(written, DOCKER_CONFIG_JSON);
+    renameSync(written, config);
+  }
+
+  async #ensure({ start, say, sleep, now }: EngineOptions): Promise<boolean> {
     if (await this.answers()) return true;
     if (!start) return false;
     mkdirSync(this.folder, { recursive: true, mode: 0o700 });
