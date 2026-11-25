@@ -22,9 +22,6 @@ const LAUNCHER = join(ROOT, "src", "machine", "launcher");
 // The machine target's files: the system the machine boots.
 export const SYSTEM_FILES = ["vmlinuz", "initramfs", "system.img"] as const;
 
-// The platform package's machine/: the system and the machine's version.
-export const MACHINE_FILES = [...SYSTEM_FILES, "version"] as const;
-
 // The machine's version, which the launcher records as the one it booted: a
 // hash of the system's files in dir and of the launcher, dir's jen-machine, so
 // an upgrade that changes either restarts the machine.
@@ -99,13 +96,13 @@ export function buildLauncher(dest: string): void {
 
 export async function buildMachine(out = join(ROOT, "dist", "machine")): Promise<void> {
   if (process.platform !== "darwin") throw new Error("the machine's launcher builds only on macOS");
-  // Written last, so a build that fails leaves no version for a checkout's jen
-  // to run.
+  // The version is written last, so a build that fails leaves none for a
+  // checkout's jen to run.
   rmSync(join(out, "version"), { force: true });
   buildMachineFiles(out);
   buildLauncher(join(out, "jen-machine"));
-  writeFileSync(join(out, "version"), `${machineVersion(out)}\n`);
   await fetchDockerClient(join(out, "docker"));
+  writeFileSync(join(out, "version"), `${machineVersion(out)}\n`);
 }
 
 // node scripts/machine.ts client <dest> writes only the docker command, as a

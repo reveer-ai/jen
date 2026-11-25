@@ -6,7 +6,7 @@
 //   data.img      the data disk, sparse, created on the first start
 //   engine.sock   the machine's engine, which only this user can open
 //   launcher.pid  this process, locked while it runs
-//   version       the system it booted
+//   version       the version it booted, a hash of the system and this launcher
 //   console.log   the machine's console and this process's own messages
 //
 // The machine runs exactly as long as this process does. It mirrors every
@@ -331,7 +331,8 @@ do {
   if console < 0 { fail("\(SocketError("opening console.log"))") }
   dup2(console, STDERR_FILENO)
   let launcher = Launcher(configuration: try configuration(console: FileHandle(fileDescriptor: console)))
-  // The system this machine boots, which jen compares with the one it holds.
+  // The version this machine boots, its system's and this launcher's, which
+  // jen compares with the one it holds.
   try Data(contentsOf: system.appendingPathComponent("version")).write(to: folder.appendingPathComponent("version"))
   signal(SIGTERM, SIG_IGN)
   signal(SIGINT, SIG_IGN)

@@ -83,8 +83,8 @@ Images, volumes and containers in the machine SHALL be kept when the machine sto
 - **WHEN** the user runs `jen stop all` and then `jen @home What did I ask you to remember?`
 - **THEN** `home` answers from its conversation, and no image is pulled again
 
-### Requirement: An upgrade restarts the machine on the new system
-When the running machine booted a different version's system or launcher than the installed package holds, the next command that needs the engine SHALL stop every agent through the runtime, stop the machine and start it on the installed version's system, keeping its data.
+### Requirement: An upgrade restarts the machine on the new version
+When the running machine booted a different version's system or launcher than the installed package holds, the next command that needs the engine SHALL stop every agent through the runtime, stop the machine and start it on the installed version's system and launcher, keeping its data.
 
 #### Scenario: Upgrading jen
 - **WHEN** the user upgrades `jen-ai` from 0.2.0 to 0.2.1 with `home` running and runs `jen list`
