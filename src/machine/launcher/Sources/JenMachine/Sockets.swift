@@ -57,21 +57,30 @@ public func listenLoopback(port: UInt16) throws -> Int32 {
   return fd
 }
 
-// Accepts connections on listener until it's closed, on a thread of its own,
-// handing each to handle.
-public func acceptLoop(_ listener: Int32, _ handle: @escaping (Int32) -> Void) {
-  Thread.detachNewThread {
-    while true {
-      let fd = accept(listener, nil, nil)
-      if fd >= 0 {
+// Accepts connections on a listening socket, handing each to accept on
+// queue, until it's closed, which closes the socket.
+public final class Listener: Closable {
+  let source: DispatchSourceRead
+
+  public init(_ fd: Int32, queue: DispatchQueue, accept handle: @escaping (Int32) -> Void) {
+    _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+    source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+    source.setEventHandler {
+      while true {
+        let client = accept(fd, nil, nil)
+        guard client >= 0 else { return }
+        // An accepted socket inherits the listener's O_NONBLOCK on macOS.
+        _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
         var on: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-        handle(fd)
-      } else if errno != EINTR && errno != ECONNABORTED {
-        return
+        setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        handle(client)
       }
     }
+    source.setCancelHandler { Darwin.close(fd) }
+    source.resume()
   }
+
+  public func close() { source.cancel() }
 }
 
 // Carries bytes both ways between a and b, each way on a thread of its own.

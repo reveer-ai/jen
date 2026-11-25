@@ -19,7 +19,7 @@
   - socat relays on vsock 2375, 2376 (refusing a first line that isn't a port from 1 to 65535), 2377 (setting the clock) and 2378 (shutting down)
 
   Verify with a check script run in the built system that nothing listens on the network, and by booting it with 1.1's launcher.
-- [ ] 2.2 Add `npm run build:machine`, which builds the `machine` target into `dist/machine/` and the launcher beside it, and a CI job that builds the target on every push. Verify by running it from a clean checkout and seeing the CI job pass on this branch.
+- [x] 2.2 Add `npm run build:machine`, which builds the `machine` target into `dist/machine/` and the launcher beside it, and a CI job that builds the target on every push. Verify by running it from a clean checkout and seeing the CI job pass on this branch.
 
 ## 3. The launcher
 
@@ -32,7 +32,7 @@
   - `SIGTERM`'s clean stop with the 30-second outright stop
 
   Verify with `swift test` unit tests for the resources' arithmetic and the clock's message, and by hand: `ls -l` on `engine.sock`, and `date` in the machine against the Mac's after a `pmset sleepnow` and wake.
-- [ ] 3.2 Mirror published ports: follow the engine's events through vsock 2375, and listen on the Mac's `127.0.0.1` for each running container's port published on `127.0.0.1`, carrying connections through vsock 2376, and closing the listener when the container stops. Verify with `swift test` against a stand-in event stream for start, stop and a port on another address, and by hand that a container published on `127.0.0.1:8081` answers on the Mac and stops answering once it's removed.
+- [x] 3.2 Mirror published ports: follow the engine's events through vsock 2375, and listen on the Mac's `127.0.0.1` for each running container's port published on `127.0.0.1`, carrying connections through vsock 2376, and closing the listener when the container stops. Verify with `swift test` against a stand-in event stream for start, stop and a port on another address, and by hand that a container published on `127.0.0.1:8081` answers on the Mac and stops answering once it's removed.
 - [ ] 3.3 Add a CI job on a macOS runner that builds the launcher, signs it ad hoc with the entitlement and runs `swift test`. Verify it passes on this branch.
 
 ## 4. The command
