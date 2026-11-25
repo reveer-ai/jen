@@ -36,6 +36,15 @@ jobs:
       - run: docker build --target workspace -t jen-workspace .
       - run: npx vitest run --config vitest.live.config.ts src/runtime/workspace.live.test.ts
 
+  # jen's machine for an Apple silicon Mac, built on arm64 as a release builds
+  # it. No hosted runner can boot it, so its live check runs by hand on a Mac.
+  machine:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --target machine --output dist/machine .
+      - run: ls -l dist/machine
+
   # The UI's sandbox in a real Chromium and WebKit: a hostile published UI
   # against the agent's page. It needs no model and no Docker.
   sandbox:

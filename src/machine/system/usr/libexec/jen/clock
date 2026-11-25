@@ -1,0 +1,9 @@
+#!/bin/sh
+# Sets the machine's clock to the Unix time in seconds on the connection's
+# first line.
+
+IFS= read -r now || exit 1
+case $now in
+  '' | *[!0-9]*) exit 1 ;;
+esac
+date -u -s "@$now" > /dev/null

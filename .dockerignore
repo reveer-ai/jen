@@ -8,3 +8,5 @@ openspec
 context
 src/**/*.test.ts
 src/runtime/fake-docker.ts
+dist
+src/machine/launcher/.build

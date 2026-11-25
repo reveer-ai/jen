@@ -2,21 +2,21 @@
 
 ## 1. Prove the machine
 
-- [ ] 1.1 Boot a first machine end to end on this Mac before building anything on it:
+- [x] 1.1 Boot a first machine end to end on this Mac before building anything on it:
   - a first `machine` target in the `Dockerfile` (Alpine's `linux-virt` kernel decompressed, an initramfs, a squashfs system disk with Docker Engine and socat)
   - a first `jen-machine` that boots it with a blank data disk, relays `engine.sock` over vsock and stops the guest on `SIGTERM`
 
   Verify that `DOCKER_HOST=unix://<folder>/engine.sock docker run --rm alpine echo ok` prints `ok`, that the data disk survives a stop and start, and that `SIGTERM` shuts Linux down within 30 seconds. Record in the design's Context the cold-start time to the engine answering, the platform package's packed size and the guest's shutdown.
-- [ ] 1.2 Sign 1.1's launcher ad hoc with the entitlement, pack it in a tarball shaped like the platform package, install it with `npm install -g` into a temporary prefix, and boot the machine from there. Verify it boots, and record in the design's Context whether the installed files carry `com.apple.quarantine`. If it fails, stop and bring it to the maintainer before going on.
+- [x] 1.2 Sign 1.1's launcher ad hoc with the entitlement, pack it in a tarball shaped like the platform package, install it with `npm install -g` into a temporary prefix, and boot the machine from there. Verify it boots, and record in the design's Context whether the installed files carry `com.apple.quarantine`. If it fails, stop and bring it to the maintainer before going on.
 
 ## 2. The machine
 
-- [ ] 2.1 Finish the `machine` target in `src/machine/`:
+- [x] 2.1 Finish the `machine` target in `src/machine/`:
   - Alpine and Docker Engine pinned
   - the initramfs formatting a blank data disk as ext4 and mounting it at `/var/lib/docker`
   - the root read-only with a tmpfs over it
   - OpenRC starting the engine on `/var/run/docker.sock` only
-  - socat relays on vsock 2375, 2376 (refusing a first line that isn't a port from 1 to 65535) and 2377 (setting the clock)
+  - socat relays on vsock 2375, 2376 (refusing a first line that isn't a port from 1 to 65535), 2377 (setting the clock) and 2378 (shutting down)
 
   Verify with a check script run in the built system that nothing listens on the network, and by booting it with 1.1's launcher.
 - [ ] 2.2 Add `npm run build:machine`, which builds the `machine` target into `dist/machine/` and the launcher beside it, and a CI job that builds the target on every push. Verify by running it from a clean checkout and seeing the CI job pass on this branch.

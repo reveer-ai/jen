@@ -13,6 +13,7 @@
   "scripts": {
     "check": "tsc",
     "build": "node scripts/build.ts",
+    "build:machine": "node scripts/machine.ts",
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
     "eval": "node scripts/eval/main.ts"

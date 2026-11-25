@@ -10,6 +10,14 @@ Measured on 2026-11-24 on the maintainer's Mac (Apple silicon, macOS 27.0.1, 24 
 - **A binary signed ad hoc, with no Apple Developer ID, can start a VM** once it carries the `com.apple.security.virtualization` entitlement. Without the entitlement, Virtualization.framework refused the configuration, naming the missing entitlement. With it, a 30-line Swift program booted Alpine's `linux-virt` kernel for arm64, decompressed from its EFI image, until it panicked at 0.038 seconds for lack of a root disk, as expected. The binary was built locally, so it wasn't flagged as downloaded from the web, as files npm unpacks aren't either, and macOS ran no notarization check.
 - **GitHub's hosted Apple silicon runners can't start a VM.** Community reports and actions that depend on it agree that the runners lack nested virtualization. GitHub doesn't document it. They can build and sign Swift, which needs no VM.
 
+Measured on 2026-11-24 on the same Mac, booting task 1.1's machine (Alpine 3.24.4, kernel 6.18.65, Docker Engine 29.9.3) with its launcher:
+
+- **The engine answers 7.7 seconds after the launcher starts on a first boot**, which formats the data disk, and 3.2 seconds after on a later one. Linux reaches the initramfs in 0.09 seconds.
+- **The guest ignores Virtualization.framework's stop request.** The VM's device tree offers a power button through gpio-keys, but Alpine's virt kernel has no driver for it (`CONFIG_INPUT_KEYBOARD` is unset). Asked through vsock instead, Linux shuts down in 4.3 seconds, unmounting the data disk first.
+- **The VM has a real-time clock** (PL031), which Linux reads at boot, so the clock is wrong only after the Mac sleeps.
+- **The platform package packs to 108 MB**, 157 MB unpacked: the system disk is 78 MB, the kernel 36 MB uncompressed, Docker's client 42 MB, the initramfs 1.3 MB and the launcher 0.15 MB.
+- **Files `npm install -g` unpacks carry no `com.apple.quarantine`**, only `com.apple.provenance`, so Gatekeeper never assesses the launcher, whose ad hoc signature `spctl` would reject. The launcher, signed with the entitlement and packed, booted the machine from a temporary prefix. That install was from a local tarball; npm downloads from the registry with Node, which sets no quarantine either, and the command's live check runs from an installed tarball too.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -39,13 +47,14 @@ system.img   squashfs: Docker Engine, containerd, runc, socat, OpenRC, and the g
 
 The launcher boots the kernel directly, with no firmware or bootloader, which is the shortest boot. The system disk is squashfs, so it ships compressed, mounts without unpacking and can't be changed. An upgrade replaces it whole. The data disk, `data.img`, is a sparse 64 GiB file that the launcher creates on first start. The initramfs formats it as ext4 when it's blank. It holds `/var/lib/docker`, so images, volumes (agents' state, workspaces, the settings) and containers outlive versions, just as they outlive Docker Desktop updates today.
 
-The engine listens only on `/var/run/docker.sock` inside the machine. Nothing in the machine listens on its network. Three vsock ports, the VM's socket channel to the Mac, each run a socat relay:
+The engine listens only on `/var/run/docker.sock` inside the machine. Nothing in the machine listens on its network. Four vsock ports, the VM's socket channel to the Mac, each run a socat relay:
 
 | Port | In the machine, each connection goes to |
 |---|---|
 | 2375 | the engine's `/var/run/docker.sock` |
 | 2376 | `127.0.0.1:<port>`, where `<port>` is the connection's first line, refused unless it's a number from 1 to 65535 |
 | 2377 | a script that sets the clock to the Unix time in the connection's first line |
+| 2378 | `poweroff`, since the kernel has no driver for the VM's power button |
 
 *Alternative: bake the three images into the system disk*, as first proposed. The engine would have to load them on the first boot of each version, which is a second way images arrive, beside the pull an installed `jen` already does on Linux, and it would roughly triple the machine's size. Instead the machine's engine pulls from GHCR exactly as it does on Linux, and the existing rules for pulling, showing progress and removing old versions' images apply unchanged.
 
@@ -62,7 +71,7 @@ The machine ships in `@jen-ai/darwin-arm64`, an npm package that `jen-ai` lists 
   bin/docker        Docker's static macOS client, pinned and checked against its checksum
 ```
 
-Nothing runs at install, and the first command needs nothing downloaded beyond the images. The package's size is measured in task 1. Without the images it's expected to be well under 100 MB.
+Nothing runs at install, and the first command needs nothing downloaded beyond the images. The package packs to 108 MB (see Context).
 
 *Alternative: download the machine on the first command, from the GitHub release.* No large npm package, but a second host and a download path of jen's own, with its own progress and checks. With the images out of the machine, it's small enough for npm.
 
@@ -79,8 +88,8 @@ On macOS, `jen` runs the package's `bin/docker` with `DOCKER_HOST=unix://<machin
 - **runs the VM** with the kernel, the initramfs, the system disk read-only, the data disk, NAT networking, an entropy device, a vsock device, the console written to `console.log`, every core the Mac has, and the memory below
 - **relays the engine.** It listens on `engine.sock` in the machine's folder, a Unix socket only the user can open, and carries each connection to vsock port 2375.
 - **mirrors published ports.** It follows the engine's events through port 2375. For every running container with a port published on `127.0.0.1`, it listens on the same port on the Mac's `127.0.0.1` and carries each connection through port 2376. That keeps the `jen-command` requirement that the runtime is published only on `127.0.0.1` true on the Mac. It also covers any runtime, whatever its name, including the live checks' and evaluations' when they're pointed at the machine.
-- **sets the clock** through port 2377: once the engine first answers, and whenever macOS says the Mac woke.
-- **stops cleanly** on `SIGTERM`. It asks the guest to shut down, and stops the VM outright after 30 seconds.
+- **sets the clock** through port 2377: once its relay first answers, before the launcher serves `engine.sock`, so nothing reaches the engine with a wrong clock, and whenever macOS says the Mac woke.
+- **stops cleanly** on `SIGTERM`. It asks the guest to shut down through port 2378, and stops the VM outright after 30 seconds.
 
 Its files live in `~/.jen/machines/<runtime name>/`: the data disk, `engine.sock`, `launcher.pid`, `version` (the system disk it booted) and `console.log`. Short paths matter here, since macOS caps a Unix socket's path at 104 bytes. A runtime name of its own, such as a live check's `jen-live-<hex>`, gets a machine of its own, so a check's `jen uninstall` never deletes the user's machine.
 

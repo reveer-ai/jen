@@ -39,7 +39,7 @@ On a Mac, jen needs Docker Desktop: a separate product the user installs, keeps 
 ## Impact
 
 - **CLI code:** `src/cli/docker.ts` finds `docker` in the platform package on macOS and starts the machine where it used to start Docker Desktop. A new module starts, stops and upgrades the machine. `src/cli/uninstall.ts` deletes the machine on macOS.
-- **The machine, in a new `src/machine/`:** the launcher in Swift, which is new to the repo. Also a `machine` target in the `Dockerfile` that builds Alpine's kernel, an initramfs and a read-only system disk, with small relays in it for the engine's socket, published ports and the clock.
+- **The machine, in a new `src/machine/`:** the launcher in Swift, which is new to the repo. Also a `machine` target in the `Dockerfile` that builds Alpine's kernel, an initramfs and a read-only system disk, with small relays in it for the engine's socket, published ports, the clock and shutting down.
 - **A third-party binary in the package:** Docker's static `docker` command for macOS, pinned and checked against its checksum.
 - **Release:** `.github/workflows/release.yml` builds the machine on an arm64 Linux runner and the launcher on a macOS runner, signed ad hoc, and publishes the platform package before `jen-ai`. CI builds both, and runs the launcher's unit tests, on every push.
 - **Checks:** GitHub's hosted Apple silicon runners can't start a VM, though they can build and sign Swift. So the machine's live check, and the boundary and command checks run against the machine, are a hand check on the maintainer's Mac for this change and any later one that touches the machine.
