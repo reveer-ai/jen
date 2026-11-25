@@ -33,12 +33,12 @@
 
   Verify with `swift test` unit tests for the resources' arithmetic and the clock's message, and by hand: `ls -l` on `engine.sock`, and `date` in the machine against the Mac's after a `pmset sleepnow` and wake.
 - [x] 3.2 Mirror published ports: follow the engine's events through vsock 2375, and listen on the Mac's `127.0.0.1` for each running container's port published on `127.0.0.1`, carrying connections through vsock 2376, and closing the listener when the container stops. Verify with `swift test` against a stand-in event stream for start, stop and a port on another address, and by hand that a container published on `127.0.0.1:8081` answers on the Mac and stops answering once it's removed.
-- [ ] 3.3 Add a CI job on a macOS runner that builds the launcher, signs it ad hoc with the entitlement and runs `swift test`. Verify it passes on this branch.
+- [x] 3.3 Add a CI job on a macOS runner that builds the launcher, signs it ad hoc with the entitlement and runs `swift test`. Verify it passes on this branch.
 
 ## 4. The command
 
-- [ ] 4.1 On macOS, run the platform package's `bin/docker`, or a checkout's `dist/machine/docker`, with `DOCKER_HOST` set to the machine's `engine.sock`, overriding the user's environment. Refuse an Intel Mac. Fail a checkout without `dist/machine/` naming `npm run build:machine`. Keep Docker's checks, what to install, starting Docker Desktop and Engine 28.0, on Linux only. Verify with unit tests against a fake runner for each platform's path, the Intel refusal and the missing build.
-- [ ] 4.2 Start the machine where an engine that doesn't answer used to start Docker Desktop:
+- [x] 4.1 On macOS, run the platform package's `bin/docker`, or a checkout's `dist/machine/docker`, with `DOCKER_HOST` set to the machine's `engine.sock`, overriding the user's environment. Refuse an Intel Mac. Fail a checkout without `dist/machine/` naming `npm run build:machine`. Keep Docker's checks, what to install, starting Docker Desktop and Engine 28.0, on Linux only. Verify with unit tests against a fake runner for each platform's path, the Intel refusal and the missing build.
+- [x] 4.2 Start the machine where an engine that doesn't answer used to start Docker Desktop:
   - a lock in the machine's folder, so two commands start one machine
   - a stale `launcher.pid` ignored
   - "starting jen's machine" said
@@ -46,7 +46,7 @@
   - the stops starting nothing
 
   Verify with unit tests against a fake launcher, two concurrent starts included.
-- [ ] 4.3 `jen stop all` stops the machine after the runtime. A machine whose `version` differs from the package's is upgraded: every agent is stopped through the runtime, the machine is stopped, and it starts on the new system. `jen uninstall` on macOS stops the machine and deletes its folder. Each runtime name gets its own folder under `~/.jen/machines/`. Verify with unit tests for each, and by hand with an upgrade from one built version to another with a root running.
+- [x] 4.3 `jen stop all` stops the machine after the runtime. A machine whose `version` differs from the package's is upgraded: every agent is stopped through the runtime, the machine is stopped, and it starts on the new system. `jen uninstall` on macOS stops the machine and deletes its folder. Each runtime name gets its own folder under `~/.jen/machines/`. Verify with unit tests for each, and by hand with an upgrade from one built version to another with a root running.
 
 ## 5. The release
 

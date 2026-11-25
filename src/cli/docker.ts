@@ -1,9 +1,11 @@
-// The engine, reached through the user's own `docker` command, which resolves
-// their context and DOCKER_HOST the way they configured it. Only the calls jen
-// makes are here. A secret reaches a child only through its environment or
+// The engine, reached through a docker command: on Linux the user's own, which
+// resolves their context and DOCKER_HOST the way they configured it, and on
+// macOS the one jen's package holds, pointed at jen's machine. Only the calls
+// jen makes are here. A secret reaches a child only through its environment or
 // its stdin, never its arguments, which any user on the machine can read.
 
 import { spawn } from "node:child_process";
+import type { Machine } from "./machine.ts";
 
 export interface Output {
   code: number;
@@ -41,7 +43,8 @@ export class DockerError extends Error {
 }
 
 // Docker can't run jen: there's no docker command, its engine doesn't answer
-// and jen couldn't start it, or the engine is too old.
+// and jen couldn't start it, or the engine is too old. On macOS: the Mac isn't
+// Apple silicon, or jen's machine is missing or didn't start.
 export class EngineError extends Error {
   constructor(message: string) {
     super(message);
@@ -50,13 +53,16 @@ export class EngineError extends Error {
 }
 
 // The oldest engine jen runs on: agents' network needs an isolated gateway.
+// jen's machine brings a newer one.
 export const MIN_ENGINE = [28, 0] as const;
-// How long a started Docker may take to answer, and how often it's asked.
+// How long a started Docker on Linux may take to answer, and how often it's
+// asked.
 export const START_MS = 120_000;
 const START_POLL_MS = 1_000;
 
 export interface EngineOptions {
-  // Whether to start Docker Desktop when the engine doesn't answer.
+  // Whether to start the engine when it doesn't answer: Docker Desktop on
+  // Linux, jen's machine on macOS.
   start: boolean;
   // Writes a line to stderr.
   say: (line: string) => void;
@@ -75,10 +81,10 @@ export interface ContainerInfo {
 }
 
 export interface Docker {
-  // Answers once an engine jen can run on answers, starting Docker Desktop
-  // first when start is set, and fails with EngineError when there's none. With
-  // start unset, a missing docker command or an engine that doesn't answer
-  // answers false instead.
+  // Answers once an engine jen can run on answers, starting it first when
+  // start is set, and fails with EngineError when there's none. With start
+  // unset, a missing docker command or an engine that doesn't answer answers
+  // false instead.
   ensureEngine(options: EngineOptions): Promise<boolean>;
   // An image's ID by its name, or undefined when there's no such image.
   imageId(image: string): Promise<string | undefined>;
@@ -121,12 +127,14 @@ export interface RunOptions {
 
 const missing = (stderr: string) => /no such (container|object|image|volume|network)|not found/i.test(stderr);
 
-export function createDocker(runner: Runner = runProcess, platform: NodeJS.Platform = process.platform): Docker {
+// The engine on Linux, or with machine, jen's machine on macOS.
+export function createDocker(runner: Runner = runProcess, machine?: Machine): Docker {
   const docker = async (args: string[], { env = {}, secrets = {}, guard = [], input }: RunOptions = {}) => {
     for (const value of [...Object.values(secrets), ...guard]) {
       if (value !== "" && args.some((arg) => arg.includes(value))) throw new Error("a secret would have been passed as an argument to docker");
     }
-    return runner("docker", args, { env: { ...env, ...secrets }, input });
+    const target = machine?.docker() ?? { program: "docker", env: {} };
+    return runner(target.program, args, { env: { ...env, ...secrets, ...target.env }, input });
   };
   const ok = async (args: string[]) => {
     const output = await docker(args);
@@ -154,29 +162,27 @@ export function createDocker(runner: Runner = runProcess, platform: NodeJS.Platf
   };
 
   // How to start the engine by hand, naming a context that isn't Docker's own,
-  // since its engine is something else, such as Colima.
+  // since its engine is something else, such as Podman's.
   const byHand = async () => {
     const context = (await docker(["context", "show"])).stdout.trim();
-    const how = platform === "darwin" ? "Start Docker Desktop and try again." : "Start Docker Desktop, or Docker Engine with: sudo systemctl start docker. Then try again.";
+    const how = "Start Docker Desktop, or Docker Engine with: sudo systemctl start docker. Then try again.";
     return context && context !== "default" && context !== "desktop-linux" ? `docker's context is ${context}, so start its engine and try again.` : how;
   };
 
   return {
-    async ensureEngine({ start, say, sleep, now }) {
+    async ensureEngine(options) {
+      if (machine) return machine.ensure(options);
+      const { start, say, sleep, now } = options;
       const version = () => docker(["version", "--format", "{{.Server.Version}}"]);
       let output = await version();
       if (output.code === -1) {
         if (!start) return false;
-        throw new EngineError(platform === "darwin"
-          ? `jen needs Docker, and there's no docker command. Install Docker Desktop: https://docs.docker.com/desktop/setup/install/mac-install/. jen needs Docker Engine ${MIN_ENGINE.join(".")} or later.`
-          : `jen needs Docker, and there's no docker command. Install Docker Engine: https://docs.docker.com/engine/install/. jen needs Docker Engine ${MIN_ENGINE.join(".")} or later.`);
+        throw new EngineError(`jen needs Docker, and there's no docker command. Install Docker Engine: https://docs.docker.com/engine/install/. jen needs Docker Engine ${MIN_ENGINE.join(".")} or later.`);
       }
       if (output.code !== 0) {
         if (!start) return false;
         say("starting docker...");
-        let started = (await docker(["desktop", "start", "--detach"])).code === 0;
-        // Docker Desktop from before its CLI, or one whose CLI isn't on the path.
-        if (!started && platform === "darwin") started = (await runner("open", ["-a", "Docker"])).code === 0;
+        const started = (await docker(["desktop", "start", "--detach"])).code === 0;
         if (started) {
           const deadline = now() + START_MS;
           for (;;) {
@@ -192,7 +198,7 @@ export function createDocker(runner: Runner = runProcess, platform: NodeJS.Platf
       if (major === undefined || Number(major) < MIN_ENGINE[0] || (Number(major) === MIN_ENGINE[0] && Number(minor) < MIN_ENGINE[1])) {
         throw new EngineError(
           `jen needs Docker Engine ${MIN_ENGINE.join(".")} or later, and this engine is ${major === undefined ? `${JSON.stringify(found)}, which isn't Docker's` : found}. ` +
-            (platform === "darwin" ? "Update Docker Desktop to its latest version." : "Update Docker Engine: https://docs.docker.com/engine/install/."),
+            "Update Docker Engine: https://docs.docker.com/engine/install/.",
         );
       }
       return true;

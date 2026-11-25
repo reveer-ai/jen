@@ -5,6 +5,7 @@
 import { Api } from "./api.ts";
 import type { ContainerInfo, Docker } from "./docker.ts";
 import { DockerError } from "./docker.ts";
+import type { Machine } from "./machine.ts";
 import {
   alive,
   askSettings,
@@ -36,6 +37,8 @@ export interface Context {
   fetch: typeof fetch;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
+  // jen's machine, on macOS.
+  machine?: Machine;
 }
 
 // How long the runtime may take to answer once started.
@@ -50,12 +53,13 @@ async function image(ctx: Context, key: ImageKey, pulled?: { any: boolean }): Pr
   const name = ctx.names[key];
   const id = await ctx.docker.imageId(name);
   if (id !== undefined) return id;
-  if (!pulls(ctx.names, key)) throw new MissingImage(name, TARGETS[key]);
+  const host = ctx.machine?.docker().env.DOCKER_HOST;
+  if (!pulls(ctx.names, key)) throw new MissingImage(name, TARGETS[key], host);
   ctx.say(`pulling ${name}...`);
   await ctx.docker.pull(name);
   if (pulled) pulled.any = true;
   const fetched = await ctx.docker.imageId(name);
-  if (fetched === undefined) throw new MissingImage(name, TARGETS[key]);
+  if (fetched === undefined) throw new MissingImage(name, TARGETS[key], host);
   return fetched;
 }
 
@@ -246,19 +250,41 @@ export async function config(ctx: Context): Promise<void> {
   }
 }
 
-// jen stop all: stops every agent through the runtime, starting it first when
-// agents run without it, then removes the runtime. Every volume is kept.
-export async function stopAll(ctx: Context): Promise<void> {
+// Stops every agent through the runtime, starting it first when agents run
+// without it, then removes the runtime. Every volume is kept. Answers how many
+// roots it stopped, or undefined when nothing of jen's was running.
+async function stopEverything(ctx: Context): Promise<number | undefined> {
   const { docker, names } = ctx;
   const runtime = await docker.inspect(runtimeContainer(names.name));
   const agents = (await docker.containers([`jen.runtime=${names.name}`, "jen.agent"])).filter((c) => alive(c.state));
   if (!(runtime && alive(runtime.state)) && agents.length === 0) {
     if (runtime) await docker.remove(runtimeContainer(names.name));
-    return ctx.print("nothing of jen's is running.");
+    return undefined;
   }
   const api = await ensureRuntime(ctx);
   const stopped = await stopRoots(api);
   await docker.remove(runtimeContainer(names.name));
-  const roots = stopped === 1 ? "1 root agent and everything under it" : `${stopped} root agents and everything under them`;
-  ctx.print(`stopped ${roots}, and the runtime. Their conversations and files are kept.`);
+  return stopped;
+}
+
+const rootsUnder = (stopped: number) => (stopped === 1 ? "1 root agent and everything under it" : `${stopped} root agents and everything under them`);
+
+// jen stop all: stops every agent and the runtime, and on macOS then jen's
+// machine.
+export async function stopAll(ctx: Context, machine?: Machine): Promise<void> {
+  const stopped = await stopEverything(ctx);
+  ctx.print(stopped === undefined ? "nothing of jen's is running." : `stopped ${rootsUnder(stopped)}, and the runtime. Their conversations and files are kept.`);
+  if (machine && (await machine.stop(ctx))) ctx.print("stopped jen's machine.");
+}
+
+// Restarts jen's machine on the system jen holds, when it booted another,
+// stopping every agent through the runtime first, as a new image does. The
+// machine's data is kept.
+export async function upgradeMachine(ctx: Context, machine: Machine): Promise<void> {
+  if (!(await machine.outdated())) return;
+  ctx.say("jen's machine has a new system, so jen is restarting it on that.");
+  const stopped = await stopEverything(ctx);
+  if (stopped) ctx.say(`stopped ${rootsUnder(stopped)}. Each starts again at its next message.`);
+  await machine.stop(ctx);
+  await machine.ensure({ start: true, say: ctx.say, sleep: ctx.sleep, now: ctx.now });
 }
