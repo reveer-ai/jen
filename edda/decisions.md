@@ -13,6 +13,13 @@ Set by the maintainer, aligning on [JEN-31](https://linear.app/reveer/issue/JEN-
 - **Linux keeps the Docker Engine the user installs.** *Why:* a Linux server, where hosting will run, often can't run a VM inside itself, and Linux already has the kernel.
 - **The machine solves only problems users will hit soon.** It resets its clock when the Mac wakes, since every laptop sleeps. It does nothing for company proxies, TLS inspection or VPN routing, which jen doesn't handle today either, and the README says so. *Why:* set by the maintainer, following "no machinery for a case that doesn't exist".
 
+Made implementing JEN-31:
+
+- **The machine's Linux is asked to shut down through a vsock port of its own, 2378, not Virtualization.framework's stop request.** *Why:* the VM offers its power button through gpio-keys, and Alpine's virt kernel has no driver for it, so the request never reaches Linux (measured on 2026-11-24, in the design's Context).
+- **The machine's version is a hash of its kernel, initramfs and system disk, not the release's version.** *Why:* the machine then restarts only when its system changed, and a checkout's rebuild counts as a new system with no version of its own to bump.
+- **jen points its own `docker` at the machine with `DOCKER_HOST`, and gives it a `DOCKER_CONFIG` in the machine's folder.** *Why:* a Mac that had Docker Desktop keeps its `config.json`, whose credential helper and contexts would otherwise reach jen's `docker`.
+- **A release builds and checks the packages on a macOS runner, and publishes from there.** *Why:* npm won't install the platform package on Linux, so only a Mac installs both as a user does, and the launcher builds and signs only there. Docker's client is checked against its checksum in the arm64 job that builds the machine, which the images wait for, so a changed download publishes nothing.
+
 Made in [JEN-30](https://linear.app/reveer/issue/JEN-30), whose OpenSpec change is `make-tests-reliable`:
 
 - **The agent doesn't drain an oversized body before closing, so a client still sending may see the connection reset instead of the 413, as with the runtime's bounds.** Aligned on in the proposal. *Why:* no client sends more than 1 MiB, since the page refuses before sending and agents' messages are model output. A drain would be machinery for a case that doesn't exist.

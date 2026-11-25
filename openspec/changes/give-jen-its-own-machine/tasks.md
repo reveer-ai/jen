@@ -61,11 +61,11 @@
 
 ## 6. Docs and record
 
-- [ ] 6.1 Update `README.md`, removing Docker from macOS's requirements, saying jen needs an Apple silicon Mac there, and saying model calls don't go through a company's proxy or TLS inspection. Update `docs/architecture.html` for where agents run on a Mac, and `edda/environment.md` for `src/machine/`, the checkout's `npm run build:machine`, pointing `docker` at the machine with `DOCKER_HOST`, and that the machine's checks are a hand check on a Mac. Verify each command the README and `environment.md` show runs as written on this Mac.
+- [x] 6.1 Update `README.md`, removing Docker from macOS's requirements, saying jen needs an Apple silicon Mac there, and saying model calls don't go through a company's proxy or TLS inspection. Update `docs/architecture.html` for where agents run on a Mac, and `edda/environment.md` for `src/machine/`, the checkout's `npm run build:machine`, pointing `docker` at the machine with `DOCKER_HOST`, and that the machine's checks are a hand check on a Mac. Verify each command the README and `environment.md` show runs as written on this Mac.
 
 ## 7. Checks
 
-- [ ] 7.1 Write `src/cli/machine.live.test.ts` as the `jen-machine` spec's live check requires, and make the command's live check run on macOS through a machine of its own. Verify by running both on this Mac.
+- [x] 7.1 Write `src/cli/machine.live.test.ts` as the `jen-machine` spec's live check requires, and make the command's live check run on macOS through a machine of its own. Verify by running both on this Mac.
 - [ ] 7.2 Run `npm run check`, `npm test` and every live check with model credentials on this Mac, the boundary check with `DOCKER_HOST` pointed at a machine. Compare any failure with the known flakes in `edda/environment.md`. This change touches nothing under `src/agent/` or `src/runtime/`, so it needs no evaluation, and the pull request says so.
 - [ ] 7.3 Review the implementation with `flo-review`.
 
