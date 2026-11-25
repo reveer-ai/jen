@@ -81,7 +81,7 @@ When the running machine booted a different version's system than the installed 
 - **THEN** the machine runs 0.2.1's system, `home` is stopped with its conversation kept, and it starts again on 0.2.1's images at its next message
 
 ### Requirement: The machine's clock follows the Mac's
-The machine's clock SHALL be set from the Mac's once its engine first answers and again whenever the Mac wakes from sleep.
+The machine's clock SHALL be set from the Mac's once the machine boots, before its engine is reachable from the Mac, and again whenever the Mac wakes from sleep.
 
 #### Scenario: After sleep
 - **WHEN** the Mac sleeps for an hour with the machine running and wakes
