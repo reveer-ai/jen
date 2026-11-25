@@ -7,6 +7,8 @@ Newest first. Each entry gives the decision and why. When an entry is superseded
 Set by the maintainer, after [JEN-31](https://linear.app/reveer/issue/JEN-31)'s release:
 
 - **The first release with the machine, `0.2.0`, has no upgrade note for Mac users.** *Why:* jen had no users yet, so nobody had roots in Docker Desktop to lose.
+- **jen's errors don't suggest that a stored registry login caused a failed pull.** On Linux, where jen uses the user's own `docker` and its logins, a stale ghcr.io login fails `jen new` with Docker's own `denied`. *Why:* set by the maintainer at [JEN-35](https://linear.app/reveer/issue/JEN-35)'s review: ghcr.io is foreign to a user, and naming it would confuse more than help.
+- **An unexplained failure in a path the change ships is a bug until its cause is found** (a convention in [conventions.md](conventions.md)). *Why:* set by the maintainer after JEN-35: during JEN-31, every pull from ghcr.io on the maintainer's Mac was denied and was put down to the Mac, and it was JEN-35's bug, shipped in `0.2.0`.
 
 Made fixing [JEN-35](https://linear.app/reveer/issue/JEN-35):
 
