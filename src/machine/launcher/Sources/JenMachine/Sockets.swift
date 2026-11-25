@@ -35,17 +35,20 @@ public func listenUnix(path: String) throws -> Int32 {
   return fd
 }
 
-// Listens on 127.0.0.1:port, and nowhere else.
+// Listens on 127.0.0.1:port, and nowhere else. A port something on the Mac
+// already answers on, on 127.0.0.1 or on every address, is left to it:
+// SO_REUSEADDR, which mirroring a port again soon after needs, would otherwise
+// let the mirror take that port's connections to 127.0.0.1.
 public func listenLoopback(port: UInt16) throws -> Int32 {
+  if loopbackAnswers(port: port) {
+    errno = EADDRINUSE
+    throw SocketError("listening on 127.0.0.1:\(port)")
+  }
   let fd = socket(AF_INET, SOCK_STREAM, 0)
   guard fd >= 0 else { throw SocketError("socket") }
   var on: Int32 = 1
   setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, socklen_t(MemoryLayout<Int32>.size))
-  var address = sockaddr_in()
-  address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-  address.sin_family = sa_family_t(AF_INET)
-  address.sin_port = port.bigEndian
-  address.sin_addr.s_addr = inet_addr("127.0.0.1")
+  var address = loopback(port)
   let bound = withUnsafePointer(to: &address) {
     $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
   }
@@ -55,6 +58,26 @@ public func listenLoopback(port: UInt16) throws -> Int32 {
     throw error
   }
   return fd
+}
+
+// Whether something accepts a connection to 127.0.0.1:port.
+func loopbackAnswers(port: UInt16) -> Bool {
+  let fd = socket(AF_INET, SOCK_STREAM, 0)
+  guard fd >= 0 else { return false }
+  defer { close(fd) }
+  var address = loopback(port)
+  return withUnsafePointer(to: &address) {
+    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+  } == 0
+}
+
+func loopback(_ port: UInt16) -> sockaddr_in {
+  var address = sockaddr_in()
+  address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+  address.sin_family = sa_family_t(AF_INET)
+  address.sin_port = port.bigEndian
+  address.sin_addr.s_addr = inet_addr("127.0.0.1")
+  return address
 }
 
 // Accepts connections on a listening socket, handing each to accept on

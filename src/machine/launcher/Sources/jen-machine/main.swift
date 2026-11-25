@@ -44,6 +44,11 @@ final class Launcher: NSObject, VZVirtualMachineDelegate {
   var listing = false
   var listAgain = false
   var stopping = false
+  // Published ports the Mac couldn't listen on, already logged, whether a
+  // retry is waiting, and how long the next one waits.
+  var unmirrored: Set<UInt16> = []
+  var retrying = false
+  var retryDelay = 2.0
 
   init(configuration: VZVirtualMachineConfiguration) {
     vm = VZVirtualMachine(configuration: configuration)
@@ -51,11 +56,13 @@ final class Launcher: NSObject, VZVirtualMachineDelegate {
     vm.delegate = self
     mirror = PortMirror { port in
       do {
-        return Listener(try listenLoopback(port: port), queue: .main) { client in
+        let listener = Listener(try listenLoopback(port: port), queue: .main) { client in
           self.carry(client, to: Vsock.port, first: portLine(port))
         }
+        self.unmirrored.remove(port)
+        return listener
       } catch {
-        say("can't mirror the machine's port \(port): \(error)")
+        if self.unmirrored.insert(port).inserted { say("can't mirror the machine's port \(port), trying again: \(error)") }
         return nil
       }
     }
@@ -190,12 +197,32 @@ final class Launcher: NSObject, VZVirtualMachineDelegate {
       body += decoder.feed(piece)
       return !decoder.finished
     }) {
-      if decoder.status == 200 { self.mirror.reconcile(loopbackPorts(body)) }
+      if decoder.status == 200 {
+        self.mirror.reconcile(loopbackPorts(body))
+        self.unmirrored.formIntersection(self.mirror.missing)
+        self.retryDelay = 2
+      }
+      self.retryMissing()
       self.listing = false
       if self.listAgain {
         self.listAgain = false
         self.listPorts()
       }
+    }
+  }
+
+  // Tries again to listen on the published ports the Mac couldn't, as when a
+  // Mac program held one and has since let it go: after 2 seconds, then less
+  // often, down to every 30 seconds, since each try connects to that program.
+  func retryMissing() {
+    guard !retrying, !stopping, !mirror.missing.isEmpty else { return }
+    retrying = true
+    DispatchQueue.main.asyncAfter(deadline: .now() + retryDelay) {
+      self.retrying = false
+      self.retryDelay = min(self.retryDelay * 2, 30)
+      self.mirror.retry()
+      self.unmirrored.formIntersection(self.mirror.missing)
+      self.retryMissing()
     }
   }
 

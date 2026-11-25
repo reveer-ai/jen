@@ -213,11 +213,15 @@ export async function start(ctx: Context): Promise<Api> {
   // A name already in use means another jen is starting the runtime.
   const conflict = (stderr: string) => /Conflict\. The container name .* is already in use/.test(stderr);
 
-  let output = await run(settings.port);
+  // On a Mac, jen chooses a port the Mac has free, since the machine's engine
+  // can't tell whether the Mac's is.
+  const port = async (preferred: number | undefined) => (ctx.machine ? ctx.machine.port(preferred) : preferred);
+  let output = await run(await port(settings.port));
   if (output.code !== 0 && !conflict(output.stderr) && settings.port !== undefined) {
-    // The saved port is taken, most likely. Docker chooses another.
+    // The saved port is taken, most likely. Docker, or on a Mac jen, chooses
+    // another.
     await docker.remove(container);
-    output = await run(undefined);
+    output = await run(await port(undefined));
   }
   if (output.code !== 0 && !conflict(output.stderr)) {
     await docker.remove(container);

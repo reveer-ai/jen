@@ -144,10 +144,57 @@ final class StandIn {
     #expect(engine.mirror.ports == [8081])
   }
 
+  @Test func aPortTheMacCantListenOnIsMissingUntilARetryTakesIt() {
+    let engine = StandIn()
+    engine.refused = [8081]
+    engine.running["web"] = [("127.0.0.1", 8081)]
+    engine.running["db"] = [("127.0.0.1", 5432)]
+    engine.follower.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"))
+    #expect(engine.mirror.missing == [8081])
+    engine.mirror.retry()
+    #expect(engine.mirror.missing == [8081])
+    engine.refused = []
+    engine.mirror.retry()
+    #expect(engine.mirror.ports == [8081, 5432])
+    #expect(engine.mirror.missing == [])
+    #expect(engine.opened.filter { $0 == 5432 }.count == 1)
+  }
+
+  @Test func aPortNoLongerPublishedIsntTriedAgain() {
+    let engine = StandIn()
+    engine.refused = [8081]
+    engine.running["web"] = [("127.0.0.1", 8081)]
+    engine.follower.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"))
+    engine.running["web"] = nil
+    engine.stream(event("die"))
+    #expect(engine.mirror.missing == [])
+  }
+
   @Test func aStreamThatDoesntOpenChangesNothing() {
     let engine = StandIn()
     engine.running["web"] = [("127.0.0.1", 8081)]
     engine.follower.feed(bytes("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n"))
     #expect(engine.mirror.ports == [])
   }
+}
+
+@Test func aPortTheMacListensOnEverywhereIsLeftToIt() throws {
+  // A Mac service on every address, at a port the kernel picks.
+  let service = socket(AF_INET, SOCK_STREAM, 0)
+  var open = true
+  defer { if open { close(service) } }
+  var address = sockaddr_in()
+  address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+  address.sin_family = sa_family_t(AF_INET)
+  address.sin_addr.s_addr = INADDR_ANY
+  var size = socklen_t(MemoryLayout<sockaddr_in>.size)
+  try #require(withUnsafeMutablePointer(to: &address) {
+    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(service, $0, size) == 0 && listen(service, 1) == 0 && getsockname(service, $0, &size) == 0 }
+  })
+  let port = UInt16(bigEndian: address.sin_port)
+  #expect(throws: SocketError.self) { try listenLoopback(port: port) }
+  close(service)
+  open = false
+  let mirror = try listenLoopback(port: port)
+  close(mirror)
 }

@@ -2,6 +2,16 @@
 
 Newest first. Each entry gives the decision and why. When an entry is superseded, mark it and link the entry that replaces it.
 
+## 2026-11-25
+
+Set by the maintainer, implementing [JEN-31](https://linear.app/reveer/issue/JEN-31):
+
+- **The machine's engine is Docker's static build for Linux, at the bundled client's version and pinned to its checksum, not Alpine's packages.** Alpine provides only the kernel and the OS. *Why:* set by the maintainer, once the boundary check found that Alpine's musl-built `runc` starts every container with signal 34 ignored, and Docker's static `runc` doesn't. It's the engine Docker ships for Linux, and pins exactly where Alpine's could be pinned only to a minor version. *Rejected:* Docker's `runc` alone beside Alpine's engine, the smaller change.
+
+Made implementing JEN-31:
+
+- **On a Mac, jen chooses the runtime's port itself, one nothing on the Mac answers on, and the launcher never mirrors a port something on the Mac answers on, trying it again less and less often, down to every 30 seconds.** *Why:* the machine has ports of its own, so its engine publishes on a port the Mac may hold, and every new machine's first is 32768. jen then sent the owner's token to whatever held it, another machine's runtime included (found by the review on 2026-11-25).
+
 ## 2026-11-24
 
 Set by the maintainer, aligning on [JEN-31](https://linear.app/reveer/issue/JEN-31)'s proposal. The proposal and design are in `openspec/changes/give-jen-its-own-machine/`:
@@ -17,8 +27,7 @@ Made implementing JEN-31:
 
 - **The machine's Linux is asked to shut down through a vsock port of its own, 2378, not Virtualization.framework's stop request.** *Why:* the VM offers its power button through gpio-keys, and Alpine's virt kernel has no driver for it, so the request never reaches Linux (measured on 2026-11-24, in the design's Context).
 - **The machine's version is a hash of its kernel, initramfs and system disk, not the release's version.** *Why:* the machine then restarts only when its system changed, and a checkout's rebuild counts as a new system with no version of its own to bump.
-- **jen points its own `docker` at the machine with `DOCKER_HOST`, and gives it a `DOCKER_CONFIG` in the machine's folder.** *Why:* a Mac that had Docker Desktop keeps its `config.json`, whose credential helper and contexts would otherwise reach jen's `docker`.
-- **The machine's engine is Docker's static build for Linux, at the bundled client's version and pinned to its checksum, not Alpine's packages.** Alpine provides only the kernel and the OS. *Why:* set by the maintainer on 2026-11-25, once the boundary check found that Alpine's musl-built `runc` starts every container with signal 34 ignored, and Docker's static `runc` doesn't. It's the engine Docker ships for Linux, and pins exactly where Alpine's could be pinned only to a minor version. *Rejected:* Docker's `runc` alone beside Alpine's engine, the smaller change.
+- **jen points its own `docker` at the machine with `DOCKER_HOST`, gives it a `DOCKER_CONFIG` in the machine's folder, and removes the user's other `DOCKER_` variables.** *Why:* a Mac that had Docker Desktop keeps its `config.json`, whose credential helper and contexts would otherwise reach jen's `docker`, and a variable such as `DOCKER_TLS_VERIFY` or `DOCKER_API_VERSION` left the machine looking unanswered.
 - **A release builds and checks the packages on a macOS runner, and publishes from there.** *Why:* npm won't install the platform package on Linux, so only a Mac installs both as a user does, and the launcher builds and signs only there. Docker's client is checked against its checksum in the arm64 job that builds the machine, which the images wait for, so a changed download publishes nothing.
 
 Made in [JEN-30](https://linear.app/reveer/issue/JEN-30), whose OpenSpec change is `make-tests-reliable`:

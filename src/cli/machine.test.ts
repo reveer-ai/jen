@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { EngineError, type Runner } from "./docker.ts";
-import { harness } from "./harness.ts";
+import { harness, SETTINGS } from "./harness.ts";
 import { Machine, machineFiles, PLATFORM_PACKAGE, START_MS, type MachineHost } from "./machine.ts";
 import { parse, run, type Deps } from "./main.ts";
 import { QUESTION } from "./uninstall.ts";
@@ -126,6 +127,31 @@ describe("starting", () => {
     expect(error).toBeInstanceOf(EngineError);
     expect(error.message).toBe(`jen's machine didn't answer within 60 seconds. Its console is in ${m.machine.folder}/console.log`);
     expect(m.launches).toEqual([]);
+  });
+
+  test("a start lock older than any start takes is stale, even when its process ID is running, as after a reboot reused it", async () => {
+    const m = mac();
+    mkdirSync(m.machine.folder, { recursive: true });
+    const lock = join(m.machine.folder, "start.lock");
+    writeFileSync(lock, "777\n");
+    m.others.add(777);
+    const then = (Date.now() - 2 * START_MS - 1_000) / 1000;
+    utimesSync(lock, then, then);
+    expect(await m.machine.ensure(m.options)).toBe(true);
+    expect(m.launches).toHaveLength(1);
+  });
+
+  test("a start lock from before the Mac last started is stale, however young", async () => {
+    const m = mac();
+    mkdirSync(m.machine.folder, { recursive: true });
+    const lock = join(m.machine.folder, "start.lock");
+    writeFileSync(lock, "777\n");
+    m.others.add(777);
+    const then = (Date.now() - 30_000) / 1000;
+    utimesSync(lock, then, then);
+    const machine = new Machine("jen", { ...m.host, booted: () => Date.now() - 10_000 });
+    expect(await machine.ensure(m.options)).toBe(true);
+    expect(m.launches).toHaveLength(1);
   });
 
   test("a launcher.pid that no running jen-machine holds, as after a reboot, is stale", async () => {
@@ -251,9 +277,9 @@ describe("the machine's files", () => {
 });
 
 // jen's commands on a Mac: the harness's engine, behind the stand-in machine.
-async function onMac(options: Parameters<typeof mac>[0] = {}) {
+async function onMac(options: Parameters<typeof mac>[0] = {}, given: Parameters<typeof harness>[0] = {}) {
   const m = mac(options);
-  const h = await harness();
+  const h = await harness(given);
   const out: string[] = [];
   const err: string[] = [];
   const d: Deps = {
@@ -322,6 +348,29 @@ describe("jen on a Mac", () => {
     expect(readFileSync(join(m.machine.folder, "version"), "utf8")).toBe("b2\n");
     expect(await m.machine.outdated()).toBe(false);
     expect([...h.api.agents.values()].map((a) => a.state)).toEqual(["stopped"]);
+  });
+
+  test("the runtime is published on a port the Mac has free, not a saved one something on the Mac holds, which hears nothing", async () => {
+    const heard: string[] = [];
+    const other = createServer((req, res) => (heard.push(`${req.method} ${req.url} ${req.headers.authorization ?? ""}`), res.end("{}")));
+    const held = await new Promise<number>((resolve) => other.listen(0, "127.0.0.1", () => resolve((other.address() as { port: number }).port)));
+    const { d, h } = await onMac({}, { settings: { ...SETTINGS, port: held } });
+    close = async () => (await h.api.close(), void other.close());
+    expect(await run(parse(["list"]), d)).toBe(0);
+    const published = h.docker.runs.flatMap((r) => r.args.filter((arg) => arg.endsWith(":8080")));
+    expect(published).toHaveLength(1);
+    const port = Number(published[0]!.split(":")[1]);
+    expect(port).not.toBe(held);
+    expect(h.docker.settings().port).toBe(port);
+    expect(heard).toEqual([]);
+  });
+
+  test("on a Mac, the runtime's saved port is kept when the Mac has it free", async () => {
+    const free = await new Machine("jen").port();
+    const { d, h } = await onMac({}, { settings: { ...SETTINGS, port: free } });
+    close = () => h.api.close();
+    expect(await run(parse(["list"]), d)).toBe(0);
+    expect(h.docker.runs.flatMap((r) => r.args.filter((arg) => arg.endsWith(":8080")))).toEqual([`127.0.0.1:${free}:8080`]);
   });
 
   test("a missing image is named with the command that builds it into the machine", async () => {

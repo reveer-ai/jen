@@ -23,11 +23,15 @@ The machine SHALL be installed by `npm install -g jen-ai` alone, through a platf
 - **THEN** `jen` works the same
 
 ### Requirement: The machine shares nothing with the Mac but its engine and published ports
-The machine SHALL mount no folder of the Mac's. Its engine SHALL be reachable from the Mac only through a Unix socket in the machine's folder that only the user can open. Nothing in the machine SHALL listen on its network. A port that a container in the machine publishes on `127.0.0.1` SHALL be reachable on the Mac's `127.0.0.1` at the same number while that container runs, and SHALL NOT be reachable from any other address.
+The machine SHALL mount no folder of the Mac's. Its engine SHALL be reachable from the Mac only through a Unix socket in the machine's folder that only the user can open. Nothing in the machine SHALL listen on its network. A port that a container in the machine publishes on `127.0.0.1` SHALL be reachable on the Mac's `127.0.0.1` at the same number while that container runs and nothing else on the Mac answers there, and SHALL NOT be reachable from any other address.
 
 #### Scenario: The runtime's port
 - **WHEN** `jen` starts the runtime published on `127.0.0.1:52817` in the machine
 - **THEN** `http://127.0.0.1:52817` on the Mac reaches the runtime, and the Mac's other addresses don't
+
+#### Scenario: The runtime's saved port, held on the Mac
+- **WHEN** the runtime's saved port is `52817` and another program on the Mac listens there
+- **THEN** `jen` publishes the runtime on another port the Mac has free, saves it, and sends nothing to the other program
 
 #### Scenario: A port no longer published
 - **WHEN** the container that published a port stops

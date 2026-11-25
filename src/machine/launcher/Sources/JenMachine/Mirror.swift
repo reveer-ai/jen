@@ -152,14 +152,23 @@ public protocol Closable: AnyObject {
 public final class PortMirror {
   let open: (UInt16) -> Closable?
   public private(set) var listeners: [UInt16: Closable] = [:]
+  // The ports the machine last published.
+  public private(set) var published: Set<UInt16> = []
 
   public init(open: @escaping (UInt16) -> Closable?) { self.open = open }
 
   public var ports: Set<UInt16> { Set(listeners.keys) }
 
+  // The published ports the Mac couldn't listen on.
+  public var missing: Set<UInt16> { published.subtracting(listeners.keys) }
+
+  // Tries again to listen on each published port the Mac couldn't.
+  public func retry() { reconcile(published) }
+
   // Listens on each port in published that it doesn't yet, and closes each
   // listener whose port no longer is.
   public func reconcile(_ published: Set<UInt16>) {
+    self.published = published
     for (port, listener) in listeners where !published.contains(port) {
       listener.close()
       listeners[port] = nil

@@ -13,10 +13,10 @@ export interface Output {
   stderr: string;
 }
 
-// Runs a program with args, adding env to the inherited environment and
-// writing input to its stdin. A program that can't be started at all, such as
+// Runs a program with args, adding env to the inherited environment, where a
+// name whose value is undefined is removed, and writing input to its stdin. A program that can't be started at all, such as
 // a missing one, answers code -1 with the reason in stderr.
-export type Runner = (program: string, args: string[], options?: { env?: Record<string, string>; input?: string }) => Promise<Output>;
+export type Runner = (program: string, args: string[], options?: { env?: Record<string, string | undefined>; input?: string }) => Promise<Output>;
 
 export const runProcess: Runner = (program, args, { env = {}, input } = {}) =>
   new Promise((resolve) => {

@@ -1,11 +1,11 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createDocker, DockerError, EngineError, runProcess, START_MS, type EngineOptions, type Output, type Runner } from "./docker.ts";
 import { Machine } from "./machine.ts";
 
 // A runner that answers each call with answer, and records it. With
 // machine, it's macOS's engine, which runs on the same runner.
 function stub(answer: (args: string[], program: string) => Partial<Output> = () => ({}), machine?: (run: Runner) => Machine) {
-  const calls: { program: string; args: string[]; env?: Record<string, string>; input?: string }[] = [];
+  const calls: { program: string; args: string[]; env?: Record<string, string | undefined>; input?: string }[] = [];
   const runner: Runner = async (program, args, options = {}) => {
     calls.push({ program, args, ...options });
     return { code: 0, stdout: "", stderr: "", ...answer(args, program) };
@@ -175,6 +175,21 @@ test("on macOS, every call runs the package's docker against the machine, whatev
     { program: "/pkg/bin/docker", args: ["run", "-d", "-e", "JEN_API_KEY", "jen-runtime"], env: { ...target, JEN_API_KEY: "sk-live-7f3a" }, input: undefined },
     { program: "/pkg/bin/docker", args: ["volume", "ls", "-q", "--filter", "label=jen.runtime=jen"], env: target, input: undefined },
   ]);
+});
+
+test("on macOS, the user's other DOCKER_ variables are removed from the docker jen runs", async () => {
+  vi.stubEnv("DOCKER_TLS_VERIFY", "1");
+  vi.stubEnv("DOCKER_API_VERSION", "1.24");
+  try {
+    const { docker, calls } = stub(() => ({ stdout: "[]" }), machine);
+    await docker.volumes(["jen.runtime=jen"]);
+    const env = calls[0]!.env!;
+    for (const name of ["DOCKER_TLS_VERIFY", "DOCKER_API_VERSION"]) expect(Object.hasOwn(env, name) && env[name] === undefined).toBe(true);
+    const shown = await runProcess("sh", ["-c", 'echo "${DOCKER_TLS_VERIFY-unset} $DOCKER_CONTEXT"'], { env });
+    expect(shown.stdout).toBe("unset default\n");
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test("on macOS, the engine is the machine's, and Docker Desktop is never started or checked", async () => {

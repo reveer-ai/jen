@@ -10,7 +10,8 @@
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { connect, createServer, type AddressInfo } from "node:net";
+import { homedir, uptime } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { EngineError, runProcess, type EngineOptions, type Runner } from "./docker.ts";
 import { VERSION } from "./release.ts";
@@ -94,6 +95,8 @@ export interface MachineHost {
   kill: (pid: number, signal: NodeJS.Signals | 0) => boolean;
   files: () => MachineFiles;
   home: string;
+  // When the Mac last started, in milliseconds since the epoch.
+  booted: () => number;
 }
 
 const host: MachineHost = {
@@ -110,6 +113,7 @@ const host: MachineHost = {
   },
   files: () => machineFiles(),
   home: homedir(),
+  booted: () => Date.now() - uptime() * 1000,
 };
 
 export const machineFolder = (home: string, name: string) => join(home, ".jen", "machines", name);
@@ -136,11 +140,26 @@ export class Machine {
   // environment that points it there whatever the user's says: their
   // DOCKER_HOST, their context and their configuration, credential helpers
   // included, are all replaced.
-  docker(): { program: string; env: Record<string, string> } {
+  docker(): { program: string; env: Record<string, string | undefined> } {
+    // Every other DOCKER_ variable is removed, such as DOCKER_TLS_VERIFY or
+    // DOCKER_API_VERSION, which would point it elsewhere or break it.
+    const theirs = Object.fromEntries(Object.keys(process.env).flatMap((name) => (name.startsWith("DOCKER_") ? [[name, undefined]] : [])));
     return {
       program: this.files().docker,
-      env: { DOCKER_HOST: `unix://${join(this.folder, "engine.sock")}`, DOCKER_CONFIG: join(this.folder, "docker"), DOCKER_CONTEXT: "default" },
+      env: { ...theirs, DOCKER_HOST: `unix://${join(this.folder, "engine.sock")}`, DOCKER_CONFIG: join(this.folder, "docker"), DOCKER_CONTEXT: "default" },
     };
+  }
+
+  // The Mac's port for the runtime to be published on: preferred when nothing
+  // on the Mac answers there, or else one the Mac has free. The machine's
+  // engine can't tell, since the machine has ports of its own, and the
+  // launcher can't carry a port something on the Mac already holds.
+  async port(preferred?: number): Promise<number> {
+    if (preferred !== undefined && !(await answersOn(preferred))) return preferred;
+    for (;;) {
+      const port = await freePort();
+      if (!(await answersOn(port))) return port;
+    }
   }
 
   // Refuses an Intel Mac, which the machine isn't built for, even when this
@@ -257,7 +276,9 @@ function read(path: string): string | undefined {
 // Takes the start lock, which holds the starting jen's process ID, answering
 // false when another jen holds it. A lock whose jen is gone is stale, as is
 // an empty one, as a jen leaves that stops between creating and writing it,
-// once it's a few seconds old.
+// once it's a few seconds old. So is one older than any start takes, or than
+// the Mac's last start, whose process ID another process may have since, as
+// after a jen was killed while starting and the Mac restarted.
 function take(lock: string, host: MachineHost): boolean {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -271,7 +292,11 @@ function take(lock: string, host: MachineHost): boolean {
     const holder = read(lock);
     if (holder === undefined) continue;
     const pid = Number(holder);
-    if (holder === "" ? Date.now() - mtime(lock) < 5_000 : pid === process.pid || (Number.isSafeInteger(pid) && pid > 0 && host.kill(pid, 0))) return false;
+    const written = mtime(lock);
+    const age = Date.now() - written;
+    // A lock from before the Mac last started belongs to no running jen.
+    const held = holder === "" ? age < 5_000 : written > host.booted() && age < 2 * START_MS && (pid === process.pid || (Number.isSafeInteger(pid) && pid > 0 && host.kill(pid, 0)));
+    if (held) return false;
     try {
       unlinkSync(lock);
     } catch {}
@@ -285,4 +310,26 @@ function mtime(path: string): number {
   } catch {
     return 0;
   }
+}
+
+// Whether something on the Mac accepts a connection to 127.0.0.1:port.
+function answersOn(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = connect({ host: "127.0.0.1", port, timeout: 1_000 });
+    socket.on("connect", () => (socket.destroy(), resolve(true)));
+    // A port that doesn't answer at once is treated as held.
+    socket.on("timeout", () => (socket.destroy(), resolve(true)));
+    socket.on("error", () => resolve(false));
+  });
+}
+
+// A port the Mac's 127.0.0.1 has free now.
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer().on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      server.close(() => resolve(port));
+    });
+  });
 }
