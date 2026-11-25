@@ -44,7 +44,7 @@ CMD ["sleep", "infinity"]
 
 # jen's machine for an Apple silicon Mac, a Linux VM whose only job is to give
 # jen a Docker engine: docker build --target machine --output dist/machine .
-# It exports the kernel, the initramfs, the system disk and their version, which
+# It exports the kernel, the initramfs and the system disk, which
 # src/machine/build.sh describes. Alpine is pinned by digest and its kernel by
 # minor version, since Alpine keeps only each package's latest patch in a
 # release, so an exact pin would stop building. The engine is Docker's own

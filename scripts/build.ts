@@ -15,7 +15,7 @@ import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, re
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLATFORM_PACKAGE } from "../src/cli/machine.ts";
-import { MACHINE_FILES } from "./machine.ts";
+import { machineVersion, SYSTEM_FILES } from "./machine.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 
@@ -88,17 +88,19 @@ export function build(version: string, out = join(ROOT, "dist")): void {
 }
 
 // Writes the platform package into out, replacing whatever is there, from
-// machine, which holds the machine's files, the signed launcher, jen-machine,
-// and the docker command, as dist/machine/ does.
+// machine, which holds the machine's system, the signed launcher, jen-machine,
+// and the docker command, as dist/machine/ does. The machine's version is
+// worked out from the system and the launcher, whatever machine's says.
 export function buildPlatform(version: string, machine: string, out: string): void {
   checkVersion(version);
-  const inputs = [...MACHINE_FILES, "jen-machine", "docker"];
+  const inputs = [...SYSTEM_FILES, "jen-machine", "docker"];
   const missing = inputs.filter((file) => !existsSync(join(machine, file)));
   if (missing.length > 0) throw new Error(`${machine} has no ${missing.join(", ")}. npm run build:machine writes them into dist/machine/.`);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "machine"), { recursive: true });
   mkdirSync(join(out, "bin"));
-  for (const file of MACHINE_FILES) copyFileSync(join(machine, file), join(out, "machine", file));
+  for (const file of SYSTEM_FILES) copyFileSync(join(machine, file), join(out, "machine", file));
+  writeFileSync(join(out, "machine", "version"), `${machineVersion(machine)}\n`);
   for (const file of ["jen-machine", "docker"]) {
     copyFileSync(join(machine, file), join(out, "bin", file));
     // Executables lose their mode in a GitHub Actions artifact.

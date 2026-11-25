@@ -190,7 +190,8 @@ export class Machine {
     return (await this.host.lookup(pid)) === "jen-machine" ? pid : undefined;
   }
 
-  // Whether the running machine booted a system other than the one jen holds.
+  // Whether the running machine booted another version than the one jen holds:
+  // another system, or another launcher.
   async outdated(): Promise<boolean> {
     if ((await this.launcher()) === undefined) return false;
     return read(join(this.folder, "version")) !== read(join(this.files().system, "version"));

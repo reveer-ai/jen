@@ -224,7 +224,7 @@ describe("stopping, upgrading and removing", () => {
     expect(m.signals.filter(([, s]) => s !== 0)).toEqual([]);
   });
 
-  test("a machine is outdated only while it runs a system other than the package's", async () => {
+  test("a machine is outdated only while it runs a version other than the package's", async () => {
     const m = mac();
     expect(await m.machine.outdated()).toBe(false);
     await m.machine.ensure(m.options);
@@ -342,7 +342,7 @@ describe("jen on a Mac", () => {
     const before = m.launcher!.pid;
     writeFileSync(join(m.pkg.system, "version"), "b2\n");
     expect(await run(parse(["list"]), d)).toBe(0);
-    expect(err).toEqual(["jen's machine has a new system, so jen is restarting it on that.\n", "stopped 1 root agent and everything under it. Each starts again at its next message.\n", "starting jen's machine...\n"]);
+    expect(err).toEqual(["jen's machine has a new version, so jen is restarting it on that.\n", "stopped 1 root agent and everything under it. Each starts again at its next message.\n", "starting jen's machine...\n"]);
     expect(m.signals).toContainEqual([before, "SIGTERM"]);
     expect(m.launches).toHaveLength(2);
     expect(readFileSync(join(m.machine.folder, "version"), "utf8")).toBe("b2\n");

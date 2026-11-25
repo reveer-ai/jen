@@ -281,12 +281,12 @@ export async function stopAll(ctx: Context, machine?: Machine): Promise<void> {
   if (machine && (await machine.stop(ctx))) ctx.print("stopped jen's machine.");
 }
 
-// Restarts jen's machine on the system jen holds, when it booted another,
+// Restarts jen's machine on the version jen holds, when it booted another,
 // stopping every agent through the runtime first, as a new image does. The
 // machine's data is kept.
 export async function upgradeMachine(ctx: Context, machine: Machine): Promise<void> {
   if (!(await machine.outdated())) return;
-  ctx.say("jen's machine has a new system, so jen is restarting it on that.");
+  ctx.say("jen's machine has a new version, so jen is restarting it on that.");
   const stopped = await stopEverything(ctx);
   if (stopped) ctx.say(`stopped ${rootsUnder(stopped)}. Each starts again at its next message.`);
   await machine.stop(ctx);

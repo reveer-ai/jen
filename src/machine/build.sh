@@ -1,12 +1,14 @@
 #!/bin/sh
 # Builds jen's machine from a system root, in the Dockerfile's machine-build
-# stage: build.sh <root> <out>. It writes four files into <out>:
+# stage: build.sh <root> <out>. It writes three files into <out>:
 #
 #   vmlinuz      the root's kernel, decompressed, since Virtualization.framework
 #                boots only an uncompressed arm64 kernel
 #   initramfs    busybox, the modules that mounting the disks needs, and init
 #   system.img   the root, without /boot, as squashfs
-#   version      a hash of the three
+#
+# The machine's version is a hash of the three and the launcher, which builds
+# only on a Mac, so scripts/machine.ts and scripts/build.ts write it.
 set -eu
 
 root=$1
@@ -47,7 +49,3 @@ rm -rf "$initramfs"
 # image needs.
 rm -rf "$root/boot"
 mksquashfs "$root" "$out/system.img" -comp zstd -noappend -quiet -no-progress
-
-# The system's version, which the launcher records as the one it booted: a
-# hash of the three files, so any change to them is a new system.
-(cd "$out" && sha256sum vmlinuz initramfs system.img | sha256sum | cut -c1-16) > "$out/version"

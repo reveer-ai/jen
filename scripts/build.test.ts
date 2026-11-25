@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { build, buildPlatform, checkVersion, manifest, platformManifest } from "./build.ts";
+import { machineVersion } from "./machine.ts";
 
 let out: string;
 beforeAll(() => {
@@ -99,6 +100,17 @@ test("the platform package holds the machine, the launcher and docker, runnable,
   expect(readFileSync(join(platform, "bin", "jen-machine"), "utf8")).toBe("jen-machine");
   expect(JSON.parse(readFileSync(join(platform, "package.json"), "utf8"))).toEqual(platformManifest("1.2.3"));
   expect(readFileSync(join(platform, "NOTICE"), "utf8")).toMatch(/GNU General\s+Public License version 2/);
+});
+
+test("the platform package's version is its system's and its launcher's, whatever the folder's says", () => {
+  const platform = join(out, "..", "platform");
+  const machine = machineFolder();
+  buildPlatform("1.2.3", machine, platform);
+  const first = readFileSync(join(platform, "machine", "version"), "utf8");
+  expect(first).toBe(`${machineVersion(machine)}\n`);
+  writeFileSync(join(machine, "jen-machine"), "jen-machine, rebuilt");
+  buildPlatform("1.2.3", machine, platform);
+  expect(readFileSync(join(platform, "machine", "version"), "utf8")).not.toBe(first);
 });
 
 test("the platform package isn't built from a folder missing any of its files", () => {

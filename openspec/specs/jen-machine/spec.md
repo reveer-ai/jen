@@ -84,11 +84,15 @@ Images, volumes and containers in the machine SHALL be kept when the machine sto
 - **THEN** `home` answers from its conversation, and no image is pulled again
 
 ### Requirement: An upgrade restarts the machine on the new system
-When the running machine booted a different version's system than the installed package holds, the next command that needs the engine SHALL stop every agent through the runtime, stop the machine and start it on the installed version's system, keeping its data.
+When the running machine booted a different version's system or launcher than the installed package holds, the next command that needs the engine SHALL stop every agent through the runtime, stop the machine and start it on the installed version's system, keeping its data.
 
 #### Scenario: Upgrading jen
 - **WHEN** the user upgrades `jen-ai` from 0.2.0 to 0.2.1 with `home` running and runs `jen list`
 - **THEN** the machine runs 0.2.1's system, `home` is stopped with its conversation kept, and it starts again on 0.2.1's images at its next message
+
+#### Scenario: An upgrade that changes only the launcher
+- **WHEN** the user upgrades `jen-ai` to a version whose machine has the same system and a new launcher, with the machine running, and runs `jen list`
+- **THEN** the machine is stopped and started again by the new launcher, keeping its data
 
 ### Requirement: The machine's clock follows the Mac's
 The machine's clock SHALL be set from the Mac's once the machine boots, before its engine is reachable from the Mac, and again whenever the Mac wakes from sleep.

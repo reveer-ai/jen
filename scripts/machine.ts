@@ -5,22 +5,37 @@
 //   node scripts/machine.ts client <dest>
 //
 // It holds the Dockerfile's machine target, built with any engine (vmlinuz,
-// initramfs, system.img and their version), the launcher, jen-machine, built
-// with SwiftPM and signed ad hoc with the virtualization entitlement, and
-// Docker's static docker command for macOS at its pinned version, checked
+// initramfs and system.img), the launcher, jen-machine, built with SwiftPM and
+// signed ad hoc with the virtualization entitlement, the machine's version,
+// and Docker's static docker command for macOS at its pinned version, checked
 // against its checksum. It runs only on macOS, where the launcher builds.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..");
 const LAUNCHER = join(ROOT, "src", "machine", "launcher");
 
-// The machine target's files, as the platform package's machine/ holds them.
-export const MACHINE_FILES = ["vmlinuz", "initramfs", "system.img", "version"] as const;
+// The machine target's files: the system the machine boots.
+export const SYSTEM_FILES = ["vmlinuz", "initramfs", "system.img"] as const;
+
+// The platform package's machine/: the system and the machine's version.
+export const MACHINE_FILES = [...SYSTEM_FILES, "version"] as const;
+
+// The machine's version, which the launcher records as the one it booted: a
+// hash of the system's files in dir and of the launcher, dir's jen-machine, so
+// an upgrade that changes either restarts the machine.
+export function machineVersion(dir: string): string {
+  const hash = createHash("sha256");
+  for (const file of [...SYSTEM_FILES, "jen-machine"]) {
+    const bytes = readFileSync(join(dir, file));
+    hash.update(`${file} ${bytes.length}\n`).update(bytes);
+  }
+  return hash.digest("hex").slice(0, 16);
+}
 
 // Docker's static client for macOS on arm64, at the version of the machine's
 // engine, the Dockerfile's DOCKER_ENGINE. Docker publishes no checksum for it,
@@ -67,7 +82,7 @@ export function buildMachineFiles(out: string): void {
   try {
     run("docker", ["build", "--target", "machine", "--output", exported, ROOT], "docker build --target machine");
     mkdirSync(out, { recursive: true });
-    for (const file of MACHINE_FILES) copyFileSync(join(exported, file), join(out, file));
+    for (const file of SYSTEM_FILES) copyFileSync(join(exported, file), join(out, file));
   } finally {
     rmSync(exported, { recursive: true, force: true });
   }
@@ -84,8 +99,12 @@ export function buildLauncher(dest: string): void {
 
 export async function buildMachine(out = join(ROOT, "dist", "machine")): Promise<void> {
   if (process.platform !== "darwin") throw new Error("the machine's launcher builds only on macOS");
+  // Written last, so a build that fails leaves no version for a checkout's jen
+  // to run.
+  rmSync(join(out, "version"), { force: true });
   buildMachineFiles(out);
   buildLauncher(join(out, "jen-machine"));
+  writeFileSync(join(out, "version"), `${machineVersion(out)}\n`);
   await fetchDockerClient(join(out, "docker"));
 }
 
