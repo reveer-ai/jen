@@ -20,6 +20,10 @@ Ideas the maintainer wants kept, not yet planned or decided. An idea isn't a com
 - **jen's shell, and design passed down the tree.** *Raised 2026-11-14, with the data layer.* The shell grows from JEN-18's page: identity, moving between agents' apps, notifications, perhaps a fixed way to talk to the agent. Stock jen's minimal look, and how an organization's design and code pass down to its sub-agents for reuse. jen's textbox becomes a first screen in the stock look.
 - **A conversation pane drawn by jen.** *Raised 2026-11-13, in JEN-18.* A fixed pane beside the agent's UI, plain HTML in jen's page, showing at least what the user said. It would give the user the transcript without generated code, which is why JEN-18 gives a UI no access to the conversation.
 
+## Distribution
+
+- **A release that publishes `jen-ai` only once its platform package installs.** *Raised 2026-11-25, after [JEN-35](https://linear.app/reveer/issue/JEN-35)'s release.* npm makes `@jen-ai/darwin-arm64` installable long after `npm publish` accepts it, with "Your package is being processed": 54 minutes for `0.2.0` and 56 for `0.2.1`, against about 4 for `jen-ai`. Meanwhile `jen-ai@latest` names a version npm answers 404 for, so a Mac install gets `jen-ai` without the machine, since npm skips a missing optional dependency, and `jen` says to reinstall. The release could wait, with a bound, for the registry to serve the platform package before publishing `jen-ai`. Open: what a failed wait leaves behind, and what the delay depends on, such as the package's 112 MB. It matters once jen has Mac users.
+
 ## Workflow
 
 - **A view of evaluation results over time.** *Raised 2026-11-23, in [JEN-24](https://linear.app/reveer/issue/JEN-24).* Every evaluation's `summary.json` is committed under `evals/`, each with its build's tree and commit, its model and each task's hash, so the summaries add up to a history of how agents do across jen's versions. A page could chart each task's pass rate, time and tokens by build, starting a new line where a task's hash changed. Nothing reads the history yet but people.
